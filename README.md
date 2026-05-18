@@ -13,15 +13,18 @@ Lightweight RTL verification and documentation framework for multi-project ASIC 
 - **Auto-documentation** — generates `manifest.yaml`, `summary.md`, `notes.md`, and `README.md` per run
 - **Run history** — full CSV records queryable per tile and per run
 - **Version tracking** — `bump-version` and `bump-revision` with preserved history
-- **GTKWave integration** — open waveforms directly from the CLI
+- **Waveform viewer** — opens Surfer (native or WASM) or GTKWave directly from the CLI
+- **Interactive TUI** — launch with no arguments to browse tiles and runs (requires TileBench)
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) (`iverilog`, `vvp`, `yosys`, `gtkwave`)
+- [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) (`iverilog`, `vvp`, `yosys`)
 - PyYAML: `pip install pyyaml`
+- Rich: `pip install rich` (styled console output)
+- Optional: `pyfiglet`, `terminaltexteffects` (banner animation); `surfer` or `gtkwave` in PATH (waveforms)
 
 ## Installation
 
@@ -36,6 +39,9 @@ After installation, the `veriflow` command is available directly in the terminal
 ## Quick Start
 
 ```bash
+# Launch the interactive TUI (no arguments)
+veriflow
+
 # Initialize the database
 veriflow --db ./database init
 
@@ -82,9 +88,10 @@ If no `tb_tile.v` is present, simulation is automatically skipped.
 ## Commands
 
 ```bash
-veriflow --db ./database init
+veriflow                                                    # interactive TUI
+veriflow --db ./database init [--force]
 veriflow --db ./database create-tile
-veriflow --db ./database run --tile 0001 [--waves] [--skip-synth] [--skip-sim] [--only-check]
+veriflow --db ./database run --tile 0001 [--waves] [--skip-synth] [--skip-sim] [--skip-check] [--only-check] [--only-sim] [--only-synth]
 veriflow --db ./database waves --tile 0001 [--run run-003]
 veriflow --db ./database bump-version --tile 0001
 veriflow --db ./database bump-revision --tile 0001
@@ -117,6 +124,8 @@ Date:    2026-03-25
 | [DESIGN.md](docs/DESIGN.md) | Detailed technical design |
 | [MANUAL.md](docs/MANUAL.md) | Complete user manual |
 | [QUICKREF.md](docs/QUICKREF.md) | Quick reference card |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module-by-module technical reference |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Version history |
 
 ---
 
@@ -133,5 +142,7 @@ python -m veriflow.tests.runner
 
 - [Icarus Verilog](http://iverilog.icarus.com/)
 - [Yosys](https://yosyshq.net/yosys/)
-- [GTKWave](http://gtkwave.sourceforge.net/)
+- [Surfer](https://surfer-project.org/) (primary waveform viewer)
+- [GTKWave](http://gtkwave.sourceforge.net/) (fallback waveform viewer)
 - [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
+- [Rich](https://github.com/Textualize/rich)
