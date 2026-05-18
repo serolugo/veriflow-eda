@@ -156,11 +156,15 @@ Generates the DUT instantiation string with the fixed ports from the VeriFlow po
 Reads the `src/tb/` files and extracts content between `// USER TEST STARTS HERE //` and `// USER TEST ENDS HERE //` markers. If markers are not present, uses the full file content stripping `timescale`, `module`, and `endmodule`.
 
 ### `_inject_tb(tb_base_path, top_module, tb_files) → Path`
-1. Reads `tb_base.v`
+1. Reads `tb_tile.v` (the user-facing copy of `tb_base.v`)
 2. Replaces `MODULE_INST_PLACEHOLDER` with the generated DUT
-3. Replaces `USER_TEST_PLACEHOLDER` with user code
-4. Writes to a temporary file (`tempfile.NamedTemporaryFile`)
-5. Returns the temporary file path
+3. Extracts user test code from `tb_tile.v` itself (between `// USER TEST STARTS HERE //` markers)
+4. Replaces `USER_TEST_PLACEHOLDER` with the extracted code
+5. Writes to a temporary file (`tempfile.NamedTemporaryFile`)
+6. Returns the temporary file path
+
+### `_prepare_universal_tb(tb_files) → Path`
+Universal mode variant: reads `tb_tile.v`, calls `_ensure_dumpfile` to inject `$dumpfile`/`$dumpvars` if absent, writes to a temp file.
 
 ### `run_connectivity_check(...) → str`
 Compiles with iverilog using no output file (`/dev/null` or `NUL`). Uses `_inject_tb` without TB files (only verifies DUT connectivity). Returns `"PASS"` or `"FAIL"`.
@@ -168,13 +172,25 @@ Compiles with iverilog using no output file (`/dev/null` or `NUL`). Uses `_injec
 **Windows fix:** Uses `.as_posix()` on all paths for subprocess calls.
 
 ### `run_simulation(...) → tuple[str, dict]`
-1. Calls `_inject_tb` with user TB files
-2. Compiles into a temp directory without spaces (`tempfile.mkdtemp()`) to avoid Windows path issues
-3. Runs `vvp` from `wave_path.parent` so `$dumpfile("waves.vcd")` lands in the correct location
-4. Returns `("COMPLETED"|"FAILED", {sim_time, seed})`
+Branches on `semicolab` flag:
+- **SemiCoLab**: calls `_inject_tb`; excludes `tb_tasks.v` and `tb_tile.v` from `tb_files` (already handled by the wrapper)
+- **Universal**: calls `_prepare_universal_tb`
+1. Compiles into a temp directory without spaces (`tempfile.mkdtemp()`) to avoid Windows path issues
+2. Runs `vvp` from `wave_path.parent` so `$dumpfile("waves.vcd")` lands in the correct location
+3. Returns `("COMPLETED"|"FAILED", {sim_time, seed})`
+
+### `open_surfer(wave_path)`
+Docker mode only. Constructs `http://localhost:7681/?load_url=<vcd_url>` where `<vcd_url>` is the VCD resolved relative to `/workspace`. Prints the URL and calls `webbrowser.open()` as best-effort. Handles VCDs outside `/workspace` gracefully (opens Surfer without preloading).
+
+### `launch_waves(wave_path)`
+Priority chain (non-blocking `subprocess.Popen`):
+1. `SEMICOLAB_DOCKER` env var → delegates to `open_surfer()`
+2. `surfer` found in PATH → Surfer native binary
+3. `gtkwave` found in PATH → GTKWave (Windows: applies GDK env vars from OSS CAD Suite root)
+4. Neither found → prints install hint
 
 ### `launch_gtkwave(wave_path)`
-Launches GTKWave non-blocking with `subprocess.Popen`.
+Deprecated alias for `launch_waves()`. Retained for backward compatibility.
 
 ---
 
@@ -228,6 +244,7 @@ class ProjectConfig:
     project_name: str
     repo: str
     description: str
+    semicolab: bool = True   # false → Universal mode; parsed with string normalization
 ```
 
 ### `TileConfig`
@@ -321,7 +338,9 @@ Creates the full database structure. With `--force` overwrites if it already exi
 Main pipeline. `--only-*` flags are internally translated to `skip_*` combinations. `validate_tools()` is only called if at least one tool stage will run. See Pipeline section in SPECS.md.
 
 ### `cmd_waves(db, tile_number, run_id)`
-Resolves run ID (latest if not specified), verifies `waves.vcd` exists, and launches GTKWave with `subprocess.Popen` (non-blocking).
+Resolves run ID (latest if not specified), verifies `waves.vcd` exists, then branches:
+- `SEMICOLAB_DOCKER` set → `open_surfer()` (Surfer WASM URL)
+- otherwise → `launch_waves()` (Surfer native → GTKWave fallback → hint)
 
 ### `cmd_bump_version(db, tile_number)`
 - Increments version, revision unchanged
@@ -371,7 +390,41 @@ All VeriFlow tiles implement exactly these ports:
 
 ---
 
-## 20. Windows Compatibility Notes
+## 20. Module: `ui/`
+
+**Responsibility:** Terminal presentation layer. All commands import from here — no output formatting logic lives in `commands/` or `core/`.
+
+### `ui/theme.py`
+Defines the central Rich color palette (hex constants: `BLUE`, `GREEN`, `ORANGE`, `RED`, `GREY`, `WHITE`) and `VERIFLOW_THEME` (`rich.theme.Theme`). All UI modules import colors and styles from here.
+
+### `ui/output.py`
+Styled output helpers using a `rich.console.Console` instance with `VERIFLOW_THEME`. Key functions:
+
+| Function | Output |
+|---|---|
+| `print_status(label, status, detail)` | Dot-leader line: `  label ·····  STATUS  [detail]` |
+| `print_section(title)` | Section header with separator line |
+| `print_run_header(db, tile_id, run_id)` | Run metadata block |
+| `print_done(message)` | `✓  message` completion line |
+| `print_fail_detail(message, log_path)` | Indented failure detail + log path |
+| `print_wave_url(url)` | Styled browser link |
+| `print_ports_table(ports)` | Rich table of port definitions |
+| `print_file_tree(files, root)` | Generated files list |
+
+Status rendering: `PASS` → green bold; `FAIL` → red bold; `RUN` → `···` (secondary); others → secondary color.
+
+### `ui/banner.py`
+`show_banner(subtitle, tool)` — prints the SEMICOLAB figlet banner with a MiddleOut animation. `pyfiglet` renders the ASCII art; `TerminalTextEffects` animates it. Both are optional — falls back to plain Rich print if not installed. Orange accent for `tool="veriflow"`, green for `tool="tilewizard"`. Mifral URL printed on first-ever run only (`~/.semicolab_seen`).
+
+### `ui/themes.py`
+`Palette` frozen dataclass with 15 semantic color keys. `THEMES` dict maps 16 theme names to `Palette` instances. `get_palette(name)` resolves the active theme from `~/.semicolab_theme` with fallback to `"tokyo-night"`. `build_css(palette)` generates hardcoded-hex Textual CSS; `palette_to_vars(palette)` returns a `dict[str, str]` for `App.get_css_variables()` (live theming).
+
+### `ui/tui.py`
+`run_tui(workspace)` — single-function stub that imports and calls `tilebench.tui.selector.run_veriflow(workspace=None)`. The `None` workspace triggers TileBench's own Docker-aware workspace detection. Requires `tilebench` to be installed separately.
+
+---
+
+## 21. Windows Compatibility Notes
 
 - All paths use `pathlib.Path`
 - Subprocess calls use `.as_posix()` on paths

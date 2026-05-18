@@ -4,10 +4,18 @@ from pathlib import Path
 import yaml
 
 from veriflow.core import VeriFlowError
+from veriflow.ui.output import (
+    console,
+    print_run_header,
+    print_section,
+    print_status,
+    print_fail_detail,
+    print_done,
+)
 from veriflow.core.copier import copy_flat
 from veriflow.core.csv_store import append_record, get_tile_row
 from veriflow.core.run_id import get_next_run_id
-from veriflow.core.sim_runner import launch_gtkwave, run_connectivity_check, run_simulation
+from veriflow.core.sim_runner import launch_waves, run_connectivity_check, run_simulation
 from veriflow.core.synth_runner import run_synthesis
 from veriflow.core.validator import (
     detect_iverilog_version,
@@ -112,7 +120,7 @@ def cmd_run(
     run_id = get_next_run_id(runs_dir)
     today_str = date.today().isoformat()
 
-    print(f"[run] Starting run {run_id} for tile {tile_id}")
+    print_run_header(db, tile_id, run_id)
 
     # ── 5. Create run folder structure
     run_dir = runs_dir / run_id
@@ -123,13 +131,13 @@ def cmd_run(
         "out/synth/logs", "out/synth/reports",
     ):
         _gitkeep(run_dir / sub)
-    print(f"[run] Created run directory structure")
+    console.print(f"  [secondary]  ✓ Run directory created[/secondary]")
 
     # ── 6. Copy RTL sources to run/src/rtl/
     src_rtl = config_tile_dir / "src" / "rtl"
     dst_rtl = run_dir / "src" / "rtl"
     rtl_files = copy_flat(src_rtl, dst_rtl)
-    print(f"[run] Copied {len(rtl_files)} RTL file(s) to src/rtl/")
+    console.print(f"  [secondary]  ✓ {len(rtl_files)} RTL file(s) copied[/secondary]")
 
     # ── 7. Copy TB sources (if present)
     src_tb = config_tile_dir / "src" / "tb"
@@ -138,9 +146,9 @@ def cmd_run(
     has_tb = src_tb.exists() and any(src_tb.glob("*.v"))
     if has_tb:
         tb_files = copy_flat(src_tb, dst_tb)
-        print(f"[run] Copied {len(tb_files)} TB file(s) to src/tb/")
+        console.print(f"  [secondary]  ✓ {len(tb_files)} TB file(s) copied[/secondary]")
     else:
-        print(f"[run] No TB files found — simulation will be skipped")
+        console.print(f"  [warn]⚠[/warn]  [secondary]No TB files found — simulation will be skipped[/secondary]")
         skip_sim = True
 
     # ── Template files
@@ -174,7 +182,8 @@ def cmd_run(
 
     # ── 8. Connectivity check
     if not skip_check:
-        print(f"[run] Running connectivity check...")
+        print_section("Connectivity")
+        print_status("Connectivity check", "RUN")
         conn_result = run_connectivity_check(
             rtl_files=rtl_files,
             tb_base_path=tb_base_path,
@@ -182,9 +191,9 @@ def cmd_run(
             top_module=tile_config.top_module,
             log_path=conn_log_path,
         )
-        print(f"[run] Connectivity: {conn_result}")
+        print_status("Connectivity check", conn_result)
         if conn_result == "FAIL":
-            print(f"[run] Connectivity check FAILED — stopping pipeline")
+            print_fail_detail("Check failed — pipeline stopped", conn_log_path)
             _finalize_run(
                 db=db, run_dir=run_dir, tile_dir=tile_dir,
                 tile_id=tile_id, run_id=run_id, today_str=today_str,
@@ -203,7 +212,8 @@ def cmd_run(
 
     # ── 9. Simulation
     if not skip_sim and has_tb:
-        print(f"[run] Running simulation...")
+        print_section("Simulation")
+        print_status("Simulation", "RUN")
         sim_result, sim_parsed = run_simulation(
             rtl_files=rtl_files,
             tb_files=tb_files,
@@ -214,17 +224,18 @@ def cmd_run(
             wave_path=wave_path,
             semicolab=semicolab,
         )
-        print(f"[run] Simulation: {sim_result}")
+        print_status("Simulation", sim_result)
 
     # ── 10. Synthesis
     if not skip_synth:
-        print(f"[run] Running synthesis...")
+        print_section("Synthesis")
+        print_status("Synthesis", "RUN")
         synth_result, synth_parsed = run_synthesis(
             rtl_files=rtl_files,
             top_module=tile_config.top_module,
             synth_log_path=synth_log_path,
         )
-        print(f"[run] Synthesis: {synth_result}")
+        print_status("Synthesis", synth_result)
 
     # ── 11–17. Finalize
     _finalize_run(
@@ -244,8 +255,8 @@ def cmd_run(
 
     # ── 18. Launch GTKWave if requested
     if waves and wave_path.exists():
-        print(f"[run] Launching GTKWave...")
-        launch_gtkwave(wave_path)
+        
+        launch_waves(wave_path)
 
 
 def _derive_status(
@@ -360,17 +371,17 @@ def _finalize_run(
     }
     from veriflow.generators.manifest import generate_manifest
     generate_manifest(manifest_data, run_dir / "manifest.yaml")
-    print(f"[run] Generated manifest.yaml")
+    
 
     # ── 12. Generate notes.md
     from veriflow.generators.notes import generate_notes
     generate_notes(tile_id, tile_config, run_config, run_dir / "notes.md")
-    print(f"[run] Generated notes.md")
+    
 
     # ── 13. Regenerate README.md
     from veriflow.generators.readme import generate_readme
     generate_readme(tile_id, tile_config, tile_dir / "README.md")
-    print(f"[run] Regenerated README.md")
+    
 
     # ── 14. Update works/
     works_rtl = tile_dir / "works" / "rtl"
@@ -382,7 +393,7 @@ def _finalize_run(
     copy_flat(run_dir / "src" / "rtl", works_rtl)
     if (run_dir / "src" / "tb").exists():
         copy_flat(run_dir / "src" / "tb", works_tb)
-    print(f"[run] Updated works/")
+    
 
     # ── 15. Append row to records.csv
     run_path_rel = rel(run_dir)
@@ -405,7 +416,7 @@ def _finalize_run(
         "Tags": run_config.tags,
         "Semicolab": "true" if semicolab else "false",
     })
-    print(f"[run] Appended row to records.csv")
+    
 
     # ── 16. Generate and save summary.md
     from veriflow.generators.summary import generate_summary
@@ -424,15 +435,13 @@ def _finalize_run(
         precheck_status=conn_result,
         output_path=run_dir / "summary.md",
     )
-    print(f"[run] Generated summary.md")
+    
 
     # ── 17. Print summary to console
-    print()
-    print("=" * 50)
-    print(summary_text)
-    print("=" * 50)
-    print()
-    print(f"✓ Run completed.")
-    print(f"  Tile ID : {tile_id}")
-    print(f"  Run ID  : {run_id}")
-    print(f"  Status  : {status}")
+    print_section("Results")
+    print_status("Connectivity",  conn_result)
+    print_status("Simulation",    sim_result)
+    cells_detail = str(synth_parsed.get("cells", "")) if synth_parsed.get("cells") else ""
+    print_status("Synthesis",     synth_result, cells_detail)
+
+    print_done(f"Run complete  ·  [id]{tile_id}[/id]  ·  [id]{run_id}[/id]  ·  status: {status}")
