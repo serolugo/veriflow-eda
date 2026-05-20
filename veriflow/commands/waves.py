@@ -42,11 +42,5 @@ def cmd_waves(db: Path, tile_number: str, run_id: str | None = None) -> None:
             f"  Make sure the run included simulation (not --skip-sim)."
         )
 
-    import os
-
-    if os.environ.get("SEMICOLAB_DOCKER"):
-        from veriflow.core.sim_runner import open_surfer
-        open_surfer(wave_path)
-    else:
-        from veriflow.core.sim_runner import launch_waves
-        launch_waves(wave_path)
+    from veriflow.core.sim_runner import launch_waves
+    launch_waves(wave_path)

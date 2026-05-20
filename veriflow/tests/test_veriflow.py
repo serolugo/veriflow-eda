@@ -606,6 +606,97 @@ def test_semicolab_column_in_records():
 
 # ── registry ──────────────────────────────────────────────────────────────────
 
+def test_launch_waves_docker_uses_surfer_wasm():
+    """Docker mode should delegate to Surfer WASM."""
+    import os
+    from veriflow.core import sim_runner
+
+    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_open_surfer = sim_runner.open_surfer
+    calls = []
+
+    try:
+        os.environ["SEMICOLAB_DOCKER"] = "1"
+        sim_runner.open_surfer = lambda wave_path: calls.append(wave_path)
+        wave_path = Path("waves.vcd")
+        sim_runner.launch_waves(wave_path)
+        assert calls == [wave_path]
+    finally:
+        if old_env is None:
+            os.environ.pop("SEMICOLAB_DOCKER", None)
+        else:
+            os.environ["SEMICOLAB_DOCKER"] = old_env
+        sim_runner.open_surfer = old_open_surfer
+
+
+def test_launch_waves_local_uses_surfer_native():
+    """Local mode should launch native Surfer when it is available."""
+    import os
+    import platform as real_platform
+    import shutil as real_shutil
+    from veriflow.core import sim_runner
+
+    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_system = real_platform.system
+    old_which = real_shutil.which
+    old_popen = sim_runner.subprocess.Popen
+    calls = []
+
+    def fake_popen(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+
+    try:
+        os.environ.pop("SEMICOLAB_DOCKER", None)
+        real_platform.system = lambda: "Linux"
+        real_shutil.which = lambda tool: "C:/tools/surfer.exe" if tool == "surfer" else None
+        sim_runner.subprocess.Popen = fake_popen
+
+        wave_path = Path("waves.vcd")
+        sim_runner.launch_waves(wave_path)
+
+        assert calls, "Expected Surfer process launch"
+        assert calls[0][0] == ["C:/tools/surfer.exe", str(wave_path)]
+    finally:
+        if old_env is None:
+            os.environ.pop("SEMICOLAB_DOCKER", None)
+        else:
+            os.environ["SEMICOLAB_DOCKER"] = old_env
+        real_platform.system = old_system
+        real_shutil.which = old_which
+        sim_runner.subprocess.Popen = old_popen
+
+
+def test_launch_waves_local_without_surfer_prints_hint():
+    """Local mode should require Surfer instead of using a legacy fallback."""
+    import os
+    import io
+    import contextlib
+    import shutil as real_shutil
+    from veriflow.core import sim_runner
+
+    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_which = real_shutil.which
+
+    try:
+        os.environ.pop("SEMICOLAB_DOCKER", None)
+        real_shutil.which = lambda tool: None
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            sim_runner.launch_waves(Path("waves.vcd"))
+
+        output = buf.getvalue()
+        assert "Surfer not found in PATH" in output
+        assert ("GTK" + "Wave") not in output
+        assert ("gtk" + "wave") not in output
+    finally:
+        if old_env is None:
+            os.environ.pop("SEMICOLAB_DOCKER", None)
+        else:
+            os.environ["SEMICOLAB_DOCKER"] = old_env
+        real_shutil.which = old_which
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -633,4 +724,7 @@ ALL_TESTS = [
     ("semicolab_false_creates_empty_tb", test_semicolab_false_creates_empty_tb),
     ("semicolab_column_in_tile_index",   test_semicolab_column_in_tile_index),
     ("semicolab_column_in_records",      test_semicolab_column_in_records),
+    ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),
+    ("launch_waves_local_uses_surfer_native", test_launch_waves_local_uses_surfer_native),
+    ("launch_waves_local_without_surfer_prints_hint", test_launch_waves_local_without_surfer_prints_hint),
 ]

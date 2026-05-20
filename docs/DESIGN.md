@@ -186,11 +186,7 @@ Docker mode only. Constructs `http://localhost:7681/?load_url=<vcd_url>` where `
 Priority chain (non-blocking `subprocess.Popen`):
 1. `SEMICOLAB_DOCKER` env var → delegates to `open_surfer()`
 2. `surfer` found in PATH → Surfer native binary
-3. `gtkwave` found in PATH → GTKWave (Windows: applies GDK env vars from OSS CAD Suite root)
-4. Neither found → prints install hint
-
-### `launch_gtkwave(wave_path)`
-Deprecated alias for `launch_waves()`. Retained for backward compatibility.
+3. Not found → prints Surfer install hint
 
 ---
 
@@ -338,9 +334,7 @@ Creates the full database structure. With `--force` overwrites if it already exi
 Main pipeline. `--only-*` flags are internally translated to `skip_*` combinations. `validate_tools()` is only called if at least one tool stage will run. See Pipeline section in SPECS.md.
 
 ### `cmd_waves(db, tile_number, run_id)`
-Resolves run ID (latest if not specified), verifies `waves.vcd` exists, then branches:
-- `SEMICOLAB_DOCKER` set → `open_surfer()` (Surfer WASM URL)
-- otherwise → `launch_waves()` (Surfer native → GTKWave fallback → hint)
+Resolves run ID (latest if not specified), verifies `waves.vcd` exists, then calls `launch_waves()`.
 
 ### `cmd_bump_version(db, tile_number)`
 - Increments version, revision unchanged

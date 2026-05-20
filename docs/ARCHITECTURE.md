@@ -122,7 +122,7 @@ If `--waves` was passed and `waves.vcd` exists, calls `launch_waves()` after fin
 3. If `--run` is given: opens that specific run directory; raises `VeriFlowError` if not found
 4. If `--run` is omitted: scans `runs/` for directories matching `run-NNN`, picks the highest
 5. Verifies `out/sim/waves/waves.vcd` exists
-6. Branches on `SEMICOLAB_DOCKER` env var: `open_surfer()` in Docker, `launch_waves()` locally
+6. Calls `launch_waves()`, which uses Surfer WASM in Docker and native Surfer locally
 
 ---
 
@@ -157,11 +157,10 @@ The previous directory is preserved as read-only history.
 - `run_connectivity_check(...)` — compiles with `iverilog -o NUL/dev/null` using `_inject_tb` with no user TB files; returns `"PASS"` or `"FAIL"`
 - `run_simulation(...)` — compiles into `tempfile.mkdtemp()` (avoids Windows path-with-spaces issues), runs `vvp` from `wave_path.parent` so `$dumpfile("waves.vcd")` lands in the correct directory; returns `("COMPLETED"|"FAILED", {sim_time, seed})`
 
-**Waveform viewer (priority chain):**
+**Waveform viewer:**
 
 - `open_surfer(wave_path)` — Docker mode only; constructs `http://localhost:7681/?load_url=<vcd>` URL and prints it; calls `webbrowser.open()` as best-effort
-- `launch_waves(wave_path)` — priority: (1) `SEMICOLAB_DOCKER` → `open_surfer`; (2) `surfer` in PATH → native Surfer; (3) `gtkwave` in PATH → GTKWave with Windows GDK env vars; (4) prints install hint
-- `launch_gtkwave(wave_path)` — deprecated alias for `launch_waves()`
+- `launch_waves(wave_path)` — priority: (1) `SEMICOLAB_DOCKER` → `open_surfer`; (2) `surfer` in PATH → native Surfer; (3) prints Surfer install hint
 
 ---
 

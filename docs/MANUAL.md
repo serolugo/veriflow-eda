@@ -18,7 +18,7 @@ VeriFlow V1 is an RTL verification framework designed for the multi-project ASIC
 - Rich: `pip install rich`
 - [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) with `iverilog`, `vvp`, and `yosys` in PATH
 - Optional: `pyfiglet` and `terminaltexteffects` for the animated SEMICOLAB banner
-- Optional: `surfer` or `gtkwave` in PATH for waveform viewing
+- Optional: `surfer` in PATH for waveform viewing
 
 ### Verify installation
 ```bash
@@ -316,15 +316,14 @@ VeriFlow opens waveforms using the following priority:
 
 1. **Docker** (`SEMICOLAB_DOCKER` env var) — opens Surfer WASM at `http://localhost:7681` with the VCD preloaded via `?load_url=`. A direct URL is printed to the terminal if `webbrowser.open` cannot open it on the host.
 2. **Surfer native** — if `surfer` is found in PATH, launches it with the VCD path.
-3. **GTKWave fallback** — if `gtkwave` is found in PATH (and Surfer is not).
-4. If neither is found, a hint with the Surfer install URL is printed.
+3. If Surfer is not found, a hint with the Surfer install URL is printed.
 
-### In GTKWave (fallback)
+### In Surfer
 
-1. In the SST panel on the left, expand `tb` → `DUT`
+1. Open the loaded VCD
 2. Select the signals you want to see (`clk`, `arst_n`, `data_reg_a`, etc.)
-3. Click **Append** or **Insert** to add them to the viewer
-4. Press **Ctrl+Shift+F** to zoom to the full simulation range
+3. Add them to the waveform view
+4. Zoom to the full simulation range
 
 ---
 
@@ -425,7 +424,7 @@ C:\Users\<user>\oss-cad-suite\environment.bat
 ```
 
 ### No waveform viewer opens
-VeriFlow tries Surfer first, then GTKWave. Install Surfer from [surfer-project.org](https://surfer-project.org) or ensure GTKWave is in PATH via OSS CAD Suite.
+Install Surfer from [surfer-project.org](https://surfer-project.org) and ensure `surfer` is in PATH.
 
 ### Connectivity FAIL
 Check the log:
@@ -439,5 +438,5 @@ Check the log:
 type database\tiles\<tile_id>\runs\<run-NNN>\out\sim\logs\sim.log
 ```
 
-### GTKWave shows `xxxxxxxx`
+### Waveform shows `xxxxxxxx`
 Uninitialized signals display as `x`. Make sure `arst_n` is active at the start and the DUT initializes its outputs in the reset block.

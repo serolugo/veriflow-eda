@@ -59,7 +59,6 @@ Set in `database/project_config.yaml`. Applies to the entire database.
 
 1. Docker (`SEMICOLAB_DOCKER`) → Surfer WASM at `http://localhost:7681`
 2. `surfer` in PATH → Surfer native
-3. `gtkwave` in PATH → GTKWave fallback
 
 ---
 
