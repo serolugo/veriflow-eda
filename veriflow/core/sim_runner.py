@@ -265,9 +265,8 @@ def launch_waves(wave_path: Path) -> None:
     """Launch waveform viewer for the given VCD file (non-blocking).
 
     Priority:
-      1. Docker  → Surfer WASM (browser URL)
-      2. Local   → Surfer native binary if found in PATH
-      3. Fallback → GTKWave if found in PATH
+      1. Docker → Surfer WASM (browser URL)
+      2. Local  → Surfer native binary if found in PATH
     """
     import os
     import platform
@@ -292,42 +291,7 @@ def launch_waves(wave_path: Path) -> None:
         )
         return
 
-    # Fallback — GTKWave
-    gtkwave_path = shutil.which("gtkwave")
-    if gtkwave_path:
-        if platform.system() == "Windows":
-            env = os.environ.copy()
-            oss_root = Path(gtkwave_path).parent.parent
-            lib_dir = oss_root / "lib"
-            pixbuf_dir = lib_dir / "gdk-pixbuf-2.0" / "2.10.0"
-            loaders_cache = pixbuf_dir / "loaders.cache"
-            if loaders_cache.exists():
-                env["GDK_PIXBUF_MODULE_FILE"] = str(loaders_cache)
-                env["GDK_PIXBUF_MODULEDIR"] = str(pixbuf_dir / "loaders")
-            env["GTK_EXE_PREFIX"] = str(oss_root)
-            env["GTK_DATA_PREFIX"] = str(oss_root)
-            subprocess.Popen(
-                [gtkwave_path, str(wave_path)],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                **_no_window,
-            )
-        else:
-            subprocess.Popen(
-                ["gtkwave", str(wave_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        return
-
-    print("[waves] No waveform viewer found. Install Surfer: https://surfer-project.org")
-
-
-# Keep old name as alias for backward compatibility
-def launch_gtkwave(wave_path: Path) -> None:
-    """Deprecated — use launch_waves() instead."""
-    launch_waves(wave_path)
+    print("[waves] Surfer not found in PATH. Install Surfer: https://surfer-project.org")
 
 
 def _is_unix() -> bool:

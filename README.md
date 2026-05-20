@@ -26,7 +26,8 @@ Lightweight RTL verification and documentation framework for multi-project ASIC 
 ## Requirements
 
 - Python 3.10+
-- [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) — provides `iverilog`, `vvp`, `yosys`, and `gtkwave`
+- [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) — provides `iverilog`, `vvp`, and `yosys`
+- [Surfer](https://surfer-project.org/) — waveform viewer
 - PyYAML: `pip install pyyaml`
 
 ---
@@ -195,7 +196,7 @@ veriflow --db ./my_db run --tile <number> [options]
 | `--only-check` | Run connectivity check only |
 | `--only-sim` | Run simulation only |
 | `--only-synth` | Run synthesis only |
-| `--waves` | Open GTKWave after simulation completes |
+| `--waves` | Open Surfer after simulation completes |
 
 **Pipeline order:** connectivity check → simulation → synthesis → documentation → CSV update
 
@@ -233,7 +234,7 @@ Date:    2026-03-25
 
 ### `waves`
 
-Open GTKWave for a tile's waveform output.
+Open Surfer for a tile's waveform output.
 
 ```bash
 veriflow --db ./my_db waves --tile <number> [--run run-NNN]
@@ -327,7 +328,7 @@ python -m veriflow.tests.runner
 
 - [Icarus Verilog](http://iverilog.icarus.com/)
 - [Yosys](https://yosyshq.net/yosys/)
-- [GTKWave](http://gtkwave.sourceforge.net/)
+- [Surfer](https://surfer-project.org/)
 - [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)
 
 ---

@@ -47,14 +47,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Waveform viewer priority chain
 - **Docker** (`SEMICOLAB_DOCKER` env var) → Surfer WASM at `http://localhost:7681` with `?load_url=` VCD preload (`open_surfer()`)
 - **Local — Surfer native** → if `surfer` found in PATH, opened with `subprocess.Popen`
-- **Local — GTKWave fallback** → if `gtkwave` found in PATH; Windows-specific GDK environment variables applied
-- `launch_gtkwave()` retained as deprecated alias for `launch_waves()`
+- If Surfer is not found locally, VeriFlow prints the Surfer install hint.
 
 ### sim_runner.py improvements
 - `_read_user_test` now reads from `tb_tile.v` directly (same file as wrapper) instead of separate files
 - `_prepare_universal_tb` handles Universal mode testbenches
 - `run_simulation` accepts `semicolab` flag and branches accordingly
-- Removed `_launch_gtkwave_docker()` (X11/VNC stack dropped from TileBench)
+- Removed legacy waveform launch paths (X11/VNC stack dropped from TileBench)
 
 ### run.py improvements
 - All console output now uses `ui/output` Rich helpers

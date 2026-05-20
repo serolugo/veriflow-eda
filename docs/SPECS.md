@@ -21,7 +21,7 @@ The system is composed of three internal components orchestrated through a singl
 | Persistence | CSV + YAML (no database) |
 | Simulator | Icarus Verilog (`iverilog`, `vvp`) |
 | Synthesizer | Yosys |
-| Waveform viewer | Surfer (primary), GTKWave (fallback) |
+| Waveform viewer | Surfer |
 | Distribution | OSS CAD Suite |
 | Compatibility | Windows, Linux, macOS |
 | CI/CD | GitHub Actions compatible |
@@ -124,7 +124,7 @@ python veriflow/cli.py --db <path> <command> [options]
 | `init [--force]` | Initialize the database |
 | `create-tile` | Create a new tile |
 | `run --tile XXXX [flags]` | Execute the verification pipeline |
-| `waves --tile XXXX [--run run-NNN]` | Open waveform viewer (Surfer or GTKWave) |
+| `waves --tile XXXX [--run run-NNN]` | Open waveform viewer (Surfer) |
 | `bump-version --tile XXXX` | Increment tile version |
 | `bump-revision --tile XXXX` | Increment tile revision |
 

@@ -253,7 +253,7 @@ def cmd_run(
         tile_index_path=db / "tile_index.csv",
     )
 
-    # ── 18. Launch GTKWave if requested
+    # ── 18. Launch Surfer if requested
     if waves and wave_path.exists():
         
         launch_waves(wave_path)
