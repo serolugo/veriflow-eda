@@ -21,7 +21,7 @@ The system is composed of three internal components orchestrated through a singl
 | Persistence | CSV + YAML (no database) |
 | Simulator | Icarus Verilog (`iverilog`, `vvp`) |
 | Synthesizer | Yosys |
-| Waveform viewer | GTKWave |
+| Waveform viewer | Surfer (primary), GTKWave (fallback) |
 | Distribution | OSS CAD Suite |
 | Compatibility | Windows, Linux, macOS |
 | CI/CD | GitHub Actions compatible |
@@ -62,6 +62,12 @@ veriflow/
 │   ├── ip_tile.v
 │   ├── tb_base.v
 │   └── tb_tasks.v
+├── ui/                      # Terminal UI and styled output
+│   ├── banner.py            # SEMICOLAB banner (pyfiglet + TerminalTextEffects)
+│   ├── output.py            # Styled output helpers (Rich)
+│   ├── theme.py             # Central color palette and Rich theme
+│   ├── themes.py            # 16 Textual-compatible color palettes
+│   └── tui.py               # Redirect stub to tilebench TUI
 └── tests/
     ├── runner.py
     └── test_veriflow.py
@@ -118,7 +124,7 @@ python veriflow/cli.py --db <path> <command> [options]
 | `init [--force]` | Initialize the database |
 | `create-tile` | Create a new tile |
 | `run --tile XXXX [flags]` | Execute the verification pipeline |
-| `waves --tile XXXX [--run run-NNN]` | Open GTKWave |
+| `waves --tile XXXX [--run run-NNN]` | Open waveform viewer (Surfer or GTKWave) |
 | `bump-version --tile XXXX` | Increment tile version |
 | `bump-revision --tile XXXX` | Increment tile revision |
 
@@ -132,7 +138,7 @@ python veriflow/cli.py --db <path> <command> [options]
 | `--only-check` | Run connectivity check only |
 | `--only-sim` | Run simulation only |
 | `--only-synth` | Run synthesis only |
-| `--waves` | Launch GTKWave when done |
+| `--waves` | Launch waveform viewer when done |
 
 ---
 
@@ -178,6 +184,7 @@ id_prefix: ""
 project_name: ""
 repo: ""
 description: |
+semicolab: true   # false → Universal mode (skip connectivity check)
 ```
 
 ### `tile_config.yaml`
@@ -214,10 +221,11 @@ tile_number, tile_id, tile_name, tile_author, version, revision
 ```
 Tile_ID, Run_ID, Date, Author, Objective, Status,
 Version, Revision, Connectivity, Simulation, Synthesis,
-Tool_Version, Main_Change, Run_Path, Tags
+Tool_Version, Main_Change, Run_Path, Tags, Semicolab
 ```
 - One row appended per run
 - `Run_Path` relative to `tiles/`
+- `Semicolab` is `"true"` or `"false"` (reflects the mode at the time of the run)
 - Queryable by an LLM for historical analysis
 
 ---
