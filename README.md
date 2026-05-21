@@ -1,10 +1,10 @@
 # VeriFlow
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python">
-  <img src="https://img.shields.io/badge/icarus%20verilog-required-purple" alt="Icarus Verilog">
-  <img src="https://img.shields.io/badge/yosys-required-orange" alt="Yosys">
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <a href="LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
+  <a href="http://iverilog.icarus.com/"><img src="https://img.shields.io/badge/icarus%20verilog-required-purple" alt="Icarus Verilog"></a>
+  <a href="https://yosyshq.net/yosys/"><img src="https://img.shields.io/badge/yosys-required-orange" alt="Yosys"></a>
 </p>
 
 Lightweight RTL verification and documentation framework for multi-project ASIC chip design. Automates connectivity check, simulation, and synthesis for individual hardware tiles using open-source tooling, and generates structured run records per execution.
