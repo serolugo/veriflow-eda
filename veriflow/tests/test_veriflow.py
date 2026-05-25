@@ -1315,6 +1315,35 @@ def test_synthesis_stage_skipped_returns_stage_result():
     assert result.metrics is None
 
 
+# ── PipelineBuilder unit tests ────────────────────────────────────────────────
+
+def test_build_default_pipeline_returns_runner():
+    from veriflow.core.pipeline import PipelineRunner
+    from veriflow.core.pipeline_builder import build_default_pipeline
+    runner = build_default_pipeline(
+        rtl_files=[],
+        tb_files=[],
+        tb_base_path=None,
+        tb_tasks_path=None,
+        top_module="my_tile",
+        has_tb=False,
+    )
+    assert isinstance(runner, PipelineRunner)
+
+
+def test_build_default_pipeline_stage_order():
+    from veriflow.core.pipeline_builder import build_default_pipeline
+    runner = build_default_pipeline(
+        rtl_files=[],
+        tb_files=[],
+        tb_base_path=None,
+        tb_tasks_path=None,
+        top_module="my_tile",
+        has_tb=False,
+    )
+    assert [s.name for s in runner.stages] == ["connectivity", "simulation", "synthesis"]
+
+
 # ── PipelineRunner unit tests ─────────────────────────────────────────────────
 
 def test_pipeline_runner_executes_in_order():
@@ -1515,6 +1544,8 @@ ALL_TESTS = [
     ("stage_result_no_filesystem_access",           test_stage_result_no_filesystem_access),
     ("stage_result_skipped_omits_empty_fields",     test_stage_result_skipped_omits_empty_fields),
     ("stage_result_error_field_included",           test_stage_result_error_field_included),
+    ("build_default_pipeline_returns_runner",        test_build_default_pipeline_returns_runner),
+    ("build_default_pipeline_stage_order",          test_build_default_pipeline_stage_order),
     ("pipeline_stage_not_implemented",              test_pipeline_stage_not_implemented),
     ("synthesis_stage_is_pipeline_stage",           test_synthesis_stage_is_pipeline_stage),
     ("synthesis_stage_skipped_returns_stage_result",test_synthesis_stage_skipped_returns_stage_result),

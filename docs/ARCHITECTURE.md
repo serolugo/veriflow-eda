@@ -123,6 +123,18 @@ If `--waves` was passed and `waves.vcd` exists, calls `launch_waves()` after fin
 
 ---
 
+### `core/pipeline_builder.py` — Default pipeline construction
+
+`build_default_pipeline(*, rtl_files, tb_files, tb_base_path, tb_tasks_path, top_module, has_tb) → PipelineRunner`
+
+Centralises construction of the fixed three-stage pipeline (connectivity → simulation → synthesis).  Returns a `PipelineRunner` whose `.stages` list holds the three stage instances in order.
+
+`commands/run.py` calls this once after sources are copied and tb paths are resolved, then unpacks the returned stages and runs each individually via single-stage `PipelineRunner` calls so that the connectivity-FAIL early-exit logic is preserved.
+
+This is an internal construction helper.  The pipeline order and stage set are fixed; there is no plugin registry, YAML config, or dynamic dispatch.
+
+---
+
 ### `commands/waves.py` — Waveform viewer
 
 `cmd_waves(db, tile_number, run_id)`:
