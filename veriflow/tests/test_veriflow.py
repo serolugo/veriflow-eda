@@ -966,6 +966,65 @@ def test_stage_result_error_field_included():
     assert d["error"] == err
 
 
+# ── api.run_tile tests ────────────────────────────────────────────────────────
+
+def test_api_run_tile_returns_dict():
+    """api.run_tile exists and returns a dict for a smoke run (all stages skipped)."""
+    import shutil, tempfile
+    from veriflow import api
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        result = api.run_tile(
+            db, "0001",
+            skip_connectivity=True, skip_sim=True, skip_synth=True,
+        )
+        assert isinstance(result, dict), f"Expected dict, got {type(result)}"
+        assert result["schema_version"] == "1.1"
+        assert "stages" in result
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_api_run_tile_propagates_veriflow_error():
+    """api.run_tile propagates VeriFlowError from cmd_run."""
+    import shutil, tempfile
+    from veriflow import api
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "empty_db"
+        db.mkdir()
+        raised = False
+        try:
+            api.run_tile(db, "0001", skip_connectivity=True, skip_sim=True, skip_synth=True)
+        except VeriFlowError:
+            raised = True
+        assert raised, "Expected VeriFlowError to propagate from api.run_tile"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_api_run_tile_rejects_waves_non_interactive():
+    """api.run_tile raises VF_NON_INTERACTIVE_VIEWER_DISABLED when waves=True and non_interactive=True."""
+    from veriflow import api
+    from veriflow.core import VeriFlowError
+    raised = False
+    try:
+        api.run_tile("./fake", "0001", waves=True, non_interactive=True)
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_NON_INTERACTIVE_VIEWER_DISABLED"
+        assert e.exit_code == 2
+    assert raised, "Expected VF_NON_INTERACTIVE_VIEWER_DISABLED"
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 def test_cli_non_interactive_no_command():
@@ -1469,4 +1528,7 @@ ALL_TESTS = [
     ("connectivity_stage_is_pipeline_stage",              test_connectivity_stage_is_pipeline_stage),
     ("connectivity_stage_skipped_returns_stage_result",   test_connectivity_stage_skipped_returns_stage_result),
     ("connectivity_fail_still_finalizes_run",             test_connectivity_fail_still_finalizes_run),
+    ("api_run_tile_returns_dict",                         test_api_run_tile_returns_dict),
+    ("api_run_tile_propagates_veriflow_error",            test_api_run_tile_propagates_veriflow_error),
+    ("api_run_tile_rejects_waves_non_interactive",        test_api_run_tile_rejects_waves_non_interactive),
 ]
