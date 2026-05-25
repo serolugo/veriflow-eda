@@ -28,6 +28,8 @@ from veriflow.generators.notes import generate_notes
 from veriflow.generators.readme import generate_readme
 from veriflow.generators.results import generate_results_json
 from veriflow.generators.summary import generate_summary
+from veriflow.models.run_context import RunContext
+from veriflow.models.stage_result import StageResult
 from veriflow.models.tile_config import TileConfig
 
 
@@ -125,10 +127,24 @@ def cmd_run(
     run_id = get_next_run_id(runs_dir)
     today_str = date.today().isoformat()
 
+    ctx = RunContext(
+        db_path=db,
+        tile_id=tile_id,
+        run_id=run_id,
+        tile_dir=tile_dir,
+        run_dir=runs_dir / run_id,
+        tile_config_path=tile_cfg_path,
+        project_config_path=project_cfg_path,
+        semicolab=semicolab,
+        skip_connectivity=skip_check,
+        skip_sim=skip_sim,
+        skip_synth=skip_synth,
+    )
+
     print_run_header(db, tile_id, run_id)
 
     # ── 5. Create run folder structure
-    run_dir = runs_dir / run_id
+    run_dir = ctx.run_dir
     for sub in (
         "src/rtl", "src/tb",
         "out/connectivity/logs",
@@ -180,10 +196,10 @@ def cmd_run(
     sim_parsed: dict = {"sim_time": "", "seed": ""}
     synth_parsed: dict = {"cells": "", "warnings": "0", "errors": "0", "has_latches": False}
 
-    conn_log_path = run_dir / "out" / "connectivity" / "logs" / "connectivity.log"
-    sim_log_path = run_dir / "out" / "sim" / "logs" / "sim.log"
-    wave_path = run_dir / "out" / "sim" / "waves" / "waves.vcd"
-    synth_log_path = run_dir / "out" / "synth" / "logs" / "synth.log"
+    conn_log_path = ctx.impl_dir / "logs" / "connectivity.log"
+    sim_log_path = ctx.sim_dir / "logs" / "sim.log"
+    wave_path = ctx.sim_dir / "waves" / "waves.vcd"
+    synth_log_path = ctx.synth_dir / "logs" / "synth.log"
 
     # ── 8. Connectivity check
     if not skip_check:
@@ -200,8 +216,7 @@ def cmd_run(
         if conn_result == "FAIL":
             print_fail_detail("Check failed — pipeline stopped", conn_log_path)
             return _finalize_run(
-                db=db, run_dir=run_dir, tile_dir=tile_dir,
-                tile_id=tile_id, run_id=run_id, today_str=today_str,
+                ctx=ctx, today_str=today_str,
                 tile_config=tile_config, run_config=run_config,
                 id_version=id_version, id_revision=id_revision,
                 rtl_files=rtl_files, tb_files=tb_files,
@@ -210,8 +225,6 @@ def cmd_run(
                 iverilog_version=iverilog_version,
                 conn_log_path=conn_log_path, sim_log_path=sim_log_path,
                 synth_log_path=synth_log_path, wave_path=wave_path,
-                tile_index_path=db / "tile_index.csv",
-                semicolab=semicolab,
             )
 
     # ── 9. Simulation
@@ -243,18 +256,15 @@ def cmd_run(
 
     # ── 11–17. Finalize
     run_result = _finalize_run(
-        db=db, run_dir=run_dir, tile_dir=tile_dir,
-        tile_id=tile_id, run_id=run_id, today_str=today_str,
+        ctx=ctx, today_str=today_str,
         tile_config=tile_config, run_config=run_config,
         id_version=id_version, id_revision=id_revision,
         rtl_files=rtl_files, tb_files=tb_files,
         conn_result=conn_result, sim_result=sim_result, synth_result=synth_result,
-        semicolab=semicolab,
         sim_parsed=sim_parsed, synth_parsed=synth_parsed,
         iverilog_version=iverilog_version,
         conn_log_path=conn_log_path, sim_log_path=sim_log_path,
         synth_log_path=synth_log_path, wave_path=wave_path,
-        tile_index_path=db / "tile_index.csv",
     )
 
     # ── 18. Launch Surfer if requested
@@ -288,11 +298,7 @@ def _rel(db: Path, path: Path) -> str:
 
 
 def _finalize_run(
-    db: Path,
-    run_dir: Path,
-    tile_dir: Path,
-    tile_id: str,
-    run_id: str,
+    ctx: RunContext,
     today_str: str,
     tile_config: TileConfig,
     run_config: TileConfig,
@@ -310,12 +316,10 @@ def _finalize_run(
     sim_log_path: Path,
     synth_log_path: Path,
     wave_path: Path,
-    tile_index_path: Path,
-    semicolab: bool = True,
 ) -> dict:
     """Generate all documentation, update CSV, print summary."""
 
-    tiles_dir = db / "tiles"
+    tiles_dir = ctx.db_path / "tiles"
 
     def rel(p: Path) -> str:
         try:
@@ -333,8 +337,8 @@ def _finalize_run(
 
     # ── 11. Generate manifest.yaml
     manifest_data = {
-        "tile_id": tile_id,
-        "run_id": run_id,
+        "tile_id": ctx.tile_id,
+        "run_id": ctx.run_id,
         "date": today_str,
         "author": run_config.run_author,
         "objective": run_config.objective,
@@ -375,36 +379,34 @@ def _finalize_run(
         },
     }
     from veriflow.generators.manifest import generate_manifest
-    generate_manifest(manifest_data, run_dir / "manifest.yaml")
+    generate_manifest(manifest_data, ctx.manifest_path)
 
     # ── 12. Generate notes.md
     from veriflow.generators.notes import generate_notes
-    generate_notes(tile_id, tile_config, run_config, run_dir / "notes.md")
-    
+    generate_notes(ctx.tile_id, tile_config, run_config, ctx.notes_path)
 
     # ── 13. Regenerate README.md
     from veriflow.generators.readme import generate_readme
-    generate_readme(tile_id, tile_config, tile_dir / "README.md")
-    
+    generate_readme(ctx.tile_id, tile_config, ctx.tile_dir / "README.md")
 
     # ── 14. Update works/
-    works_rtl = tile_dir / "works" / "rtl"
-    works_tb = tile_dir / "works" / "tb"
+    works_rtl = ctx.tile_dir / "works" / "rtl"
+    works_tb = ctx.tile_dir / "works" / "tb"
     for f in works_rtl.glob("*.v"):
         f.unlink()
     for f in works_tb.glob("*.v"):
         f.unlink()
-    copy_flat(run_dir / "src" / "rtl", works_rtl)
-    if (run_dir / "src" / "tb").exists():
-        copy_flat(run_dir / "src" / "tb", works_tb)
-    
+    copy_flat(ctx.src_dir / "rtl", works_rtl)
+    if (ctx.src_dir / "tb").exists():
+        copy_flat(ctx.src_dir / "tb", works_tb)
 
     # ── 15. Append row to records.csv
-    run_path_rel = rel(run_dir)
+    run_path_rel = rel(ctx.run_dir)
     from veriflow.core.csv_store import append_record
-    append_record(db / "records.csv", {
-        "Tile_ID": tile_id,
-        "Run_ID": run_id,
+    records_csv = ctx.db_path / "records.csv"
+    append_record(records_csv, {
+        "Tile_ID": ctx.tile_id,
+        "Run_ID": ctx.run_id,
         "Date": today_str,
         "Author": run_config.run_author,
         "Objective": run_config.objective,
@@ -418,16 +420,15 @@ def _finalize_run(
         "Main_Change": run_config.main_change,
         "Run_Path": run_path_rel,
         "Tags": run_config.tags,
-        "Semicolab": "true" if semicolab else "false",
+        "Semicolab": "true" if ctx.semicolab else "false",
     })
-    
 
     # ── 16. Generate and save summary.md
     from veriflow.generators.summary import generate_summary
     summary_text = generate_summary(
-        tile_id=tile_id,
+        tile_id=ctx.tile_id,
         tile_name=tile_config.tile_name,
-        run_id=run_id,
+        run_id=ctx.run_id,
         date=today_str,
         connectivity=conn_result,
         simulation=sim_result,
@@ -437,49 +438,65 @@ def _finalize_run(
         errors=synth_parsed.get("errors", "0"),
         sim_time=sim_parsed.get("sim_time", ""),
         precheck_status=conn_result,
-        output_path=run_dir / "summary.md",
+        output_path=ctx.summary_path,
     )
 
     # ── 16b. Generate results.json (written after all other artifacts exist)
-    records_csv = db / "records.csv"
-    readme_path = tile_dir / "README.md"
+    readme_path = ctx.tile_dir / "README.md"
+
+    # Build per-stage metrics dicts (only non-trivial values)
+    sim_metrics: dict = {}
+    if sim_parsed.get("sim_time"):
+        sim_metrics["sim_time"] = sim_parsed["sim_time"]
+    if sim_parsed.get("seed"):
+        sim_metrics["seed"] = sim_parsed["seed"]
+    synth_metrics: dict = {
+        "cells": synth_parsed.get("cells", ""),
+        "warnings": synth_parsed.get("warnings", "0"),
+        "errors": synth_parsed.get("errors", "0"),
+        "has_latches": synth_parsed.get("has_latches", False),
+    }
+
     run_result: dict = {
-        "schema_version": "1.0",
-        "tile_id": tile_id,
-        "run_id": run_id,
+        "schema_version": "1.1",
+        "tile_id": ctx.tile_id,
+        "run_id": ctx.run_id,
         "date": today_str,
         "status": status,
-        "semicolab": semicolab,
+        "semicolab": ctx.semicolab,
         "stages": {
-            "connectivity": {
-                "tool": "iverilog",
-                "status": conn_result,
-            },
-            "simulation": {
-                "tool": "iverilog/vvp",
-                "status": sim_result,
-                "sim_time": sim_parsed.get("sim_time", ""),
-                "seed": sim_parsed.get("seed", ""),
-            },
-            "synthesis": {
-                "tool": "yosys",
-                "status": synth_result,
-                "cells": synth_parsed.get("cells", ""),
-                "warnings": synth_parsed.get("warnings", "0"),
-                "errors": synth_parsed.get("errors", "0"),
-                "has_latches": synth_parsed.get("has_latches", False),
-            },
+            "connectivity": StageResult(
+                name="connectivity",
+                status=conn_result,
+                tool="iverilog",
+                log_paths=conn_logs or None,
+            ).to_dict(),
+            "simulation": StageResult(
+                name="simulation",
+                status=sim_result,
+                tool="iverilog/vvp",
+                log_paths=sim_logs or None,
+                artifacts={"wave": wave_files} if wave_files else None,
+                metrics=sim_metrics or None,
+            ).to_dict(),
+            "synthesis": StageResult(
+                name="synthesis",
+                status=synth_result,
+                tool="yosys",
+                log_paths=synth_logs or None,
+                metrics=synth_metrics,
+            ).to_dict(),
         },
         "sources": {
             "rtl": [rel(f) for f in rtl_files],
             "tb": [rel(f) for f in tb_files],
         },
         "artifacts": {
-            "manifest": [rel(run_dir / "manifest.yaml")],
-            "summary": [rel(run_dir / "summary.md")],
-            "notes": [rel(run_dir / "notes.md")],
+            "manifest": [rel(ctx.manifest_path)],
+            "summary": [rel(ctx.summary_path)],
+            "notes": [rel(ctx.notes_path)],
             "readme": [rel(readme_path)] if readme_path.exists() else [],
-            "records": [records_csv.relative_to(db).as_posix()] if records_csv.exists() else [],
+            "records": [records_csv.relative_to(ctx.db_path).as_posix()] if records_csv.exists() else [],
             "connectivity_log": conn_logs,
             "sim_log": sim_logs,
             "synth_log": synth_logs,
@@ -487,7 +504,7 @@ def _finalize_run(
         },
         "error": None,
     }
-    generate_results_json(run_result, run_dir / "results.json")
+    generate_results_json(run_result, ctx.results_path)
 
     # ── 17. Print summary to console
     print_section("Results")
@@ -496,6 +513,6 @@ def _finalize_run(
     cells_detail = str(synth_parsed.get("cells", "")) if synth_parsed.get("cells") else ""
     print_status("Synthesis",     synth_result, cells_detail)
 
-    print_done(f"Run complete  ·  [id]{tile_id}[/id]  ·  [id]{run_id}[/id]  ·  status: {status}")
+    print_done(f"Run complete  ·  [id]{ctx.tile_id}[/id]  ·  [id]{ctx.run_id}[/id]  ·  status: {status}")
 
     return run_result

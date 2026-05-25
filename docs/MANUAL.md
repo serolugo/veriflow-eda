@@ -481,7 +481,7 @@ Every `run` command writes `results.json` to the run directory alongside `manife
 
 | Field | Description |
 |---|---|
-| `schema_version` | Document schema version (`"1.0"`) |
+| `schema_version` | Document schema version (`"1.1"`) |
 | `tile_id` | Full tile identifier |
 | `run_id` | Run identifier (`run-NNN`) |
 | `date` | ISO 8601 date |
@@ -496,16 +496,28 @@ Every `run` command writes `results.json` to the run directory alongside `manife
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tile_id": "MST130-01-26032500010101",
   "run_id": "run-001",
   "date": "2026-03-25",
   "status": "PASS",
   "semicolab": true,
   "stages": {
-    "connectivity": { "tool": "iverilog", "status": "PASS" },
-    "simulation":   { "tool": "iverilog/vvp", "status": "COMPLETED", "sim_time": "115 ns", "seed": "" },
-    "synthesis":    { "tool": "yosys", "status": "PASS", "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+    "connectivity": {
+      "tool": "iverilog", "status": "PASS",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"]
+    },
+    "simulation": {
+      "tool": "iverilog/vvp", "status": "COMPLETED",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+      "artifacts": { "wave": ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"] },
+      "metrics": { "sim_time": "115 ns" }
+    },
+    "synthesis": {
+      "tool": "yosys", "status": "PASS",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/synth/logs/synth.log"],
+      "metrics": { "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+    }
   },
   "sources": {
     "rtl": ["tiles/MST130-01-26032500010101/runs/run-001/src/rtl/adder_tile.v"],
@@ -516,11 +528,14 @@ Every `run` command writes `results.json` to the run directory alongside `manife
     "summary":          ["tiles/MST130-01-26032500010101/runs/run-001/summary.md"],
     "connectivity_log": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"],
     "sim_log":          ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+    "synth_log":        ["tiles/MST130-01-26032500010101/runs/run-001/out/synth/logs/synth.log"],
     "wave":             ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"]
   },
   "error": null
 }
 ```
+
+> **`schema_version` and forward compatibility:** `schema_version` will be incremented when the structure of `results.json` changes. Consumers that parse this file programmatically should read `schema_version` first and handle unknown versions gracefully rather than assuming a fixed shape.
 
 ### 13.5 `--json` CLI output
 
@@ -531,7 +546,7 @@ When `--json` is active the CLI emits one JSON object to stdout after the comman
 {
   "status": "SUCCESS",
   "command": "run",
-  "run_result": { "schema_version": "1.0", "tile_id": "...", ... }
+  "run_result": { "schema_version": "1.1", "tile_id": "...", ... }
 }
 ```
 

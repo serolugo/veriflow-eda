@@ -784,7 +784,7 @@ def test_cli_json_run_success():
         assert data["status"] == "SUCCESS"
         assert data["command"] == "run"
         assert "run_result" in data
-        assert data["run_result"]["schema_version"] == "1.0"
+        assert data["run_result"]["schema_version"] == "1.1"
         assert "stages" in data["run_result"]
     finally:
         shutil.rmtree(tmp)
@@ -831,6 +831,139 @@ def test_cli_json_unhandled_exception():
         assert "synthetic failure" in data["error"]["message"]
     finally:
         shutil.rmtree(tmp)
+
+
+# ── RunContext unit tests ─────────────────────────────────────────────────────
+
+def test_run_context_property_paths():
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "TST-01-260101000101"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db,
+        tile_id="TST-01-260101000101",
+        run_id="run-001",
+        tile_dir=tile_dir,
+        run_dir=run_dir,
+        tile_config_path=db / "config" / "tile_0001" / "tile_config.yaml",
+        project_config_path=db / "project_config.yaml",
+        semicolab=True,
+        skip_connectivity=False,
+        skip_sim=False,
+        skip_synth=False,
+    )
+    assert ctx.src_dir == run_dir / "src"
+    assert ctx.out_dir == run_dir / "out"
+    assert ctx.sim_dir == run_dir / "out" / "sim"
+    assert ctx.synth_dir == run_dir / "out" / "synth"
+    assert ctx.impl_dir == run_dir / "out" / "connectivity"
+    assert ctx.manifest_path == run_dir / "manifest.yaml"
+    assert ctx.summary_path == run_dir / "summary.md"
+    assert ctx.notes_path == run_dir / "notes.md"
+    assert ctx.results_path == run_dir / "results.json"
+
+
+def test_run_context_uses_pathlib():
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=True,
+    )
+    for prop in (ctx.src_dir, ctx.out_dir, ctx.sim_dir, ctx.synth_dir,
+                 ctx.impl_dir, ctx.manifest_path, ctx.summary_path,
+                 ctx.notes_path, ctx.results_path):
+        assert isinstance(prop, Path), f"Expected Path, got {type(prop)}"
+
+
+def test_run_context_no_file_creation():
+    import tempfile, shutil
+    from veriflow.models.run_context import RunContext
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        run_dir = tmp / "tiles" / "X" / "runs" / "run-001"
+        ctx = RunContext(
+            db_path=tmp, tile_id="X", run_id="run-001",
+            tile_dir=tmp / "tiles" / "X",
+            run_dir=run_dir,
+            tile_config_path=tmp / "config" / "tile_config.yaml",
+            project_config_path=tmp / "project_config.yaml",
+            semicolab=True, skip_connectivity=False,
+            skip_sim=False, skip_synth=False,
+        )
+        _ = ctx.src_dir
+        _ = ctx.manifest_path
+        _ = ctx.results_path
+        assert not run_dir.exists(), "RunContext must not create directories on access"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── StageResult unit tests ────────────────────────────────────────────────────
+
+def test_stage_result_minimal_to_dict():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="connectivity", status="PASS", tool="iverilog")
+    d = sr.to_dict()
+    assert d["tool"] == "iverilog"
+    assert d["status"] == "PASS"
+    assert "logs" not in d
+    assert "artifacts" not in d
+    assert "metrics" not in d
+    assert "error" not in d
+
+
+def test_stage_result_with_logs_artifacts_metrics():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(
+        name="synthesis",
+        status="PASS",
+        tool="yosys",
+        log_paths=["tiles/x/runs/run-001/out/synth/logs/synth.log"],
+        artifacts={"report": ["tiles/x/runs/run-001/out/synth/reports/report.txt"]},
+        metrics={"cells": "42", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    d = sr.to_dict()
+    assert d["tool"] == "yosys"
+    assert d["status"] == "PASS"
+    assert d["logs"] == ["tiles/x/runs/run-001/out/synth/logs/synth.log"]
+    assert d["artifacts"] == {"report": ["tiles/x/runs/run-001/out/synth/reports/report.txt"]}
+    assert d["metrics"]["cells"] == "42"
+    assert d["metrics"]["has_latches"] is False
+    assert "error" not in d
+
+
+def test_stage_result_no_filesystem_access():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="simulation", status="SKIPPED")
+    d = sr.to_dict()
+    assert d["status"] == "SKIPPED"
+    assert "tool" not in d
+    assert "logs" not in d
+
+
+def test_stage_result_skipped_omits_empty_fields():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="synthesis", status="SKIPPED", tool="yosys", log_paths=[])
+    d = sr.to_dict()
+    assert "logs" not in d, "Empty log_paths should be omitted"
+    assert "artifacts" not in d
+    assert "metrics" not in d
+
+
+def test_stage_result_error_field_included():
+    from veriflow.models.stage_result import StageResult
+    err = {"code": "VF_ERROR", "message": "tool crashed"}
+    sr = StageResult(name="sim", status="FAIL", error=err)
+    d = sr.to_dict()
+    assert d["error"] == err
 
 
 # ── registry ──────────────────────────────────────────────────────────────────
@@ -1054,4 +1187,12 @@ ALL_TESTS = [
     ("cli_non_interactive_run_succeeds",            test_cli_non_interactive_run_succeeds),
     ("cli_non_interactive_waves_command_rejected",  test_cli_non_interactive_waves_command_rejected),
     ("cli_non_interactive_run_waves_rejected",      test_cli_non_interactive_run_waves_rejected),
+    ("run_context_property_paths",                  test_run_context_property_paths),
+    ("run_context_uses_pathlib",                    test_run_context_uses_pathlib),
+    ("run_context_no_file_creation",                test_run_context_no_file_creation),
+    ("stage_result_minimal_to_dict",                test_stage_result_minimal_to_dict),
+    ("stage_result_with_logs_artifacts_metrics",    test_stage_result_with_logs_artifacts_metrics),
+    ("stage_result_no_filesystem_access",           test_stage_result_no_filesystem_access),
+    ("stage_result_skipped_omits_empty_fields",     test_stage_result_skipped_omits_empty_fields),
+    ("stage_result_error_field_included",           test_stage_result_error_field_included),
 ]

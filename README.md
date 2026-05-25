@@ -293,16 +293,28 @@ Every `run` command writes `results.json` into the run directory alongside `mani
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tile_id": "MST130-01-26032500010101",
   "run_id": "run-001",
   "date": "2026-03-25",
   "status": "PASS",
   "semicolab": true,
   "stages": {
-    "connectivity": { "tool": "iverilog", "status": "PASS" },
-    "simulation":   { "tool": "iverilog/vvp", "status": "COMPLETED", "sim_time": "115 ns", "seed": "" },
-    "synthesis":    { "tool": "yosys", "status": "PASS", "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+    "connectivity": {
+      "tool": "iverilog", "status": "PASS",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"]
+    },
+    "simulation": {
+      "tool": "iverilog/vvp", "status": "COMPLETED",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+      "artifacts": { "wave": ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"] },
+      "metrics": { "sim_time": "115 ns" }
+    },
+    "synthesis": {
+      "tool": "yosys", "status": "PASS",
+      "logs": ["tiles/MST130-01-26032500010101/runs/run-001/out/synth/logs/synth.log"],
+      "metrics": { "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+    }
   },
   "sources": {
     "rtl": ["tiles/MST130-01-26032500010101/runs/run-001/src/rtl/adder_tile.v"],
@@ -313,6 +325,7 @@ Every `run` command writes `results.json` into the run directory alongside `mani
     "summary":          ["tiles/MST130-01-26032500010101/runs/run-001/summary.md"],
     "connectivity_log": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"],
     "sim_log":          ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+    "synth_log":        ["tiles/MST130-01-26032500010101/runs/run-001/out/synth/logs/synth.log"],
     "wave":             ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"]
   },
   "error": null
@@ -320,6 +333,8 @@ Every `run` command writes `results.json` into the run directory alongside `mani
 ```
 
 All paths in `results.json` are relative to the database root — no absolute OS-specific paths are stored. The file is identical in content on Windows and Linux.
+
+`schema_version` is incremented when the structure of `results.json` changes. Consumers parsing this file programmatically should read `schema_version` first and handle unknown versions gracefully.
 
 ### `--json` mode
 
