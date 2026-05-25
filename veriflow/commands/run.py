@@ -15,8 +15,9 @@ from veriflow.ui.output import (
 from veriflow.core.copier import copy_flat
 from veriflow.core.csv_store import append_record, get_tile_row
 from veriflow.core.run_id import get_next_run_id
-from veriflow.core.sim_runner import launch_waves, run_connectivity_check, run_simulation
+from veriflow.core.sim_runner import launch_waves, run_connectivity_check
 from veriflow.core.pipeline import PipelineRunner
+from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
 from veriflow.core.validator import (
     detect_iverilog_version,
@@ -232,16 +233,19 @@ def cmd_run(
     if not skip_sim and has_tb:
         print_section("Simulation")
         print_status("Simulation", "RUN")
-        sim_result, sim_parsed = run_simulation(
+    _sim_sr = PipelineRunner([
+        SimulationStage(
             rtl_files=rtl_files,
             tb_files=tb_files,
-            tb_base_path=tb_base_path,        # None in universal mode
-            tb_tasks_path=tb_tasks_path,      # None in universal mode
+            tb_base_path=tb_base_path,
+            tb_tasks_path=tb_tasks_path,
             top_module=tile_config.top_module,
-            sim_log_path=sim_log_path,
-            wave_path=wave_path,
-            semicolab=semicolab,
-        )
+            has_tb=has_tb,
+        ),
+    ]).run(ctx)["simulation"]
+    sim_result = _sim_sr.status
+    sim_parsed = dict(_sim_sr.metrics) if _sim_sr.metrics else {"sim_time": "", "seed": ""}
+    if not skip_sim and has_tb:
         print_status("Simulation", sim_result)
 
     # ── 10. Synthesis

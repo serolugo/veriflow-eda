@@ -1245,6 +1245,85 @@ def test_pipeline_runner_propagates_veriflow_error():
     assert raised, "PipelineRunner must propagate VeriFlowError"
 
 
+# ── SimulationStage unit tests ────────────────────────────────────────────────
+
+def _make_ctx_sim(skip_sim: bool = True) -> "RunContext":
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    return RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=skip_sim, skip_synth=True,
+    )
+
+
+def test_simulation_stage_is_pipeline_stage():
+    from veriflow.core.pipeline import PipelineStage
+    from veriflow.core.stages.simulation import SimulationStage
+    assert issubclass(SimulationStage, PipelineStage)
+    assert SimulationStage.name == "simulation"
+
+
+def test_simulation_stage_skipped_returns_stage_result():
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.models.stage_result import StageResult
+    result = SimulationStage(
+        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        top_module="my_tile", has_tb=True,
+    ).run(_make_ctx_sim(skip_sim=True))
+    assert isinstance(result, StageResult)
+    assert result.status == "SKIPPED"
+    assert result.name == "simulation"
+    assert result.tool == "iverilog/vvp"
+    assert result.metrics is None
+
+
+def test_simulation_stage_skipped_no_tb():
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.models.stage_result import StageResult
+    result = SimulationStage(
+        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        top_module="my_tile", has_tb=False,
+    ).run(_make_ctx_sim(skip_sim=False))
+    assert isinstance(result, StageResult)
+    assert result.status == "SKIPPED"
+    assert result.name == "simulation"
+    assert result.metrics is None
+
+
+def test_results_json_schema_version():
+    """results.json schema_version must remain 1.1 and stages structure unchanged."""
+    import json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        result = cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        assert result["schema_version"] == "1.1"
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert data["schema_version"] == "1.1"
+        assert "stages" in data
+        assert "simulation" in data["stages"]
+        assert "synthesis" in data["stages"]
+        assert "connectivity" in data["stages"]
+    finally:
+        shutil.rmtree(tmp)
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1309,4 +1388,8 @@ ALL_TESTS = [
     ("pipeline_runner_executes_in_order",           test_pipeline_runner_executes_in_order),
     ("pipeline_runner_returns_stage_result_by_name",test_pipeline_runner_returns_stage_result_by_name),
     ("pipeline_runner_propagates_veriflow_error",   test_pipeline_runner_propagates_veriflow_error),
+    ("simulation_stage_is_pipeline_stage",          test_simulation_stage_is_pipeline_stage),
+    ("simulation_stage_skipped_returns_stage_result", test_simulation_stage_skipped_returns_stage_result),
+    ("simulation_stage_skipped_no_tb",              test_simulation_stage_skipped_no_tb),
+    ("results_json_schema_version",                 test_results_json_schema_version),
 ]
