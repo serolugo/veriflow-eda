@@ -738,6 +738,101 @@ def test_veriflow_error_top_module_file_missing_code():
         shutil.rmtree(tmp)
 
 
+# ── --json CLI smoke tests ────────────────────────────────────────────────────
+
+def test_cli_normal_no_json_flag():
+    """Normal mode (no --json) succeeds; return code is 0."""
+    import shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        rc = main(["--db", str(db), "run", "--tile", "0001",
+                   "--skip-check", "--skip-sim", "--skip-synth"])
+        assert rc == 0
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_run_success():
+    """--json mode emits valid JSON with status=SUCCESS and run_result."""
+    import io, json, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["--json", "--db", str(db), "run", "--tile", "0001",
+                       "--skip-check", "--skip-sim", "--skip-synth"])
+
+        assert rc == 0
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "SUCCESS"
+        assert data["command"] == "run"
+        assert "run_result" in data
+        assert data["run_result"]["schema_version"] == "1.0"
+        assert "stages" in data["run_result"]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_veriflow_error():
+    """VeriFlowError in --json mode emits structured JSON error, not a traceback."""
+    import io, json, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "empty_db"
+        db.mkdir()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["--json", "--db", str(db), "run", "--tile", "0001"])
+        assert rc != 0
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "ERROR"
+        assert data["error"]["code"].startswith("VF_")
+        assert "message" in data["error"]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_unhandled_exception():
+    """Unhandled exceptions in --json mode emit VF_UNHANDLED_EXCEPTION JSON."""
+    import io, json, contextlib, shutil, tempfile
+    from unittest.mock import patch
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "db"
+        db.mkdir()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            with patch("veriflow.commands.init_db.cmd_init",
+                       side_effect=RuntimeError("synthetic failure")):
+                rc = main(["--json", "--db", str(db), "init"])
+        assert rc == 1
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "ERROR"
+        assert data["error"]["code"] == "VF_UNHANDLED_EXCEPTION"
+        assert "synthetic failure" in data["error"]["message"]
+    finally:
+        shutil.rmtree(tmp)
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 def test_launch_waves_docker_uses_surfer_wasm():
@@ -872,4 +967,8 @@ ALL_TESTS = [
     ("veriflow_error_rtl_missing_code",       test_veriflow_error_rtl_missing_code),
     ("veriflow_error_top_module_missing_code",      test_veriflow_error_top_module_missing_code),
     ("veriflow_error_top_module_file_missing_code", test_veriflow_error_top_module_file_missing_code),
+    ("cli_normal_no_json_flag",          test_cli_normal_no_json_flag),
+    ("cli_json_run_success",             test_cli_json_run_success),
+    ("cli_json_veriflow_error",          test_cli_json_veriflow_error),
+    ("cli_json_unhandled_exception",     test_cli_json_unhandled_exception),
 ]
