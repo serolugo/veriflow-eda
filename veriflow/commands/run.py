@@ -16,7 +16,7 @@ from veriflow.core.copier import copy_flat
 from veriflow.core.csv_store import append_record, get_tile_row
 from veriflow.core.run_id import get_next_run_id
 from veriflow.core.sim_runner import launch_waves, run_connectivity_check, run_simulation
-from veriflow.core.synth_runner import run_synthesis
+from veriflow.core.stages.synthesis import SynthesisStage
 from veriflow.core.validator import (
     detect_iverilog_version,
     validate_database,
@@ -247,11 +247,10 @@ def cmd_run(
     if not skip_synth:
         print_section("Synthesis")
         print_status("Synthesis", "RUN")
-        synth_result, synth_parsed = run_synthesis(
-            rtl_files=rtl_files,
-            top_module=tile_config.top_module,
-            synth_log_path=synth_log_path,
-        )
+    _synth_sr = SynthesisStage(rtl_files=rtl_files, top_module=tile_config.top_module).run(ctx)
+    synth_result = _synth_sr.status
+    synth_parsed = dict(_synth_sr.metrics) if _synth_sr.metrics else {"cells": "", "warnings": "0", "errors": "0", "has_latches": False}
+    if not skip_synth:
         print_status("Synthesis", synth_result)
 
     # ── 11–17. Finalize

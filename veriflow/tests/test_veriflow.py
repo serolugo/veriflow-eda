@@ -1137,6 +1137,51 @@ def test_launch_waves_local_without_surfer_prints_hint():
         real_shutil.which = old_which
 
 
+# ── PipelineStage / SynthesisStage unit tests ────────────────────────────────
+
+def _make_ctx(skip_synth: bool = True) -> "RunContext":
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    return RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=skip_synth,
+    )
+
+
+def test_pipeline_stage_not_implemented():
+    from veriflow.core.pipeline import PipelineStage
+    raised = False
+    try:
+        PipelineStage().run(_make_ctx())
+    except NotImplementedError:
+        raised = True
+    assert raised, "PipelineStage.run() must raise NotImplementedError"
+
+
+def test_synthesis_stage_is_pipeline_stage():
+    from veriflow.core.pipeline import PipelineStage
+    from veriflow.core.stages.synthesis import SynthesisStage
+    assert issubclass(SynthesisStage, PipelineStage)
+    assert SynthesisStage.name == "synthesis"
+
+
+def test_synthesis_stage_skipped_returns_stage_result():
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.models.stage_result import StageResult
+    result = SynthesisStage(rtl_files=[], top_module="my_tile").run(_make_ctx(skip_synth=True))
+    assert isinstance(result, StageResult)
+    assert result.status == "SKIPPED"
+    assert result.name == "synthesis"
+    assert result.tool == "yosys"
+    assert result.metrics is None
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1195,4 +1240,7 @@ ALL_TESTS = [
     ("stage_result_no_filesystem_access",           test_stage_result_no_filesystem_access),
     ("stage_result_skipped_omits_empty_fields",     test_stage_result_skipped_omits_empty_fields),
     ("stage_result_error_field_included",           test_stage_result_error_field_included),
+    ("pipeline_stage_not_implemented",              test_pipeline_stage_not_implemented),
+    ("synthesis_stage_is_pipeline_stage",           test_synthesis_stage_is_pipeline_stage),
+    ("synthesis_stage_skipped_returns_stage_result",test_synthesis_stage_skipped_returns_stage_result),
 ]
