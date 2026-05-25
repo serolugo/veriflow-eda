@@ -125,13 +125,35 @@ If `--waves` was passed and `waves.vcd` exists, calls `launch_waves()` after fin
 
 ### `core/pipeline_builder.py` — Default pipeline construction
 
-`build_default_pipeline(*, rtl_files, tb_files, tb_base_path, tb_tasks_path, top_module, has_tb) → PipelineRunner`
+`build_default_pipeline(*, rtl_files, tb_files, tb_base_path, tb_tasks_path, top_module, has_tb, profile=None) → PipelineRunner`
 
 Centralises construction of the fixed three-stage pipeline (connectivity → simulation → synthesis).  Returns a `PipelineRunner` whose `.stages` list holds the three stage instances in order.
+
+Accepts an optional `profile: ExecutionProfile` (defaults to `default_execution_profile()`) and threads it through to each stage so that `StageResult.tool` labels reflect the profile's declared tool strings.
 
 `commands/run.py` calls this once after sources are copied and tb paths are resolved, then unpacks the returned stages and runs each individually via single-stage `PipelineRunner` calls so that the connectivity-FAIL early-exit logic is preserved.
 
 This is an internal construction helper.  The pipeline order and stage set are fixed; there is no plugin registry, YAML config, or dynamic dispatch.
+
+---
+
+### `models/execution_profile.py` — Toolchain description
+
+`ExecutionProfile` is a plain dataclass that records which external tools the current fixed pipeline uses.  It is **not** a configuration surface — users cannot select profiles or swap backends yet.
+
+```python
+@dataclass
+class ExecutionProfile:
+    name: str = "default"
+    connectivity_tool: str = "iverilog"
+    simulation_tool: str = "iverilog/vvp"
+    synthesis_tool: str = "yosys"
+    doc_profile: str = "default"
+```
+
+`default_execution_profile() → ExecutionProfile` returns the canonical instance that matches the current fixed toolchain.  Its field values are identical to the string literals previously hardcoded in the stage implementations, so `StageResult.tool` and `results.json` content are unchanged.
+
+**Future work (not implemented):** YAML-driven profile loading, alternate backend selection, and plugin registries are intentionally deferred.  `ExecutionProfile` exists now only as an internal description of the current fixed tools.
 
 ---
 

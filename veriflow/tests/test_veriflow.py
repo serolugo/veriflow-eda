@@ -1486,6 +1486,99 @@ def test_results_json_schema_version():
         shutil.rmtree(tmp)
 
 
+# ── ExecutionProfile unit tests ──────────────────────────────────────────────
+
+def test_default_execution_profile_values():
+    from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
+    p = default_execution_profile()
+    assert isinstance(p, ExecutionProfile)
+    assert p.name == "default"
+    assert p.connectivity_tool == "iverilog"
+    assert p.simulation_tool == "iverilog/vvp"
+    assert p.synthesis_tool == "yosys"
+    assert p.doc_profile == "default"
+
+
+def test_execution_profile_is_dataclass():
+    import dataclasses
+    from veriflow.models.execution_profile import ExecutionProfile
+    assert dataclasses.is_dataclass(ExecutionProfile)
+
+
+def test_build_default_pipeline_accepts_profile():
+    from veriflow.core.pipeline import PipelineRunner
+    from veriflow.core.pipeline_builder import build_default_pipeline
+    from veriflow.models.execution_profile import default_execution_profile
+    runner = build_default_pipeline(
+        rtl_files=[],
+        tb_files=[],
+        tb_base_path=None,
+        tb_tasks_path=None,
+        top_module="my_tile",
+        has_tb=False,
+        profile=default_execution_profile(),
+    )
+    assert isinstance(runner, PipelineRunner)
+
+
+def test_build_default_pipeline_uses_profile_tool_labels():
+    """Stage tool labels in StageResult reflect the profile's tool strings."""
+    from veriflow.core.pipeline_builder import build_default_pipeline
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.run_context import RunContext
+
+    profile = ExecutionProfile(
+        connectivity_tool="iverilog",
+        simulation_tool="iverilog/vvp",
+        synthesis_tool="yosys",
+    )
+    runner = build_default_pipeline(
+        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        top_module="my_tile", has_tb=False, profile=profile,
+    )
+
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=True,
+    )
+    results = runner.run(ctx)
+    assert results["connectivity"].tool == "iverilog"
+    assert results["simulation"].tool == "iverilog/vvp"
+    assert results["synthesis"].tool == "yosys"
+
+
+def test_results_json_tool_strings_unchanged():
+    """results.json tool strings remain identical after ExecutionProfile introduction."""
+    import json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert data["stages"]["connectivity"]["tool"] == "iverilog"
+        assert data["stages"]["simulation"]["tool"] == "iverilog/vvp"
+        assert data["stages"]["synthesis"]["tool"] == "yosys"
+    finally:
+        shutil.rmtree(tmp)
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1562,4 +1655,9 @@ ALL_TESTS = [
     ("api_run_tile_returns_dict",                         test_api_run_tile_returns_dict),
     ("api_run_tile_propagates_veriflow_error",            test_api_run_tile_propagates_veriflow_error),
     ("api_run_tile_rejects_waves_non_interactive",        test_api_run_tile_rejects_waves_non_interactive),
+    ("default_execution_profile_values",                  test_default_execution_profile_values),
+    ("execution_profile_is_dataclass",                    test_execution_profile_is_dataclass),
+    ("build_default_pipeline_accepts_profile",            test_build_default_pipeline_accepts_profile),
+    ("build_default_pipeline_uses_profile_tool_labels",   test_build_default_pipeline_uses_profile_tool_labels),
+    ("results_json_tool_strings_unchanged",               test_results_json_tool_strings_unchanged),
 ]
