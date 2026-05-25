@@ -833,6 +833,79 @@ def test_cli_json_unhandled_exception():
         shutil.rmtree(tmp)
 
 
+# ── RunContext unit tests ─────────────────────────────────────────────────────
+
+def test_run_context_property_paths():
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "TST-01-260101000101"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db,
+        tile_id="TST-01-260101000101",
+        run_id="run-001",
+        tile_dir=tile_dir,
+        run_dir=run_dir,
+        tile_config_path=db / "config" / "tile_0001" / "tile_config.yaml",
+        project_config_path=db / "project_config.yaml",
+        semicolab=True,
+        skip_connectivity=False,
+        skip_sim=False,
+        skip_synth=False,
+    )
+    assert ctx.src_dir == run_dir / "src"
+    assert ctx.out_dir == run_dir / "out"
+    assert ctx.sim_dir == run_dir / "out" / "sim"
+    assert ctx.synth_dir == run_dir / "out" / "synth"
+    assert ctx.impl_dir == run_dir / "out" / "connectivity"
+    assert ctx.manifest_path == run_dir / "manifest.yaml"
+    assert ctx.summary_path == run_dir / "summary.md"
+    assert ctx.notes_path == run_dir / "notes.md"
+    assert ctx.results_path == run_dir / "results.json"
+
+
+def test_run_context_uses_pathlib():
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=True,
+    )
+    for prop in (ctx.src_dir, ctx.out_dir, ctx.sim_dir, ctx.synth_dir,
+                 ctx.impl_dir, ctx.manifest_path, ctx.summary_path,
+                 ctx.notes_path, ctx.results_path):
+        assert isinstance(prop, Path), f"Expected Path, got {type(prop)}"
+
+
+def test_run_context_no_file_creation():
+    import tempfile, shutil
+    from veriflow.models.run_context import RunContext
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        run_dir = tmp / "tiles" / "X" / "runs" / "run-001"
+        ctx = RunContext(
+            db_path=tmp, tile_id="X", run_id="run-001",
+            tile_dir=tmp / "tiles" / "X",
+            run_dir=run_dir,
+            tile_config_path=tmp / "config" / "tile_config.yaml",
+            project_config_path=tmp / "project_config.yaml",
+            semicolab=True, skip_connectivity=False,
+            skip_sim=False, skip_synth=False,
+        )
+        _ = ctx.src_dir
+        _ = ctx.manifest_path
+        _ = ctx.results_path
+        assert not run_dir.exists(), "RunContext must not create directories on access"
+    finally:
+        shutil.rmtree(tmp)
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 def test_cli_non_interactive_no_command():
@@ -1054,4 +1127,7 @@ ALL_TESTS = [
     ("cli_non_interactive_run_succeeds",            test_cli_non_interactive_run_succeeds),
     ("cli_non_interactive_waves_command_rejected",  test_cli_non_interactive_waves_command_rejected),
     ("cli_non_interactive_run_waves_rejected",      test_cli_non_interactive_run_waves_rejected),
+    ("run_context_property_paths",                  test_run_context_property_paths),
+    ("run_context_uses_pathlib",                    test_run_context_uses_pathlib),
+    ("run_context_no_file_creation",                test_run_context_no_file_creation),
 ]
