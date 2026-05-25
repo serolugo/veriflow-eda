@@ -26,6 +26,7 @@ from veriflow.core.validator import (
 from veriflow.generators.manifest import generate_manifest
 from veriflow.generators.notes import generate_notes
 from veriflow.generators.readme import generate_readme
+from veriflow.generators.results import generate_results_json
 from veriflow.generators.summary import generate_summary
 from veriflow.models.tile_config import TileConfig
 
@@ -50,7 +51,7 @@ def cmd_run(
     only_sim: bool = False,
     only_synth: bool = False,
     waves: bool = False,
-) -> None:
+) -> dict:
     """Run the full verification pipeline for a tile."""
 
     # Resolve skip flags from --only-* flags
@@ -194,7 +195,7 @@ def cmd_run(
         print_status("Connectivity check", conn_result)
         if conn_result == "FAIL":
             print_fail_detail("Check failed — pipeline stopped", conn_log_path)
-            _finalize_run(
+            return _finalize_run(
                 db=db, run_dir=run_dir, tile_dir=tile_dir,
                 tile_id=tile_id, run_id=run_id, today_str=today_str,
                 tile_config=tile_config, run_config=run_config,
@@ -208,7 +209,6 @@ def cmd_run(
                 tile_index_path=db / "tile_index.csv",
                 semicolab=semicolab,
             )
-            return
 
     # ── 9. Simulation
     if not skip_sim and has_tb:
@@ -238,7 +238,7 @@ def cmd_run(
         print_status("Synthesis", synth_result)
 
     # ── 11–17. Finalize
-    _finalize_run(
+    run_result = _finalize_run(
         db=db, run_dir=run_dir, tile_dir=tile_dir,
         tile_id=tile_id, run_id=run_id, today_str=today_str,
         tile_config=tile_config, run_config=run_config,
@@ -255,8 +255,9 @@ def cmd_run(
 
     # ── 18. Launch Surfer if requested
     if waves and wave_path.exists():
-        
         launch_waves(wave_path)
+
+    return run_result
 
 
 def _derive_status(
@@ -307,7 +308,7 @@ def _finalize_run(
     wave_path: Path,
     tile_index_path: Path,
     semicolab: bool = True,
-) -> None:
+) -> dict:
     """Generate all documentation, update CSV, print summary."""
 
     tiles_dir = db / "tiles"
@@ -371,7 +372,6 @@ def _finalize_run(
     }
     from veriflow.generators.manifest import generate_manifest
     generate_manifest(manifest_data, run_dir / "manifest.yaml")
-    
 
     # ── 12. Generate notes.md
     from veriflow.generators.notes import generate_notes
@@ -435,7 +435,55 @@ def _finalize_run(
         precheck_status=conn_result,
         output_path=run_dir / "summary.md",
     )
-    
+
+    # ── 16b. Generate results.json (written after all other artifacts exist)
+    records_csv = db / "records.csv"
+    readme_path = tile_dir / "README.md"
+    run_result: dict = {
+        "schema_version": "1.0",
+        "tile_id": tile_id,
+        "run_id": run_id,
+        "date": today_str,
+        "status": status,
+        "semicolab": semicolab,
+        "stages": {
+            "connectivity": {
+                "tool": "iverilog",
+                "status": conn_result,
+            },
+            "simulation": {
+                "tool": "iverilog/vvp",
+                "status": sim_result,
+                "sim_time": sim_parsed.get("sim_time", ""),
+                "seed": sim_parsed.get("seed", ""),
+            },
+            "synthesis": {
+                "tool": "yosys",
+                "status": synth_result,
+                "cells": synth_parsed.get("cells", ""),
+                "warnings": synth_parsed.get("warnings", "0"),
+                "errors": synth_parsed.get("errors", "0"),
+                "has_latches": synth_parsed.get("has_latches", False),
+            },
+        },
+        "sources": {
+            "rtl": [rel(f) for f in rtl_files],
+            "tb": [rel(f) for f in tb_files],
+        },
+        "artifacts": {
+            "manifest": [rel(run_dir / "manifest.yaml")],
+            "summary": [rel(run_dir / "summary.md")],
+            "notes": [rel(run_dir / "notes.md")],
+            "readme": [rel(readme_path)] if readme_path.exists() else [],
+            "records": [records_csv.relative_to(db).as_posix()] if records_csv.exists() else [],
+            "connectivity_log": conn_logs,
+            "sim_log": sim_logs,
+            "synth_log": synth_logs,
+            "wave": wave_files,
+        },
+        "error": None,
+    }
+    generate_results_json(run_result, run_dir / "results.json")
 
     # ── 17. Print summary to console
     print_section("Results")
@@ -445,3 +493,5 @@ def _finalize_run(
     print_status("Synthesis",     synth_result, cells_detail)
 
     print_done(f"Run complete  ·  [id]{tile_id}[/id]  ·  [id]{run_id}[/id]  ·  status: {status}")
+
+    return run_result
