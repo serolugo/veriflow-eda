@@ -4,6 +4,7 @@ from pathlib import Path
 
 from veriflow.core.pipeline import PipelineStage
 from veriflow.core.sim_runner import run_simulation
+from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
 from veriflow.models.run_context import RunContext
 from veriflow.models.stage_result import StageResult
 
@@ -19,6 +20,7 @@ class SimulationStage(PipelineStage):
         tb_tasks_path: Path | None,
         top_module: str,
         has_tb: bool,
+        profile: ExecutionProfile | None = None,
     ) -> None:
         self.rtl_files = rtl_files
         self.tb_files = tb_files
@@ -26,10 +28,12 @@ class SimulationStage(PipelineStage):
         self.tb_tasks_path = tb_tasks_path
         self.top_module = top_module
         self.has_tb = has_tb
+        self._profile = profile or default_execution_profile()
 
     def run(self, ctx: RunContext) -> StageResult:
+        tool = self._profile.simulation_tool
         if ctx.skip_sim or not self.has_tb:
-            return StageResult(name=self.name, status="SKIPPED", tool="iverilog/vvp")
+            return StageResult(name=self.name, status="SKIPPED", tool=tool)
 
         sim_log_path = ctx.sim_dir / "logs" / "sim.log"
         wave_path = ctx.sim_dir / "waves" / "waves.vcd"
@@ -65,7 +69,7 @@ class SimulationStage(PipelineStage):
         return StageResult(
             name=self.name,
             status=status,
-            tool="iverilog/vvp",
+            tool=tool,
             log_paths=log_paths,
             artifacts={"wave": wave_files} if wave_files else None,
             metrics=metrics or None,

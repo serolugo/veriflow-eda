@@ -438,3 +438,35 @@ Status rendering: `PASS` → green bold; `FAIL` → red bold; `RUN` → `···`
 - Simulation compilation uses `tempfile.mkdtemp()` to avoid paths with spaces
 - `vvp` is run with the compiled binary via posix path
 - Connectivity check uses `"NUL"` as output on Windows
+
+---
+
+## 22. Module: `models/execution_profile.py` — ExecutionProfile
+
+**Responsibility:** Describe the current fixed toolchain configuration as a typed dataclass.
+
+**Implementation:**
+
+```python
+@dataclass
+class ExecutionProfile:
+    name: str = "default"
+    connectivity_tool: str = "iverilog"
+    simulation_tool: str = "iverilog/vvp"
+    synthesis_tool: str = "yosys"
+    doc_profile: str = "default"
+
+def default_execution_profile() -> ExecutionProfile:
+    return ExecutionProfile()
+```
+
+`build_default_pipeline` accepts an optional `profile` kwarg (defaults to `default_execution_profile()`) and passes it to each stage.  Stages read `profile.connectivity_tool` / `simulation_tool` / `synthesis_tool` for the `tool` field in `StageResult`.  The actual subprocess invocations in `sim_runner.py` and `synth_runner.py` are not affected.
+
+Because the default profile values exactly match the strings previously hardcoded in the stage constructors, this change is fully non-breaking: `StageResult.tool`, `results.json`, and all existing tests are unaffected.
+
+**Design constraints:**
+
+- No YAML config reading.  The profile is constructed in code only.
+- No user-facing profile selection.  There is one profile and it is always the default.
+- No plugin registry or dynamic backend dispatch.
+- Configurable backend selection and alternate tool profiles are explicitly deferred to future work.
