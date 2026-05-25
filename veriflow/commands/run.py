@@ -82,7 +82,11 @@ def cmd_run(
 
     tile_cfg_path = config_tile_dir / "tile_config.yaml"
     if not tile_cfg_path.exists():
-        raise VeriFlowError(f"tile_config.yaml not found: {tile_cfg_path}")
+        raise VeriFlowError(
+            f"tile_config.yaml not found: {tile_cfg_path}",
+            code="VF_TILE_CONFIG_MISSING",
+            details={"path": str(tile_cfg_path)},
+        )
 
     tile_config = TileConfig.from_dict(yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {})
     run_config = tile_config  # run fields are now merged into tile_config

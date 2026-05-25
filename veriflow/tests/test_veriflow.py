@@ -604,6 +604,140 @@ def test_semicolab_column_in_records():
         shutil.rmtree(tmp)
 
 
+# ── VeriFlowError structured metadata ────────────────────────────────────────
+
+def test_veriflow_error_str():
+    from veriflow.core import VeriFlowError
+    assert str(VeriFlowError("x")) == "x"
+
+
+def test_veriflow_error_default_code():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").to_dict()["code"] == "VF_ERROR"
+
+
+def test_veriflow_error_custom_code():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x", code="VF_TEST").to_dict()["code"] == "VF_TEST"
+
+
+def test_veriflow_error_to_dict_shape():
+    from veriflow.core import VeriFlowError
+    d = VeriFlowError("msg", code="VF_TOOL_NOT_FOUND", details={"tool": "iverilog"}).to_dict()
+    assert d == {
+        "code": "VF_TOOL_NOT_FOUND",
+        "message": "msg",
+        "details": {"tool": "iverilog"},
+        "exit_code": 1,
+    }
+
+
+def test_veriflow_error_exit_code_default():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").exit_code == 1
+
+
+def test_veriflow_error_details_none_by_default():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").details is None
+
+
+def test_veriflow_error_db_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_database
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "empty_db"
+        db.mkdir()
+        try:
+            validate_database(db)
+        except VeriFlowError as e:
+            assert e.code == "VF_DB_MISSING_REQUIRED_PATH"
+            assert "path" in (e.details or {})
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_tool_not_found_code():
+    import shutil as real_shutil
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_tools
+    old_which = real_shutil.which
+    try:
+        real_shutil.which = lambda _: None
+        try:
+            validate_tools()
+        except VeriFlowError as e:
+            assert e.code == "VF_TOOL_NOT_FOUND"
+            assert "tool" in (e.details or {})
+    finally:
+        real_shutil.which = old_which
+
+
+def test_veriflow_error_rtl_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        tc = TileConfig.from_dict({"top_module": "my_tile"})
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_RTL_MISSING"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_top_module_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        tc = TileConfig.from_dict({})  # top_module = ""
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_TOP_MODULE_MISSING"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_top_module_file_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        tc = TileConfig.from_dict({"top_module": "nonexistent_module"})
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_TOP_MODULE_FILE_MISSING"
+            assert (e.details or {}).get("top_module") == "nonexistent_module"
+    finally:
+        shutil.rmtree(tmp)
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 def test_launch_waves_docker_uses_surfer_wasm():
@@ -727,4 +861,15 @@ ALL_TESTS = [
     ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),
     ("launch_waves_local_uses_surfer_native", test_launch_waves_local_uses_surfer_native),
     ("launch_waves_local_without_surfer_prints_hint", test_launch_waves_local_without_surfer_prints_hint),
+    ("veriflow_error_str",                    test_veriflow_error_str),
+    ("veriflow_error_default_code",           test_veriflow_error_default_code),
+    ("veriflow_error_custom_code",            test_veriflow_error_custom_code),
+    ("veriflow_error_to_dict_shape",          test_veriflow_error_to_dict_shape),
+    ("veriflow_error_exit_code_default",      test_veriflow_error_exit_code_default),
+    ("veriflow_error_details_none_by_default",test_veriflow_error_details_none_by_default),
+    ("veriflow_error_db_missing_code",        test_veriflow_error_db_missing_code),
+    ("veriflow_error_tool_not_found_code",    test_veriflow_error_tool_not_found_code),
+    ("veriflow_error_rtl_missing_code",       test_veriflow_error_rtl_missing_code),
+    ("veriflow_error_top_module_missing_code",      test_veriflow_error_top_module_missing_code),
+    ("veriflow_error_top_module_file_missing_code", test_veriflow_error_top_module_file_missing_code),
 ]

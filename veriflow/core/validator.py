@@ -19,7 +19,11 @@ def validate_database(db: Path) -> None:
     ]:
         target = db / name
         if not target.exists():
-            raise VeriFlowError(f"Required {'file' if is_file else 'directory'} not found: {target}")
+            raise VeriFlowError(
+                f"Required {'file' if is_file else 'directory'} not found: {target}",
+                code="VF_DB_MISSING_REQUIRED_PATH",
+                details={"path": str(target), "name": name},
+            )
 
 
 def validate_tools() -> None:
@@ -28,7 +32,9 @@ def validate_tools() -> None:
         if shutil.which(tool) is None:
             raise VeriFlowError(
                 f"Tool not found in PATH: {tool}\n"
-                f"  Install OSS CAD Suite and ensure it is on your PATH."
+                f"  Install OSS CAD Suite and ensure it is on your PATH.",
+                code="VF_TOOL_NOT_FOUND",
+                details={"tool": tool},
             )
 
 
@@ -44,17 +50,26 @@ def validate_run_inputs(
 
     rtl_dir = config_dir / "src" / "rtl"
     if not rtl_dir.exists() or not any(rtl_dir.glob("*.v")):
-        raise VeriFlowError(f"No .v files found in RTL source directory: {rtl_dir}")
+        raise VeriFlowError(
+            f"No .v files found in RTL source directory: {rtl_dir}",
+            code="VF_INPUT_RTL_MISSING",
+            details={"rtl_dir": str(rtl_dir)},
+        )
 
     if not tile_config.top_module:
-        raise VeriFlowError("top_module is empty in tile_config.yaml")
+        raise VeriFlowError(
+            "top_module is empty in tile_config.yaml",
+            code="VF_INPUT_TOP_MODULE_MISSING",
+        )
 
     # Verify a .v file whose stem matches top_module exists
     top_file = rtl_dir / f"{tile_config.top_module}.v"
     if not top_file.exists():
         raise VeriFlowError(
             f"No .v file found for top_module={tile_config.top_module!r} in {rtl_dir}\n"
-            f"  Expected: {top_file}"
+            f"  Expected: {top_file}",
+            code="VF_INPUT_TOP_MODULE_FILE_MISSING",
+            details={"top_module": tile_config.top_module, "expected_file": str(top_file)},
         )
 
 
