@@ -835,6 +835,84 @@ def test_cli_json_unhandled_exception():
 
 # ── registry ──────────────────────────────────────────────────────────────────
 
+def test_cli_non_interactive_no_command():
+    """--non-interactive without a subcommand returns VF_NON_INTERACTIVE_REQUIRES_COMMAND (rc=2)."""
+    import io, contextlib
+    from veriflow.cli import main
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        rc = main(["--non-interactive"])
+    assert rc == 2
+    assert "--non-interactive requires" in buf.getvalue()
+
+
+def test_cli_non_interactive_no_command_json():
+    """--non-interactive + --json without a subcommand emits a structured JSON error."""
+    import io, json, contextlib
+    from veriflow.cli import main
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = main(["--non-interactive", "--json"])
+    assert rc == 2
+    data = json.loads(buf.getvalue())
+    assert data["status"] == "ERROR"
+    assert data["error"]["code"] == "VF_NON_INTERACTIVE_REQUIRES_COMMAND"
+    assert "--non-interactive requires" in data["error"]["message"]
+
+
+def test_cli_non_interactive_run_succeeds():
+    """--non-interactive run without --waves completes normally."""
+    import shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        rc = main([
+            "--db", str(db), "--non-interactive",
+            "run", "--tile", "0001",
+            "--skip-check", "--skip-sim", "--skip-synth",
+        ])
+        assert rc == 0
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_non_interactive_waves_command_rejected():
+    """waves subcommand + --non-interactive is rejected with VF_NON_INTERACTIVE_VIEWER_DISABLED."""
+    import io, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = main(["--db", str(tmp), "--non-interactive", "waves", "--tile", "0001"])
+        assert rc == 2
+        assert "Waveform viewer" in buf.getvalue()
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_non_interactive_run_waves_rejected():
+    """run --waves + --non-interactive is rejected with VF_NON_INTERACTIVE_VIEWER_DISABLED."""
+    import io, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = main(["--db", str(tmp), "--non-interactive", "run", "--tile", "0001", "--waves"])
+        assert rc == 2
+        assert "Waveform viewer" in buf.getvalue()
+    finally:
+        shutil.rmtree(tmp)
+
+
 def test_launch_waves_docker_uses_surfer_wasm():
     """Docker mode should delegate to Surfer WASM."""
     import os
@@ -971,4 +1049,9 @@ ALL_TESTS = [
     ("cli_json_run_success",             test_cli_json_run_success),
     ("cli_json_veriflow_error",          test_cli_json_veriflow_error),
     ("cli_json_unhandled_exception",     test_cli_json_unhandled_exception),
+    ("cli_non_interactive_no_command",              test_cli_non_interactive_no_command),
+    ("cli_non_interactive_no_command_json",         test_cli_non_interactive_no_command_json),
+    ("cli_non_interactive_run_succeeds",            test_cli_non_interactive_run_succeeds),
+    ("cli_non_interactive_waves_command_rejected",  test_cli_non_interactive_waves_command_rejected),
+    ("cli_non_interactive_run_waves_rejected",      test_cli_non_interactive_run_waves_rejected),
 ]

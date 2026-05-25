@@ -46,6 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Emit machine-readable JSON to stdout (suppresses human-readable output)",
     )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        default=False,
+        dest="non_interactive",
+        help="Disable TUI and waveform viewer; suitable for CI, scripts, and agent use",
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -93,6 +100,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     json_mode: bool = args.json
+    non_interactive: bool = args.non_interactive
+
+    # --non-interactive without a subcommand is always an error — do not launch TUI
+    if non_interactive and not args.command:
+        err = VeriFlowError(
+            "--non-interactive requires an explicit command",
+            code="VF_NON_INTERACTIVE_REQUIRES_COMMAND",
+            exit_code=2,
+        )
+        if json_mode:
+            _emit_json({"status": "ERROR", "error": err.to_dict()})
+        else:
+            print(f"[ERROR] {err}", file=sys.stderr)
+        return err.exit_code
 
     if not args.db:
         if json_mode:
@@ -142,6 +163,12 @@ def main(argv: list[str] | None = None) -> int:
                     cmd_create_tile(db)
 
                 elif args.command == "run":
+                    if non_interactive and args.waves:
+                        raise VeriFlowError(
+                            "Waveform viewer cannot be launched in non-interactive mode",
+                            code="VF_NON_INTERACTIVE_VIEWER_DISABLED",
+                            exit_code=2,
+                        )
                     dispatched = True
                     from veriflow.commands.run import cmd_run
                     run_result = cmd_run(
@@ -162,6 +189,12 @@ def main(argv: list[str] | None = None) -> int:
                     cmd_bump_version(db, tile_number=args.tile)
 
                 elif args.command == "waves":
+                    if non_interactive:
+                        raise VeriFlowError(
+                            "Waveform viewer cannot be launched in non-interactive mode",
+                            code="VF_NON_INTERACTIVE_VIEWER_DISABLED",
+                            exit_code=2,
+                        )
                     dispatched = True
                     from veriflow.commands.waves import cmd_waves
                     cmd_waves(db, tile_number=args.tile, run_id=args.run)
