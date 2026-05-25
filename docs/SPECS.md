@@ -54,7 +54,8 @@ veriflow/
 │   ├── readme.py
 │   ├── notes.py
 │   ├── manifest.py
-│   └── summary.py
+│   ├── summary.py
+│   └── results.py           # results.json writer
 ├── models/                  # Configuration dataclasses
 │   ├── project_config.py
 │   └── tile_config.py         # merged tile + run fields
@@ -97,6 +98,7 @@ database/
         └── runs/
             └── run-NNN/
                 ├── manifest.yaml
+                ├── results.json
                 ├── notes.md
                 ├── summary.md
                 ├── src/
@@ -113,11 +115,20 @@ database/
 ## 5. CLI Interface
 
 ```bash
-veriflow --db <path> <command> [options]
+veriflow [--json] [--non-interactive] --db <path> <command> [options]
 
 # Also available as:
 python veriflow/cli.py --db <path> <command> [options]
 ```
+
+### Global flags
+
+| Flag | Description |
+|---|---|
+| `--json` | Suppress Rich output; emit single JSON object to stdout |
+| `--non-interactive` | Disable TUI and waveform viewer; safe for CI/agent use |
+
+### Subcommands
 
 | Command | Description |
 |---|---|
@@ -138,7 +149,7 @@ python veriflow/cli.py --db <path> <command> [options]
 | `--only-check` | Run connectivity check only |
 | `--only-sim` | Run simulation only |
 | `--only-synth` | Run synthesis only |
-| `--waves` | Launch waveform viewer when done |
+| `--waves` | Launch waveform viewer when done (not allowed with `--non-interactive`) |
 
 ---
 

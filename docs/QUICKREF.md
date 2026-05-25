@@ -44,6 +44,27 @@ python -m veriflow.tests.runner
 
 ---
 
+## Automation / CI
+
+```bash
+# Recommended automation command (JSON output, no interactive UI)
+veriflow --json --non-interactive --db ./database run --tile 0001
+
+# JSON output only (Rich output suppressed; stdout = JSON)
+veriflow --json --db ./database run --tile 0001
+
+# Non-interactive only (Rich output shown; no TUI or waveform viewer)
+veriflow --non-interactive --db ./database run --tile 0001
+```
+
+`--json` and `--non-interactive` are global flags — place them before the subcommand.
+
+Exit code is `0` on success, non-zero on any error.
+
+Every `run` always writes `tiles/<tile_id>/runs/run-NNN/results.json` regardless of flags.
+
+---
+
 ## Operating Modes
 
 Set in `database/project_config.yaml`. Applies to the entire database.

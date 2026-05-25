@@ -20,7 +20,14 @@ Communication between layers is unidirectional — commands use core and generat
 
 **Responsibility:** Entry point. Parses arguments and dispatches to the correct command.
 
-**Implementation:** `argparse` with subcommands. Catches `VeriFlowError` and prints it as `[ERROR]` with exit code 1.
+**Implementation:** `argparse` with subcommands. Catches `VeriFlowError` and prints it as `[ERROR]` with exit code 1. In `--json` mode, errors are serialized to stdout as `{ "status": "ERROR", "error": VeriFlowError.to_dict() }`.
+
+### Global flags
+
+| Flag | Behavior |
+|---|---|
+| `--json` | Quiet Rich output (`console.quiet = True`); redirect all `print()` to stderr; emit single JSON object to stdout after command completes |
+| `--non-interactive` | Block TUI launch and waveform viewer; error if combined with `--waves` or the `waves` subcommand |
 
 ### Entry point
 With `pip install -e .`, the `veriflow` command maps to `veriflow.cli:main`. Direct execution with `python veriflow/cli.py` is also supported via a path fix at the top of the file:
@@ -49,9 +56,15 @@ Defines the base exception:
 ```python
 class VeriFlowError(Exception):
     """Hard error — stops execution and displays [ERROR]."""
+    code: str        # stable error code string (e.g. "VF_TILE_CONFIG_MISSING")
+    details: dict    # optional structured context (e.g. {"path": "..."})
+    exit_code: int   # process exit code (default 1)
+
+    def to_dict(self) -> dict:
+        return {"code": self.code, "message": str(self), "details": self.details, "exit_code": self.exit_code}
 ```
 
-All errors that must stop the pipeline are raised as `VeriFlowError`. The CLI catches them at the top level.
+All errors that must stop the pipeline are raised as `VeriFlowError`. The CLI catches them at the top level and either prints `[ERROR] <message>` (human mode) or emits `{ "status": "ERROR", "error": e.to_dict() }` (JSON mode).
 
 ---
 

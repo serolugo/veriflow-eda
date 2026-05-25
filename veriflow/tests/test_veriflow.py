@@ -604,7 +604,314 @@ def test_semicolab_column_in_records():
         shutil.rmtree(tmp)
 
 
+# ── VeriFlowError structured metadata ────────────────────────────────────────
+
+def test_veriflow_error_str():
+    from veriflow.core import VeriFlowError
+    assert str(VeriFlowError("x")) == "x"
+
+
+def test_veriflow_error_default_code():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").to_dict()["code"] == "VF_ERROR"
+
+
+def test_veriflow_error_custom_code():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x", code="VF_TEST").to_dict()["code"] == "VF_TEST"
+
+
+def test_veriflow_error_to_dict_shape():
+    from veriflow.core import VeriFlowError
+    d = VeriFlowError("msg", code="VF_TOOL_NOT_FOUND", details={"tool": "iverilog"}).to_dict()
+    assert d == {
+        "code": "VF_TOOL_NOT_FOUND",
+        "message": "msg",
+        "details": {"tool": "iverilog"},
+        "exit_code": 1,
+    }
+
+
+def test_veriflow_error_exit_code_default():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").exit_code == 1
+
+
+def test_veriflow_error_details_none_by_default():
+    from veriflow.core import VeriFlowError
+    assert VeriFlowError("x").details is None
+
+
+def test_veriflow_error_db_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_database
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "empty_db"
+        db.mkdir()
+        try:
+            validate_database(db)
+        except VeriFlowError as e:
+            assert e.code == "VF_DB_MISSING_REQUIRED_PATH"
+            assert "path" in (e.details or {})
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_tool_not_found_code():
+    import shutil as real_shutil
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_tools
+    old_which = real_shutil.which
+    try:
+        real_shutil.which = lambda _: None
+        try:
+            validate_tools()
+        except VeriFlowError as e:
+            assert e.code == "VF_TOOL_NOT_FOUND"
+            assert "tool" in (e.details or {})
+    finally:
+        real_shutil.which = old_which
+
+
+def test_veriflow_error_rtl_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        tc = TileConfig.from_dict({"top_module": "my_tile"})
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_RTL_MISSING"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_top_module_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        tc = TileConfig.from_dict({})  # top_module = ""
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_TOP_MODULE_MISSING"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_veriflow_error_top_module_file_missing_code():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.validator import validate_run_inputs
+    from veriflow.models.tile_config import TileConfig
+    import tempfile, shutil
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        tc = TileConfig.from_dict({"top_module": "nonexistent_module"})
+        try:
+            validate_run_inputs(db, "0001", tc)
+        except VeriFlowError as e:
+            assert e.code == "VF_INPUT_TOP_MODULE_FILE_MISSING"
+            assert (e.details or {}).get("top_module") == "nonexistent_module"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── --json CLI smoke tests ────────────────────────────────────────────────────
+
+def test_cli_normal_no_json_flag():
+    """Normal mode (no --json) succeeds; return code is 0."""
+    import shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        rc = main(["--db", str(db), "run", "--tile", "0001",
+                   "--skip-check", "--skip-sim", "--skip-synth"])
+        assert rc == 0
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_run_success():
+    """--json mode emits valid JSON with status=SUCCESS and run_result."""
+    import io, json, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["--json", "--db", str(db), "run", "--tile", "0001",
+                       "--skip-check", "--skip-sim", "--skip-synth"])
+
+        assert rc == 0
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "SUCCESS"
+        assert data["command"] == "run"
+        assert "run_result" in data
+        assert data["run_result"]["schema_version"] == "1.0"
+        assert "stages" in data["run_result"]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_veriflow_error():
+    """VeriFlowError in --json mode emits structured JSON error, not a traceback."""
+    import io, json, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "empty_db"
+        db.mkdir()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(["--json", "--db", str(db), "run", "--tile", "0001"])
+        assert rc != 0
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "ERROR"
+        assert data["error"]["code"].startswith("VF_")
+        assert "message" in data["error"]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_json_unhandled_exception():
+    """Unhandled exceptions in --json mode emit VF_UNHANDLED_EXCEPTION JSON."""
+    import io, json, contextlib, shutil, tempfile
+    from unittest.mock import patch
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = tmp / "db"
+        db.mkdir()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            with patch("veriflow.commands.init_db.cmd_init",
+                       side_effect=RuntimeError("synthetic failure")):
+                rc = main(["--json", "--db", str(db), "init"])
+        assert rc == 1
+        data = json.loads(buf.getvalue())
+        assert data["status"] == "ERROR"
+        assert data["error"]["code"] == "VF_UNHANDLED_EXCEPTION"
+        assert "synthetic failure" in data["error"]["message"]
+    finally:
+        shutil.rmtree(tmp)
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
+
+def test_cli_non_interactive_no_command():
+    """--non-interactive without a subcommand returns VF_NON_INTERACTIVE_REQUIRES_COMMAND (rc=2)."""
+    import io, contextlib
+    from veriflow.cli import main
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        rc = main(["--non-interactive"])
+    assert rc == 2
+    assert "--non-interactive requires" in buf.getvalue()
+
+
+def test_cli_non_interactive_no_command_json():
+    """--non-interactive + --json without a subcommand emits a structured JSON error."""
+    import io, json, contextlib
+    from veriflow.cli import main
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = main(["--non-interactive", "--json"])
+    assert rc == 2
+    data = json.loads(buf.getvalue())
+    assert data["status"] == "ERROR"
+    assert data["error"]["code"] == "VF_NON_INTERACTIVE_REQUIRES_COMMAND"
+    assert "--non-interactive requires" in data["error"]["message"]
+
+
+def test_cli_non_interactive_run_succeeds():
+    """--non-interactive run without --waves completes normally."""
+    import shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        rc = main([
+            "--db", str(db), "--non-interactive",
+            "run", "--tile", "0001",
+            "--skip-check", "--skip-sim", "--skip-synth",
+        ])
+        assert rc == 0
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_non_interactive_waves_command_rejected():
+    """waves subcommand + --non-interactive is rejected with VF_NON_INTERACTIVE_VIEWER_DISABLED."""
+    import io, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = main(["--db", str(tmp), "--non-interactive", "waves", "--tile", "0001"])
+        assert rc == 2
+        assert "Waveform viewer" in buf.getvalue()
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cli_non_interactive_run_waves_rejected():
+    """run --waves + --non-interactive is rejected with VF_NON_INTERACTIVE_VIEWER_DISABLED."""
+    import io, contextlib, shutil, tempfile
+    from veriflow.cli import main
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = main(["--db", str(tmp), "--non-interactive", "run", "--tile", "0001", "--waves"])
+        assert rc == 2
+        assert "Waveform viewer" in buf.getvalue()
+    finally:
+        shutil.rmtree(tmp)
+
 
 def test_launch_waves_docker_uses_surfer_wasm():
     """Docker mode should delegate to Surfer WASM."""
@@ -727,4 +1034,24 @@ ALL_TESTS = [
     ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),
     ("launch_waves_local_uses_surfer_native", test_launch_waves_local_uses_surfer_native),
     ("launch_waves_local_without_surfer_prints_hint", test_launch_waves_local_without_surfer_prints_hint),
+    ("veriflow_error_str",                    test_veriflow_error_str),
+    ("veriflow_error_default_code",           test_veriflow_error_default_code),
+    ("veriflow_error_custom_code",            test_veriflow_error_custom_code),
+    ("veriflow_error_to_dict_shape",          test_veriflow_error_to_dict_shape),
+    ("veriflow_error_exit_code_default",      test_veriflow_error_exit_code_default),
+    ("veriflow_error_details_none_by_default",test_veriflow_error_details_none_by_default),
+    ("veriflow_error_db_missing_code",        test_veriflow_error_db_missing_code),
+    ("veriflow_error_tool_not_found_code",    test_veriflow_error_tool_not_found_code),
+    ("veriflow_error_rtl_missing_code",       test_veriflow_error_rtl_missing_code),
+    ("veriflow_error_top_module_missing_code",      test_veriflow_error_top_module_missing_code),
+    ("veriflow_error_top_module_file_missing_code", test_veriflow_error_top_module_file_missing_code),
+    ("cli_normal_no_json_flag",          test_cli_normal_no_json_flag),
+    ("cli_json_run_success",             test_cli_json_run_success),
+    ("cli_json_veriflow_error",          test_cli_json_veriflow_error),
+    ("cli_json_unhandled_exception",     test_cli_json_unhandled_exception),
+    ("cli_non_interactive_no_command",              test_cli_non_interactive_no_command),
+    ("cli_non_interactive_no_command_json",         test_cli_non_interactive_no_command_json),
+    ("cli_non_interactive_run_succeeds",            test_cli_non_interactive_run_succeeds),
+    ("cli_non_interactive_waves_command_rejected",  test_cli_non_interactive_waves_command_rejected),
+    ("cli_non_interactive_run_waves_rejected",      test_cli_non_interactive_run_waves_rejected),
 ]

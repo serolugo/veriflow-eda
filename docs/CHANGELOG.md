@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`results.json` artifact** — every `run` command writes a machine-readable JSON file to `tiles/<tile_id>/runs/run-NNN/results.json` alongside `manifest.yaml`. Contains schema version, tile/run identifiers, overall status, per-stage results, source file paths, and artifact paths. All paths are relative to the database root (Windows/Linux portable).
+- **`--json` CLI flag** — suppresses Rich terminal output and emits a single JSON object to stdout on command completion. On success: `{ "status": "SUCCESS", "command": "...", "run_result": {...} }`. On error: `{ "status": "ERROR", "error": { "code": "...", "message": "...", "details": {...}, "exit_code": N } }`.
+- **`--non-interactive` CLI flag** — disables the TUI and waveform viewer; safe for use in CI pipelines, shell scripts, and agent workflows. Combining with `--waves` or the `waves` subcommand is an error.
+- **Structured `VeriFlowError` metadata** — `VeriFlowError` now carries `code` (stable string), `details` (dict), and `exit_code` (int) fields. `VeriFlowError.to_dict()` serializes all fields for JSON error output.
+
 ---
 
 ## [1.0.0] — 2026-03-25
