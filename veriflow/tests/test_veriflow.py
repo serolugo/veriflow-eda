@@ -784,7 +784,7 @@ def test_cli_json_run_success():
         assert data["status"] == "SUCCESS"
         assert data["command"] == "run"
         assert "run_result" in data
-        assert data["run_result"]["schema_version"] == "1.0"
+        assert data["run_result"]["schema_version"] == "1.1"
         assert "stages" in data["run_result"]
     finally:
         shutil.rmtree(tmp)
@@ -904,6 +904,66 @@ def test_run_context_no_file_creation():
         assert not run_dir.exists(), "RunContext must not create directories on access"
     finally:
         shutil.rmtree(tmp)
+
+
+# ── StageResult unit tests ────────────────────────────────────────────────────
+
+def test_stage_result_minimal_to_dict():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="connectivity", status="PASS", tool="iverilog")
+    d = sr.to_dict()
+    assert d["tool"] == "iverilog"
+    assert d["status"] == "PASS"
+    assert "logs" not in d
+    assert "artifacts" not in d
+    assert "metrics" not in d
+    assert "error" not in d
+
+
+def test_stage_result_with_logs_artifacts_metrics():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(
+        name="synthesis",
+        status="PASS",
+        tool="yosys",
+        log_paths=["tiles/x/runs/run-001/out/synth/logs/synth.log"],
+        artifacts={"report": ["tiles/x/runs/run-001/out/synth/reports/report.txt"]},
+        metrics={"cells": "42", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    d = sr.to_dict()
+    assert d["tool"] == "yosys"
+    assert d["status"] == "PASS"
+    assert d["logs"] == ["tiles/x/runs/run-001/out/synth/logs/synth.log"]
+    assert d["artifacts"] == {"report": ["tiles/x/runs/run-001/out/synth/reports/report.txt"]}
+    assert d["metrics"]["cells"] == "42"
+    assert d["metrics"]["has_latches"] is False
+    assert "error" not in d
+
+
+def test_stage_result_no_filesystem_access():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="simulation", status="SKIPPED")
+    d = sr.to_dict()
+    assert d["status"] == "SKIPPED"
+    assert "tool" not in d
+    assert "logs" not in d
+
+
+def test_stage_result_skipped_omits_empty_fields():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="synthesis", status="SKIPPED", tool="yosys", log_paths=[])
+    d = sr.to_dict()
+    assert "logs" not in d, "Empty log_paths should be omitted"
+    assert "artifacts" not in d
+    assert "metrics" not in d
+
+
+def test_stage_result_error_field_included():
+    from veriflow.models.stage_result import StageResult
+    err = {"code": "VF_ERROR", "message": "tool crashed"}
+    sr = StageResult(name="sim", status="FAIL", error=err)
+    d = sr.to_dict()
+    assert d["error"] == err
 
 
 # ── registry ──────────────────────────────────────────────────────────────────
@@ -1130,4 +1190,9 @@ ALL_TESTS = [
     ("run_context_property_paths",                  test_run_context_property_paths),
     ("run_context_uses_pathlib",                    test_run_context_uses_pathlib),
     ("run_context_no_file_creation",                test_run_context_no_file_creation),
+    ("stage_result_minimal_to_dict",                test_stage_result_minimal_to_dict),
+    ("stage_result_with_logs_artifacts_metrics",    test_stage_result_with_logs_artifacts_metrics),
+    ("stage_result_no_filesystem_access",           test_stage_result_no_filesystem_access),
+    ("stage_result_skipped_omits_empty_fields",     test_stage_result_skipped_omits_empty_fields),
+    ("stage_result_error_field_included",           test_stage_result_error_field_included),
 ]

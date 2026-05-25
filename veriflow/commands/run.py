@@ -29,6 +29,7 @@ from veriflow.generators.readme import generate_readme
 from veriflow.generators.results import generate_results_json
 from veriflow.generators.summary import generate_summary
 from veriflow.models.run_context import RunContext
+from veriflow.models.stage_result import StageResult
 from veriflow.models.tile_config import TileConfig
 
 
@@ -442,32 +443,49 @@ def _finalize_run(
 
     # ── 16b. Generate results.json (written after all other artifacts exist)
     readme_path = ctx.tile_dir / "README.md"
+
+    # Build per-stage metrics dicts (only non-trivial values)
+    sim_metrics: dict = {}
+    if sim_parsed.get("sim_time"):
+        sim_metrics["sim_time"] = sim_parsed["sim_time"]
+    if sim_parsed.get("seed"):
+        sim_metrics["seed"] = sim_parsed["seed"]
+    synth_metrics: dict = {
+        "cells": synth_parsed.get("cells", ""),
+        "warnings": synth_parsed.get("warnings", "0"),
+        "errors": synth_parsed.get("errors", "0"),
+        "has_latches": synth_parsed.get("has_latches", False),
+    }
+
     run_result: dict = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "tile_id": ctx.tile_id,
         "run_id": ctx.run_id,
         "date": today_str,
         "status": status,
         "semicolab": ctx.semicolab,
         "stages": {
-            "connectivity": {
-                "tool": "iverilog",
-                "status": conn_result,
-            },
-            "simulation": {
-                "tool": "iverilog/vvp",
-                "status": sim_result,
-                "sim_time": sim_parsed.get("sim_time", ""),
-                "seed": sim_parsed.get("seed", ""),
-            },
-            "synthesis": {
-                "tool": "yosys",
-                "status": synth_result,
-                "cells": synth_parsed.get("cells", ""),
-                "warnings": synth_parsed.get("warnings", "0"),
-                "errors": synth_parsed.get("errors", "0"),
-                "has_latches": synth_parsed.get("has_latches", False),
-            },
+            "connectivity": StageResult(
+                name="connectivity",
+                status=conn_result,
+                tool="iverilog",
+                log_paths=conn_logs or None,
+            ).to_dict(),
+            "simulation": StageResult(
+                name="simulation",
+                status=sim_result,
+                tool="iverilog/vvp",
+                log_paths=sim_logs or None,
+                artifacts={"wave": wave_files} if wave_files else None,
+                metrics=sim_metrics or None,
+            ).to_dict(),
+            "synthesis": StageResult(
+                name="synthesis",
+                status=synth_result,
+                tool="yosys",
+                log_paths=synth_logs or None,
+                metrics=synth_metrics,
+            ).to_dict(),
         },
         "sources": {
             "rtl": [rel(f) for f in rtl_files],
