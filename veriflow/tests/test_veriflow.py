@@ -1137,6 +1137,80 @@ def test_launch_waves_local_without_surfer_prints_hint():
         real_shutil.which = old_which
 
 
+# ── ConnectivityStage unit tests ─────────────────────────────────────────────
+
+def _make_ctx_conn(skip_connectivity: bool = True) -> "RunContext":
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    return RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=True, skip_connectivity=skip_connectivity,
+        skip_sim=True, skip_synth=True,
+    )
+
+
+def test_connectivity_stage_is_pipeline_stage():
+    from veriflow.core.pipeline import PipelineStage
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    assert issubclass(ConnectivityStage, PipelineStage)
+    assert ConnectivityStage.name == "connectivity"
+
+
+def test_connectivity_stage_skipped_returns_stage_result():
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.models.stage_result import StageResult
+    result = ConnectivityStage(
+        rtl_files=[], tb_base_path=None, tb_tasks_path=None, top_module="my_tile",
+    ).run(_make_ctx_conn(skip_connectivity=True))
+    assert isinstance(result, StageResult)
+    assert result.status == "SKIPPED"
+    assert result.name == "connectivity"
+    assert result.tool == "iverilog"
+    assert result.metrics is None
+
+
+def test_connectivity_fail_still_finalizes_run():
+    """Connectivity FAIL stops further stages but still writes results.json."""
+    import json
+    from unittest.mock import patch
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)  # semicolab=True by default
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+
+        from veriflow.commands.run import cmd_run
+        with patch("veriflow.core.stages.connectivity.run_connectivity_check", return_value="FAIL"):
+            result = cmd_run(
+                db=db, tile_number="0001",
+                skip_check=False, skip_sim=True, skip_synth=True,
+            )
+
+        assert result["schema_version"] == "1.1"
+        assert result["stages"]["connectivity"]["status"] == "FAIL"
+
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        results_path = (
+            db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
+        )
+        assert results_path.exists(), "results.json must exist even after connectivity FAIL"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert data["schema_version"] == "1.1"
+        assert data["stages"]["connectivity"]["status"] == "FAIL"
+    finally:
+        shutil.rmtree(tmp)
+
+
 # ── PipelineStage / SynthesisStage unit tests ────────────────────────────────
 
 def _make_ctx(skip_synth: bool = True) -> "RunContext":
@@ -1392,4 +1466,7 @@ ALL_TESTS = [
     ("simulation_stage_skipped_returns_stage_result", test_simulation_stage_skipped_returns_stage_result),
     ("simulation_stage_skipped_no_tb",              test_simulation_stage_skipped_no_tb),
     ("results_json_schema_version",                 test_results_json_schema_version),
+    ("connectivity_stage_is_pipeline_stage",              test_connectivity_stage_is_pipeline_stage),
+    ("connectivity_stage_skipped_returns_stage_result",   test_connectivity_stage_skipped_returns_stage_result),
+    ("connectivity_fail_still_finalizes_run",             test_connectivity_fail_still_finalizes_run),
 ]

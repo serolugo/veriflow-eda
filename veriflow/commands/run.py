@@ -15,8 +15,9 @@ from veriflow.ui.output import (
 from veriflow.core.copier import copy_flat
 from veriflow.core.csv_store import append_record, get_tile_row
 from veriflow.core.run_id import get_next_run_id
-from veriflow.core.sim_runner import launch_waves, run_connectivity_check
+from veriflow.core.sim_runner import launch_waves
 from veriflow.core.pipeline import PipelineRunner
+from veriflow.core.stages.connectivity import ConnectivityStage
 from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
 from veriflow.core.validator import (
@@ -207,13 +208,16 @@ def cmd_run(
     if not skip_check:
         print_section("Connectivity")
         print_status("Connectivity check", "RUN")
-        conn_result = run_connectivity_check(
+    _conn_sr = PipelineRunner([
+        ConnectivityStage(
             rtl_files=rtl_files,
             tb_base_path=tb_base_path,
             tb_tasks_path=tb_tasks_path,
             top_module=tile_config.top_module,
-            log_path=conn_log_path,
-        )
+        ),
+    ]).run(ctx)["connectivity"]
+    conn_result = _conn_sr.status
+    if not skip_check:
         print_status("Connectivity check", conn_result)
         if conn_result == "FAIL":
             print_fail_detail("Check failed — pipeline stopped", conn_log_path)
