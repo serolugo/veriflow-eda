@@ -537,6 +537,52 @@ Every `run` command writes `results.json` to the run directory alongside `manife
 
 > **`schema_version` and forward compatibility:** `schema_version` will be incremented when the structure of `results.json` changes. Consumers that parse this file programmatically should read `schema_version` first and handle unknown versions gracefully rather than assuming a fixed shape.
 
+### 13.5 Python API (`veriflow.api`)
+
+For integrations that run inside the same Python process — TUI wrappers, CI harnesses, agents — `veriflow.api.run_tile` is the stable internal entry point. It delegates directly to `cmd_run()` without going through argparse or subprocess.
+
+```python
+from veriflow.api import run_tile
+from veriflow.core import VeriFlowError
+
+try:
+    result = run_tile(
+        "./database",
+        "0001",
+        skip_connectivity=True,   # same flags as the CLI
+        skip_sim=False,
+        skip_synth=False,
+        non_interactive=True,     # suppress waveform viewer
+    )
+    print(result["status"])       # "PASS" | "PARTIAL" | "FAIL"
+    print(result["schema_version"])  # "1.1"
+except VeriFlowError as e:
+    print(e.code, e.message)
+```
+
+**Function signature:**
+
+```python
+run_tile(
+    db_path: str | Path,
+    tile: str,
+    *,
+    skip_connectivity: bool = False,
+    skip_sim: bool = False,
+    skip_synth: bool = False,
+    only_connectivity: bool = False,
+    only_sim: bool = False,
+    only_synth: bool = False,
+    waves: bool = False,
+    non_interactive: bool = False,
+) -> dict
+```
+
+- Returns the same `run_result` dict that `cmd_run()` returns (same shape as `results.json`).
+- `VeriFlowError` propagates to the caller unchanged.
+- Raises `VF_NON_INTERACTIVE_VIEWER_DISABLED` if `waves=True` and `non_interactive=True`.
+- This is an **internal** surface — it is not a REST or RPC API.
+
 ### 13.5 `--json` CLI output
 
 When `--json` is active the CLI emits one JSON object to stdout after the command completes. All Rich output goes to stderr or is suppressed.

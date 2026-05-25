@@ -71,6 +71,16 @@ With `--force`: overwrites an existing database entirely.
 
 ---
 
+### `api.py` — Internal Python integration surface
+
+`run_tile(db_path, tile, *, skip_connectivity, skip_sim, skip_synth, only_connectivity, only_sim, only_synth, waves, non_interactive) → dict`
+
+Thin wrapper over `cmd_run()` for callers that want a Python-callable entry point without going through the CLI or subprocess.  Accepts `str | Path` for `db_path`; normalises it via `normalize_path()`.  All flag names mirror the CLI flags.  `VeriFlowError` propagates unchanged.  Raises `VF_NON_INTERACTIVE_VIEWER_DISABLED` if `waves=True` and `non_interactive=True`.
+
+Intended consumers: TUI integration, CI/CD scripts, agent tooling.  This is an internal surface — it is not a REST or RPC API.
+
+---
+
 ### `commands/run.py` — Verification pipeline orchestrator
 
 Main entry: `cmd_run(db, tile_number, skip_*, only_*, waves)`.
