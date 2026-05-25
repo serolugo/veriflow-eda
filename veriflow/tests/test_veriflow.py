@@ -1182,6 +1182,69 @@ def test_synthesis_stage_skipped_returns_stage_result():
     assert result.metrics is None
 
 
+# ── PipelineRunner unit tests ─────────────────────────────────────────────────
+
+def test_pipeline_runner_executes_in_order():
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+    from veriflow.models.stage_result import StageResult
+
+    call_order: list[str] = []
+
+    class StageA(PipelineStage):
+        name = "stage_a"
+        def run(self, ctx):
+            call_order.append("a")
+            return StageResult(name=self.name, status="PASS")
+
+    class StageB(PipelineStage):
+        name = "stage_b"
+        def run(self, ctx):
+            call_order.append("b")
+            return StageResult(name=self.name, status="PASS")
+
+    PipelineRunner([StageA(), StageB()]).run(_make_ctx())
+    assert call_order == ["a", "b"]
+
+
+def test_pipeline_runner_returns_stage_result_by_name():
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+    from veriflow.models.stage_result import StageResult
+
+    class StageA(PipelineStage):
+        name = "stage_a"
+        def run(self, ctx):
+            return StageResult(name=self.name, status="PASS")
+
+    class StageB(PipelineStage):
+        name = "stage_b"
+        def run(self, ctx):
+            return StageResult(name=self.name, status="SKIPPED")
+
+    results = PipelineRunner([StageA(), StageB()]).run(_make_ctx())
+    assert set(results.keys()) == {"stage_a", "stage_b"}
+    assert results["stage_a"].status == "PASS"
+    assert results["stage_b"].status == "SKIPPED"
+    assert isinstance(results["stage_a"], StageResult)
+
+
+def test_pipeline_runner_propagates_veriflow_error():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+
+    class FailStage(PipelineStage):
+        name = "fail_stage"
+        def run(self, ctx):
+            raise VeriFlowError("stage failed", code="VF_TEST_FAIL")
+
+    raised = False
+    try:
+        PipelineRunner([FailStage()]).run(_make_ctx())
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_TEST_FAIL"
+    assert raised, "PipelineRunner must propagate VeriFlowError"
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1243,4 +1306,7 @@ ALL_TESTS = [
     ("pipeline_stage_not_implemented",              test_pipeline_stage_not_implemented),
     ("synthesis_stage_is_pipeline_stage",           test_synthesis_stage_is_pipeline_stage),
     ("synthesis_stage_skipped_returns_stage_result",test_synthesis_stage_skipped_returns_stage_result),
+    ("pipeline_runner_executes_in_order",           test_pipeline_runner_executes_in_order),
+    ("pipeline_runner_returns_stage_result_by_name",test_pipeline_runner_returns_stage_result_by_name),
+    ("pipeline_runner_propagates_veriflow_error",   test_pipeline_runner_propagates_veriflow_error),
 ]
