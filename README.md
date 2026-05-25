@@ -205,6 +205,7 @@ Each run creates `tiles/<tile_id>/runs/run-NNN/` containing:
 ```
 run-NNN/
 ├── manifest.yaml           ← structured run metadata
+├── results.json            ← machine-readable run result
 ├── summary.md              ← result table
 ├── notes.md                ← run notes
 ├── src/rtl/                ← RTL snapshot
@@ -263,6 +264,83 @@ Increment the tile revision (minor update) and reset the version counter. Same p
 
 ```bash
 veriflow --db ./my_db bump-revision --tile <number>
+```
+
+---
+
+## Machine-readable and automation-friendly execution
+
+By default, VeriFlow runs interactively with Rich-formatted terminal output — nothing changes if neither flag below is passed. Two global flags activate scripted and CI use:
+
+| Mode | Flags | Human output | stdout |
+|---|---|---|---|
+| Human (default) | *(none)* | Rich color output | run summary |
+| JSON only | `--json` | Suppressed | JSON object |
+| Non-interactive | `--non-interactive` | Rich color output | run summary |
+| JSON + non-interactive | `--json --non-interactive` | Suppressed | JSON object |
+
+### Recommended automation command
+
+```bash
+veriflow --json --non-interactive --db <db> run --tile <tile_id>
+```
+
+### `results.json`
+
+Every `run` command writes `results.json` into the run directory alongside `manifest.yaml`. It is always written — even without `--json` — and captures the complete machine-readable outcome of that run.
+
+**Location:** `tiles/<tile_id>/runs/run-NNN/results.json`
+
+```json
+{
+  "schema_version": "1.0",
+  "tile_id": "MST130-01-26032500010101",
+  "run_id": "run-001",
+  "date": "2026-03-25",
+  "status": "PASS",
+  "semicolab": true,
+  "stages": {
+    "connectivity": { "tool": "iverilog", "status": "PASS" },
+    "simulation":   { "tool": "iverilog/vvp", "status": "COMPLETED", "sim_time": "115 ns", "seed": "" },
+    "synthesis":    { "tool": "yosys", "status": "PASS", "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+  },
+  "sources": {
+    "rtl": ["tiles/MST130-01-26032500010101/runs/run-001/src/rtl/adder_tile.v"],
+    "tb":  ["tiles/MST130-01-26032500010101/runs/run-001/src/tb/tb_tile.v"]
+  },
+  "artifacts": {
+    "manifest":         ["tiles/MST130-01-26032500010101/runs/run-001/manifest.yaml"],
+    "summary":          ["tiles/MST130-01-26032500010101/runs/run-001/summary.md"],
+    "connectivity_log": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"],
+    "sim_log":          ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+    "wave":             ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"]
+  },
+  "error": null
+}
+```
+
+All paths in `results.json` are relative to the database root — no absolute OS-specific paths are stored. The file is identical in content on Windows and Linux.
+
+### `--json` mode
+
+Suppresses Rich output and emits a single JSON object to stdout on completion. The process exit code is non-zero on any error.
+
+```bash
+veriflow --json --db ./my_db run --tile 0001
+```
+
+**Success:** `{ "status": "SUCCESS", "command": "run", "run_result": { ... } }`
+
+**Error:** `{ "status": "ERROR", "error": { "code": "VF_TILE_CONFIG_MISSING", "message": "...", "details": {...}, "exit_code": 1 } }`
+
+Error `code` values are stable strings (e.g. `VF_TILE_CONFIG_MISSING`, `VF_MISSING_DB`, `VF_INTERRUPTED`).
+
+### `--non-interactive` mode
+
+Disables the TUI and waveform viewer. Combining `--non-interactive` with `--waves` or the `waves` command is an error.
+
+```bash
+veriflow --non-interactive --db ./my_db run --tile 0001
 ```
 
 ---

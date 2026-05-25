@@ -440,3 +440,134 @@ type database\tiles\<tile_id>\runs\<run-NNN>\out\sim\logs\sim.log
 
 ### Waveform shows `xxxxxxxx`
 Uninitialized signals display as `x`. Make sure `arst_n` is active at the start and the DUT initializes its outputs in the reset block.
+
+---
+
+## 13. Automation and machine-readable output
+
+VeriFlow's default behavior — Rich terminal output, interactive TUI, waveform viewer — is unchanged when no extra flags are passed.
+
+### 13.1 CLI flags
+
+| Flag | Effect |
+|---|---|
+| `--json` | Suppresses Rich output; emits a single JSON object to stdout on completion |
+| `--non-interactive` | Disables TUI and waveform viewer; safe for CI, scripts, and agents |
+
+Both flags are global and can be combined.
+
+### 13.2 Execution modes
+
+| Mode | Flags | Human output | stdout |
+|---|---|---|---|
+| Human (default) | *(none)* | Rich color output | run summary |
+| JSON only | `--json` | Suppressed | JSON object |
+| Non-interactive | `--non-interactive` | Rich color output | run summary |
+| JSON + non-interactive | `--json --non-interactive` | Suppressed | JSON object |
+
+### 13.3 Recommended automation command
+
+```bash
+veriflow --json --non-interactive --db <db> run --tile <tile_id>
+```
+
+Exit code is `0` on success, non-zero on any error.
+
+### 13.4 `results.json` artifact
+
+Every `run` command writes `results.json` to the run directory alongside `manifest.yaml`. This file is always written — it does not require `--json`.
+
+**Location:** `tiles/<tile_id>/runs/run-NNN/results.json`
+
+| Field | Description |
+|---|---|
+| `schema_version` | Document schema version (`"1.0"`) |
+| `tile_id` | Full tile identifier |
+| `run_id` | Run identifier (`run-NNN`) |
+| `date` | ISO 8601 date |
+| `status` | Overall status: `PASS`, `PARTIAL`, or `FAIL` |
+| `semicolab` | Boolean — SemiCoLab mode active |
+| `stages` | Per-stage results (connectivity, simulation, synthesis) |
+| `sources` | Relative paths to RTL and TB files used |
+| `artifacts` | Relative paths to all generated output files |
+| `error` | `null` on success; error object if the run was aborted |
+
+**Example:**
+
+```json
+{
+  "schema_version": "1.0",
+  "tile_id": "MST130-01-26032500010101",
+  "run_id": "run-001",
+  "date": "2026-03-25",
+  "status": "PASS",
+  "semicolab": true,
+  "stages": {
+    "connectivity": { "tool": "iverilog", "status": "PASS" },
+    "simulation":   { "tool": "iverilog/vvp", "status": "COMPLETED", "sim_time": "115 ns", "seed": "" },
+    "synthesis":    { "tool": "yosys", "status": "PASS", "cells": "3", "warnings": "0", "errors": "0", "has_latches": false }
+  },
+  "sources": {
+    "rtl": ["tiles/MST130-01-26032500010101/runs/run-001/src/rtl/adder_tile.v"],
+    "tb":  ["tiles/MST130-01-26032500010101/runs/run-001/src/tb/tb_tile.v"]
+  },
+  "artifacts": {
+    "manifest":         ["tiles/MST130-01-26032500010101/runs/run-001/manifest.yaml"],
+    "summary":          ["tiles/MST130-01-26032500010101/runs/run-001/summary.md"],
+    "connectivity_log": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"],
+    "sim_log":          ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
+    "wave":             ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/waves/waves.vcd"]
+  },
+  "error": null
+}
+```
+
+### 13.5 `--json` CLI output
+
+When `--json` is active the CLI emits one JSON object to stdout after the command completes. All Rich output goes to stderr or is suppressed.
+
+**Success (`run`):**
+```json
+{
+  "status": "SUCCESS",
+  "command": "run",
+  "run_result": { "schema_version": "1.0", "tile_id": "...", ... }
+}
+```
+
+`run_result` mirrors the contents of `results.json`. For other subcommands it is omitted.
+
+**Error:**
+```json
+{
+  "status": "ERROR",
+  "error": {
+    "code": "VF_TILE_CONFIG_MISSING",
+    "message": "tile_config.yaml not found: database/config/tile_0001/tile_config.yaml",
+    "details": { "path": "database/config/tile_0001/tile_config.yaml" },
+    "exit_code": 1
+  }
+}
+```
+
+**Known error codes:**
+
+| Code | Condition |
+|---|---|
+| `VF_TILE_CONFIG_MISSING` | `tile_config.yaml` not found |
+| `VF_MISSING_DB` | `--db` argument not provided |
+| `VF_NON_INTERACTIVE_REQUIRES_COMMAND` | `--non-interactive` used without a subcommand |
+| `VF_NON_INTERACTIVE_VIEWER_DISABLED` | `--waves` or `waves` used with `--non-interactive` |
+| `VF_INTERRUPTED` | Process interrupted (Ctrl+C) |
+| `VF_UNHANDLED_EXCEPTION` | Unexpected internal error |
+| `VF_ERROR` | Generic fallback |
+
+### 13.6 `--non-interactive` constraints
+
+- Disables the TUI (no-argument launch becomes an error).
+- Disables the waveform viewer (`--waves` and `waves` subcommand are blocked).
+- All other commands work normally.
+
+### 13.7 Portability
+
+All paths written to `results.json` and `manifest.yaml` are relative to the database root. No OS-specific absolute paths appear in any persistent artifact. A `results.json` produced on Windows is readable without modification on Linux and vice versa.
