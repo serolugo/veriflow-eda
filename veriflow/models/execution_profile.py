@@ -14,6 +14,8 @@ class ExecutionProfile:
     connectivity_backend: str = "icarus"
     simulation_backend: str = "icarus"
     synthesis_backend: str = "yosys"
+    # Technology target name — resolved via get_technology_profile(); not wired into synthesis yet
+    technology_name: str = "generic"
 
 
 def default_execution_profile() -> ExecutionProfile:

@@ -1862,6 +1862,53 @@ def test_build_default_pipeline_uses_registry_backends():
     assert results["synthesis"].tool == "yosys"
 
 
+# ── technology profile foundation ────────────────────────────────────────────
+
+def test_technology_profile_default_values():
+    from veriflow.models.technology_profile import TechnologyProfile, default_technology_profile
+    p = default_technology_profile()
+    assert isinstance(p, TechnologyProfile)
+    assert p.name == "generic"
+    assert p.pdk is None
+    assert p.cell_library is None
+    assert p.liberty is None
+    assert p.constraints is None
+    assert p.notes is None
+
+
+def test_technology_profile_registry_supported_names():
+    from veriflow.models.technology_profile import get_technology_profile
+    for name in ("generic", "sky130", "gf180", "ihp130"):
+        p = get_technology_profile(name)
+        assert p.name == name
+
+
+def test_technology_profile_unknown_raises():
+    from veriflow.models.technology_profile import get_technology_profile
+    from veriflow.core import VeriFlowError
+    try:
+        get_technology_profile("notapdkname")
+        assert False, "Expected VeriFlowError"
+    except VeriFlowError as e:
+        assert e.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_execution_profile_technology_name_default():
+    from veriflow.models.execution_profile import default_execution_profile
+    p = default_execution_profile()
+    assert p.technology_name == "generic"
+
+
+def test_execution_profile_backward_compatible_with_technology():
+    from veriflow.models.execution_profile import ExecutionProfile
+    p = ExecutionProfile()
+    assert p.name == "default"
+    assert p.connectivity_backend == "icarus"
+    assert p.simulation_backend == "icarus"
+    assert p.synthesis_backend == "yosys"
+    assert p.technology_name == "generic"
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1964,4 +2011,10 @@ ALL_TESTS = [
     ("registry_synthesis_unknown_raises",                  test_registry_synthesis_unknown_raises),
     ("execution_profile_has_backend_ids",                  test_execution_profile_has_backend_ids),
     ("build_default_pipeline_uses_registry_backends",      test_build_default_pipeline_uses_registry_backends),
+    # technology profile foundation
+    ("technology_profile_default_values",                  test_technology_profile_default_values),
+    ("technology_profile_registry_supported_names",        test_technology_profile_registry_supported_names),
+    ("technology_profile_unknown_raises",                  test_technology_profile_unknown_raises),
+    ("execution_profile_technology_name_default",          test_execution_profile_technology_name_default),
+    ("execution_profile_backward_compatible_with_technology", test_execution_profile_backward_compatible_with_technology),
 ]
