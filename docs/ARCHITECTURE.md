@@ -133,13 +133,37 @@ Accepts an optional `profile: ExecutionProfile` (defaults to `default_execution_
 
 `commands/run.py` calls this once after sources are copied and tb paths are resolved, then unpacks the returned stages and runs each individually via single-stage `PipelineRunner` calls so that the connectivity-FAIL early-exit logic is preserved.
 
+In `build_default_pipeline`, backend instances are obtained from the backend registry using the IDs stored in `ExecutionProfile`.  Stage constructors still accept an explicit `backend` parameter, so tests can inject mocks directly without touching the registry.
+
 This is an internal construction helper.  The pipeline order and stage set are fixed; there is no plugin registry, YAML config, or dynamic dispatch.
+
+---
+
+### `core/backends/registry.py` — Internal backend registry
+
+A static, read-only mapping from backend name strings to concrete backend classes.  Three lookup functions are exposed:
+
+```python
+get_connectivity_backend(name: str) -> ConnectivityBackend
+get_simulation_backend(name: str)   -> SimulationBackend
+get_synthesis_backend(name: str)    -> SynthesisBackend
+```
+
+Supported names: `"icarus"` (connectivity, simulation) and `"yosys"` (synthesis).  An unrecognised name raises `VeriFlowError` with one of the following codes:
+
+| Code | Trigger |
+|---|---|
+| `VF_BACKEND_CONNECTIVITY_UNKNOWN` | unknown connectivity backend name |
+| `VF_BACKEND_SIMULATION_UNKNOWN`   | unknown simulation backend name |
+| `VF_BACKEND_SYNTHESIS_UNKNOWN`    | unknown synthesis backend name |
+
+The registry uses a plain Python dictionary and no dynamic imports.  It is an **internal helper** — users have no mechanism to select backends today; that surface is intentionally deferred.  No plugins, YAML selection, or alternate backends are wired in at this stage.
 
 ---
 
 ### `models/execution_profile.py` — Toolchain description
 
-`ExecutionProfile` is a plain dataclass that records which external tools the current fixed pipeline uses.  It is **not** a configuration surface — users cannot select profiles or swap backends yet.
+`ExecutionProfile` is a plain dataclass that records which external tools and internal backend IDs the current fixed pipeline uses.  It is **not** a configuration surface — users cannot select profiles or swap backends yet.
 
 ```python
 @dataclass
@@ -149,11 +173,17 @@ class ExecutionProfile:
     simulation_tool: str = "iverilog/vvp"
     synthesis_tool: str = "yosys"
     doc_profile: str = "default"
+    # Internal backend IDs — not user-configurable yet
+    connectivity_backend: str = "icarus"
+    simulation_backend: str = "icarus"
+    synthesis_backend: str = "yosys"
 ```
 
-`default_execution_profile() → ExecutionProfile` returns the canonical instance that matches the current fixed toolchain.  Its field values are identical to the string literals previously hardcoded in the stage implementations, so `StageResult.tool` and `results.json` content are unchanged.
+The `*_tool` fields determine the `StageResult.tool` label written to `results.json`; they are unchanged.  The `*_backend` fields are internal IDs passed to the backend registry by `build_default_pipeline`; they match the currently fixed toolchain and are not exposed as user configuration.
 
-**Future work (not implemented):** YAML-driven profile loading, alternate backend selection, and plugin registries are intentionally deferred.  `ExecutionProfile` exists now only as an internal description of the current fixed tools.
+`default_execution_profile() → ExecutionProfile` returns the canonical instance.  Its `*_tool` field values are identical to the string literals previously hardcoded in the stage implementations, so `StageResult.tool` and `results.json` content are unchanged.
+
+**Future work (not implemented):** YAML-driven profile loading, user-selectable backend names, alternate backend implementations, and plugins are intentionally deferred.  `ExecutionProfile` and the registry exist now only as internal infrastructure for the current fixed toolchain.
 
 ---
 

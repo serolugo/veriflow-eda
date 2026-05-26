@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from veriflow.core.backends.registry import (
+    get_connectivity_backend,
+    get_simulation_backend,
+    get_synthesis_backend,
+)
 from veriflow.core.pipeline import PipelineRunner
 from veriflow.core.stages.connectivity import ConnectivityStage
 from veriflow.core.stages.simulation import SimulationStage
@@ -28,6 +33,7 @@ def build_default_pipeline(
             tb_tasks_path=tb_tasks_path,
             top_module=top_module,
             profile=p,
+            backend=get_connectivity_backend(p.connectivity_backend),
         ),
         SimulationStage(
             rtl_files=rtl_files,
@@ -37,10 +43,12 @@ def build_default_pipeline(
             top_module=top_module,
             has_tb=has_tb,
             profile=p,
+            backend=get_simulation_backend(p.simulation_backend),
         ),
         SynthesisStage(
             rtl_files=rtl_files,
             top_module=top_module,
             profile=p,
+            backend=get_synthesis_backend(p.synthesis_backend),
         ),
     ])

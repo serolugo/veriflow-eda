@@ -1765,6 +1765,103 @@ def test_synthesis_stage_uses_backend():
         shutil.rmtree(tmp)
 
 
+# ── Backend registry tests ────────────────────────────────────────────────────
+
+def test_registry_connectivity_icarus_returns_correct_class():
+    from veriflow.core.backends.registry import get_connectivity_backend
+    from veriflow.core.backends.icarus import IcarusConnectivityBackend
+    backend = get_connectivity_backend("icarus")
+    assert isinstance(backend, IcarusConnectivityBackend)
+
+
+def test_registry_simulation_icarus_returns_correct_class():
+    from veriflow.core.backends.registry import get_simulation_backend
+    from veriflow.core.backends.icarus import IcarusSimulationBackend
+    backend = get_simulation_backend("icarus")
+    assert isinstance(backend, IcarusSimulationBackend)
+
+
+def test_registry_synthesis_yosys_returns_correct_class():
+    from veriflow.core.backends.registry import get_synthesis_backend
+    from veriflow.core.backends.yosys import YosysSynthesisBackend
+    backend = get_synthesis_backend("yosys")
+    assert isinstance(backend, YosysSynthesisBackend)
+
+
+def test_registry_connectivity_unknown_raises():
+    from veriflow.core.backends.registry import get_connectivity_backend
+    from veriflow.core import VeriFlowError
+    try:
+        get_connectivity_backend("unknown_backend")
+        assert False, "Expected VeriFlowError"
+    except VeriFlowError as e:
+        assert e.code == "VF_BACKEND_CONNECTIVITY_UNKNOWN"
+
+
+def test_registry_simulation_unknown_raises():
+    from veriflow.core.backends.registry import get_simulation_backend
+    from veriflow.core import VeriFlowError
+    try:
+        get_simulation_backend("unknown_backend")
+        assert False, "Expected VeriFlowError"
+    except VeriFlowError as e:
+        assert e.code == "VF_BACKEND_SIMULATION_UNKNOWN"
+
+
+def test_registry_synthesis_unknown_raises():
+    from veriflow.core.backends.registry import get_synthesis_backend
+    from veriflow.core import VeriFlowError
+    try:
+        get_synthesis_backend("unknown_backend")
+        assert False, "Expected VeriFlowError"
+    except VeriFlowError as e:
+        assert e.code == "VF_BACKEND_SYNTHESIS_UNKNOWN"
+
+
+def test_execution_profile_has_backend_ids():
+    from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
+    p = default_execution_profile()
+    assert p.connectivity_backend == "icarus"
+    assert p.simulation_backend == "icarus"
+    assert p.synthesis_backend == "yosys"
+
+
+def test_build_default_pipeline_uses_registry_backends():
+    """build_default_pipeline routes through registry; tool labels are unchanged."""
+    from veriflow.core.pipeline_builder import build_default_pipeline
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.run_context import RunContext
+
+    profile = ExecutionProfile(
+        connectivity_tool="iverilog",
+        simulation_tool="iverilog/vvp",
+        synthesis_tool="yosys",
+        connectivity_backend="icarus",
+        simulation_backend="icarus",
+        synthesis_backend="yosys",
+    )
+    runner = build_default_pipeline(
+        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        top_module="my_tile", has_tb=False, profile=profile,
+    )
+
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=True,
+    )
+    results = runner.run(ctx)
+    assert results["connectivity"].tool == "iverilog"
+    assert results["simulation"].tool == "iverilog/vvp"
+    assert results["synthesis"].tool == "yosys"
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1858,4 +1955,13 @@ ALL_TESTS = [
     ("connectivity_stage_uses_backend",                   test_connectivity_stage_uses_backend),
     ("simulation_stage_uses_backend",                     test_simulation_stage_uses_backend),
     ("synthesis_stage_uses_backend",                      test_synthesis_stage_uses_backend),
+    # backend registry
+    ("registry_connectivity_icarus_returns_correct_class", test_registry_connectivity_icarus_returns_correct_class),
+    ("registry_simulation_icarus_returns_correct_class",   test_registry_simulation_icarus_returns_correct_class),
+    ("registry_synthesis_yosys_returns_correct_class",     test_registry_synthesis_yosys_returns_correct_class),
+    ("registry_connectivity_unknown_raises",               test_registry_connectivity_unknown_raises),
+    ("registry_simulation_unknown_raises",                 test_registry_simulation_unknown_raises),
+    ("registry_synthesis_unknown_raises",                  test_registry_synthesis_unknown_raises),
+    ("execution_profile_has_backend_ids",                  test_execution_profile_has_backend_ids),
+    ("build_default_pipeline_uses_registry_backends",      test_build_default_pipeline_uses_registry_backends),
 ]
