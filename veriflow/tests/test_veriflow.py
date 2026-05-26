@@ -1248,7 +1248,7 @@ def test_connectivity_fail_still_finalizes_run():
         _fill_run_config(db, "0001")
 
         from veriflow.commands.run import cmd_run
-        with patch("veriflow.core.stages.connectivity.run_connectivity_check", return_value="FAIL"):
+        with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="FAIL"):
             result = cmd_run(
                 db=db, tile_number="0001",
                 skip_check=False, skip_sim=True, skip_synth=True,
@@ -1579,6 +1579,192 @@ def test_results_json_tool_strings_unchanged():
         shutil.rmtree(tmp)
 
 
+def test_backend_base_classes_exist():
+    import abc
+    from veriflow.core.backends.base import ConnectivityBackend, SimulationBackend, SynthesisBackend
+    assert issubclass(ConnectivityBackend, abc.ABC)
+    assert issubclass(SimulationBackend, abc.ABC)
+    assert issubclass(SynthesisBackend, abc.ABC)
+
+
+def test_icarus_connectivity_backend_exists():
+    from veriflow.core.backends.icarus import IcarusConnectivityBackend
+    from veriflow.core.backends.base import ConnectivityBackend
+    backend = IcarusConnectivityBackend()
+    assert isinstance(backend, ConnectivityBackend)
+
+
+def test_icarus_simulation_backend_exists():
+    from veriflow.core.backends.icarus import IcarusSimulationBackend
+    from veriflow.core.backends.base import SimulationBackend
+    backend = IcarusSimulationBackend()
+    assert isinstance(backend, SimulationBackend)
+
+
+def test_yosys_synthesis_backend_exists():
+    from veriflow.core.backends.yosys import YosysSynthesisBackend
+    from veriflow.core.backends.base import SynthesisBackend
+    backend = YosysSynthesisBackend()
+    assert isinstance(backend, SynthesisBackend)
+
+
+def test_backends_package_exports():
+    from veriflow.core import backends
+    assert hasattr(backends, "ConnectivityBackend")
+    assert hasattr(backends, "SimulationBackend")
+    assert hasattr(backends, "SynthesisBackend")
+    assert hasattr(backends, "IcarusConnectivityBackend")
+    assert hasattr(backends, "IcarusSimulationBackend")
+    assert hasattr(backends, "YosysSynthesisBackend")
+
+
+def test_icarus_connectivity_backend_delegates_to_runner():
+    from unittest.mock import patch
+    from veriflow.core.backends.icarus import IcarusConnectivityBackend
+    backend = IcarusConnectivityBackend()
+    with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="PASS") as mock_fn:
+        result = backend.run_connectivity(
+            rtl_files=[Path("a.v")],
+            tb_base_path=Path("tb.v"),
+            tb_tasks_path=Path("tasks.v"),
+            top_module="top",
+            log_path=Path("conn.log"),
+        )
+    assert result == "PASS"
+    mock_fn.assert_called_once()
+
+
+def test_icarus_simulation_backend_delegates_to_runner():
+    from unittest.mock import patch
+    from veriflow.core.backends.icarus import IcarusSimulationBackend
+    backend = IcarusSimulationBackend()
+    with patch(
+        "veriflow.core.backends.icarus.run_simulation",
+        return_value=("COMPLETED", {"sim_time": "10ns", "seed": "42"}),
+    ) as mock_fn:
+        status, parsed = backend.run_simulation(
+            rtl_files=[Path("a.v")],
+            tb_files=[Path("tb.v")],
+            tb_base_path=Path("tb_base.v"),
+            tb_tasks_path=Path("tasks.v"),
+            top_module="top",
+            sim_log_path=Path("sim.log"),
+            wave_path=Path("waves.vcd"),
+        )
+    assert status == "COMPLETED"
+    assert parsed["sim_time"] == "10ns"
+    mock_fn.assert_called_once()
+
+
+def test_yosys_synthesis_backend_delegates_to_runner():
+    from unittest.mock import patch
+    from veriflow.core.backends.yosys import YosysSynthesisBackend
+    backend = YosysSynthesisBackend()
+    with patch(
+        "veriflow.core.backends.yosys.run_synthesis",
+        return_value=("PASS", {"cells": "5", "warnings": "0", "errors": "0", "has_latches": False}),
+    ) as mock_fn:
+        status, parsed = backend.run_synthesis(
+            rtl_files=[Path("a.v")],
+            top_module="top",
+            synth_log_path=Path("synth.log"),
+        )
+    assert status == "PASS"
+    assert parsed["cells"] == "5"
+    mock_fn.assert_called_once()
+
+
+def test_connectivity_stage_uses_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.backends.base import ConnectivityBackend
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+
+    stage = ConnectivityStage(
+        rtl_files=[],
+        tb_base_path=None,
+        tb_tasks_path=None,
+        top_module="top",
+        backend=mock_backend,
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_connectivity = False
+        ctx.impl_dir = tmp / "impl"
+        ctx.db_path = tmp / "db"
+        result = stage.run(ctx)
+        mock_backend.run_connectivity.assert_called_once()
+        assert result.status == "PASS"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_uses_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {"sim_time": "10ns", "seed": "42"})
+
+    stage = SimulationStage(
+        rtl_files=[],
+        tb_files=[],
+        tb_base_path=None,
+        tb_tasks_path=None,
+        top_module="top",
+        has_tb=True,
+        backend=mock_backend,
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.semicolab = True
+        ctx.sim_dir = tmp / "sim"
+        ctx.db_path = tmp / "db"
+        result = stage.run(ctx)
+        mock_backend.run_simulation.assert_called_once()
+        assert result.status == "COMPLETED"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_synthesis_stage_uses_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "3", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+
+    stage = SynthesisStage(
+        rtl_files=[],
+        top_module="top",
+        backend=mock_backend,
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_synth = False
+        ctx.synth_dir = tmp / "synth"
+        ctx.db_path = tmp / "db"
+        result = stage.run(ctx)
+        mock_backend.run_synthesis.assert_called_once()
+        assert result.status == "PASS"
+    finally:
+        shutil.rmtree(tmp)
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -1660,4 +1846,16 @@ ALL_TESTS = [
     ("build_default_pipeline_accepts_profile",            test_build_default_pipeline_accepts_profile),
     ("build_default_pipeline_uses_profile_tool_labels",   test_build_default_pipeline_uses_profile_tool_labels),
     ("results_json_tool_strings_unchanged",               test_results_json_tool_strings_unchanged),
+    # backend interface foundation
+    ("backend_base_classes_exist",                        test_backend_base_classes_exist),
+    ("icarus_connectivity_backend_exists",                test_icarus_connectivity_backend_exists),
+    ("icarus_simulation_backend_exists",                  test_icarus_simulation_backend_exists),
+    ("yosys_synthesis_backend_exists",                    test_yosys_synthesis_backend_exists),
+    ("backends_package_exports",                          test_backends_package_exports),
+    ("icarus_connectivity_backend_delegates_to_runner",   test_icarus_connectivity_backend_delegates_to_runner),
+    ("icarus_simulation_backend_delegates_to_runner",     test_icarus_simulation_backend_delegates_to_runner),
+    ("yosys_synthesis_backend_delegates_to_runner",       test_yosys_synthesis_backend_delegates_to_runner),
+    ("connectivity_stage_uses_backend",                   test_connectivity_stage_uses_backend),
+    ("simulation_stage_uses_backend",                     test_simulation_stage_uses_backend),
+    ("synthesis_stage_uses_backend",                      test_synthesis_stage_uses_backend),
 ]
