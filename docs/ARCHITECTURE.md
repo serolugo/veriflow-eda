@@ -161,6 +161,36 @@ The registry uses a plain Python dictionary and no dynamic imports.  It is an **
 
 ---
 
+### `models/technology_profile.py` — Technology target metadata
+
+> **Backend vs technology profile distinction:**
+> A *backend* is a tool that executes work (e.g. `yosys`, `iverilog`).
+> A *technology profile* is a synthesis target / PDK context (e.g. `sky130`, `gf180`, `ihp130`).
+> These are orthogonal: the same backend can synthesise for different technology targets, and the same target can in principle be served by different backends.
+
+`TechnologyProfile` is a plain dataclass describing a named technology target:
+
+```python
+@dataclass
+class TechnologyProfile:
+    name: str = "generic"
+    pdk: str | None = None
+    cell_library: str | None = None
+    liberty: str | None = None
+    constraints: str | None = None
+    notes: str | None = None
+```
+
+`default_technology_profile() → TechnologyProfile` returns the bare `generic` instance with all optional fields `None`.
+
+`get_technology_profile(name: str) → TechnologyProfile` looks up a named profile from the internal registry.  Supported names: `"generic"`, `"sky130"`, `"gf180"`, `"ihp130"`.  An unknown name raises `VeriFlowError` with code `VF_TECHNOLOGY_UNKNOWN`.
+
+The `sky130`, `gf180`, and `ihp130` entries are **metadata placeholders only**.  They record PDK and cell-library names but do not point to local PDK file paths and are not wired into `YosysSynthesisBackend`.  Yosys invocation is unchanged by this module.  PDK-aware synthesis target configuration is explicitly deferred to a future milestone.
+
+`ExecutionProfile` carries a `technology_name: str = "generic"` field that names the intended target.  It is not consumed by any stage yet; it exists so the profile dataclass can evolve toward technology-aware synthesis without a breaking schema change.
+
+---
+
 ### `models/execution_profile.py` — Toolchain description
 
 `ExecutionProfile` is a plain dataclass that records which external tools and internal backend IDs the current fixed pipeline uses.  It is **not** a configuration surface — users cannot select profiles or swap backends yet.
