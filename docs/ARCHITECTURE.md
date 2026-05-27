@@ -191,6 +191,39 @@ The `sky130`, `gf180`, and `ihp130` entries are **metadata placeholders only**. 
 
 ---
 
+### `models/profile_loader.py` — Profile file loading (internal foundation)
+
+`load_execution_profile(path: str | Path) → ExecutionProfile`
+
+Reads a YAML file and returns a populated `ExecutionProfile`.  This is an **internal foundation only** — it is not exposed through the CLI and does not affect default behavior when no profile file is provided.
+
+**Supported YAML keys:**
+
+| Key | Type | Default |
+|---|---|---|
+| `name` | str | `"default"` |
+| `connectivity_backend` | str | `"icarus"` |
+| `simulation_backend` | str | `"icarus"` |
+| `synthesis_backend` | str | `"yosys"` |
+| `connectivity_tool` | str | `"iverilog"` |
+| `simulation_tool` | str | `"iverilog/vvp"` |
+| `synthesis_tool` | str | `"yosys"` |
+| `technology_name` | str | `"generic"` |
+| `doc_profile` | str | `"default"` |
+
+All keys are optional; missing keys take their `ExecutionProfile` defaults.  Keys not in the table above raise `VeriFlowError` with code `VF_PROFILE_UNKNOWN_KEY`.
+
+Backend names are validated via the backend registry; an unrecognised name propagates the registry's `VeriFlowError` (`VF_BACKEND_CONNECTIVITY_UNKNOWN`, `VF_BACKEND_SIMULATION_UNKNOWN`, or `VF_BACKEND_SYNTHESIS_UNKNOWN`).  `technology_name` is validated via `get_technology_profile()`; an unrecognised name propagates `VF_TECHNOLOGY_UNKNOWN`.
+
+**Current status:**
+- Not wired into any CLI flag or command.
+- Default behavior (no profile file) is completely unchanged.
+- Intended as the foundation for a future `--profile` flag once implementation-stage profiles are designed.
+
+**Future direction (not implemented):** Flow profiles may later support implementation stages such as LibreLane/OpenLane synthesis flows.  The loader, error codes, and validation contracts defined here are intended to remain stable as that surface is added.
+
+---
+
 ### `models/execution_profile.py` — Toolchain description
 
 `ExecutionProfile` is a plain dataclass that records which external tools and internal backend IDs the current fixed pipeline uses.  It is **not** a configuration surface — users cannot select profiles or swap backends yet.

@@ -1909,6 +1909,129 @@ def test_execution_profile_backward_compatible_with_technology():
     assert p.technology_name == "generic"
 
 
+# ── profile_loader tests ──────────────────────────────────────────────────────
+
+def test_load_profile_minimal():
+    """A YAML with only 'name' loads and all other fields take defaults."""
+    import tempfile, shutil, yaml
+    from veriflow.models.profile_loader import load_execution_profile
+    from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        p_file = tmp / "profile.yaml"
+        p_file.write_text(yaml.dump({"name": "ci"}), encoding="utf-8")
+        profile = load_execution_profile(p_file)
+        assert isinstance(profile, ExecutionProfile)
+        assert profile.name == "ci"
+        defaults = default_execution_profile()
+        assert profile.connectivity_backend == defaults.connectivity_backend
+        assert profile.simulation_backend == defaults.simulation_backend
+        assert profile.synthesis_backend == defaults.synthesis_backend
+        assert profile.connectivity_tool == defaults.connectivity_tool
+        assert profile.simulation_tool == defaults.simulation_tool
+        assert profile.synthesis_tool == defaults.synthesis_tool
+        assert profile.technology_name == defaults.technology_name
+        assert profile.doc_profile == defaults.doc_profile
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_profile_full():
+    """A YAML with all supported keys loads correctly."""
+    import tempfile, shutil, yaml
+    from veriflow.models.profile_loader import load_execution_profile
+    from veriflow.models.execution_profile import ExecutionProfile
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        data = {
+            "name": "full",
+            "connectivity_backend": "icarus",
+            "simulation_backend": "icarus",
+            "synthesis_backend": "yosys",
+            "connectivity_tool": "iverilog",
+            "simulation_tool": "iverilog/vvp",
+            "synthesis_tool": "yosys",
+            "technology_name": "sky130",
+            "doc_profile": "custom",
+        }
+        p_file = tmp / "profile.yaml"
+        p_file.write_text(yaml.dump(data), encoding="utf-8")
+        profile = load_execution_profile(p_file)
+        assert isinstance(profile, ExecutionProfile)
+        assert profile.name == "full"
+        assert profile.connectivity_backend == "icarus"
+        assert profile.simulation_backend == "icarus"
+        assert profile.synthesis_backend == "yosys"
+        assert profile.connectivity_tool == "iverilog"
+        assert profile.simulation_tool == "iverilog/vvp"
+        assert profile.synthesis_tool == "yosys"
+        assert profile.technology_name == "sky130"
+        assert profile.doc_profile == "custom"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_profile_unknown_key_raises():
+    """An unknown key in the YAML raises VF_PROFILE_UNKNOWN_KEY."""
+    import tempfile, shutil, yaml
+    from veriflow.models.profile_loader import load_execution_profile
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        p_file = tmp / "profile.yaml"
+        p_file.write_text(yaml.dump({"name": "x", "bad_key": "value"}), encoding="utf-8")
+        raised = False
+        try:
+            load_execution_profile(p_file)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_PROFILE_UNKNOWN_KEY"
+            assert "bad_key" in str(e)
+        assert raised, "Expected VF_PROFILE_UNKNOWN_KEY"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_profile_invalid_backend_raises():
+    """An unrecognised connectivity_backend propagates the registry VeriFlowError."""
+    import tempfile, shutil, yaml
+    from veriflow.models.profile_loader import load_execution_profile
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        p_file = tmp / "profile.yaml"
+        p_file.write_text(yaml.dump({"connectivity_backend": "notabackend"}), encoding="utf-8")
+        raised = False
+        try:
+            load_execution_profile(p_file)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_BACKEND_CONNECTIVITY_UNKNOWN"
+        assert raised, "Expected VF_BACKEND_CONNECTIVITY_UNKNOWN"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_profile_invalid_technology_raises():
+    """An unrecognised technology_name propagates VF_TECHNOLOGY_UNKNOWN."""
+    import tempfile, shutil, yaml
+    from veriflow.models.profile_loader import load_execution_profile
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        p_file = tmp / "profile.yaml"
+        p_file.write_text(yaml.dump({"technology_name": "notapdk"}), encoding="utf-8")
+        raised = False
+        try:
+            load_execution_profile(p_file)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TECHNOLOGY_UNKNOWN"
+        assert raised, "Expected VF_TECHNOLOGY_UNKNOWN"
+    finally:
+        shutil.rmtree(tmp)
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -2017,4 +2140,10 @@ ALL_TESTS = [
     ("technology_profile_unknown_raises",                  test_technology_profile_unknown_raises),
     ("execution_profile_technology_name_default",          test_execution_profile_technology_name_default),
     ("execution_profile_backward_compatible_with_technology", test_execution_profile_backward_compatible_with_technology),
+    # profile loader foundation
+    ("load_profile_minimal",                                test_load_profile_minimal),
+    ("load_profile_full",                                   test_load_profile_full),
+    ("load_profile_unknown_key_raises",                     test_load_profile_unknown_key_raises),
+    ("load_profile_invalid_backend_raises",                 test_load_profile_invalid_backend_raises),
+    ("load_profile_invalid_technology_raises",              test_load_profile_invalid_technology_raises),
 ]
