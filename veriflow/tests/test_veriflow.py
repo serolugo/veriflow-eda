@@ -846,8 +846,6 @@ def test_run_context_property_paths():
         run_id="run-001",
         tile_dir=tile_dir,
         run_dir=run_dir,
-        tile_config_path=db / "config" / "tile_0001" / "tile_config.yaml",
-        project_config_path=db / "project_config.yaml",
         semicolab=True,
         skip_connectivity=False,
         skip_sim=False,
@@ -872,8 +870,6 @@ def test_run_context_uses_pathlib():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=False, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
@@ -893,8 +889,6 @@ def test_run_context_no_file_creation():
             db_path=tmp, tile_id="X", run_id="run-001",
             tile_dir=tmp / "tiles" / "X",
             run_dir=run_dir,
-            tile_config_path=tmp / "config" / "tile_config.yaml",
-            project_config_path=tmp / "project_config.yaml",
             semicolab=True, skip_connectivity=False,
             skip_sim=False, skip_synth=False,
         )
@@ -1206,8 +1200,6 @@ def _make_ctx_conn(skip_connectivity: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=True, skip_connectivity=skip_connectivity,
         skip_sim=True, skip_synth=True,
     )
@@ -1280,8 +1272,6 @@ def _make_ctx(skip_synth: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=False, skip_connectivity=True,
         skip_sim=True, skip_synth=skip_synth,
     )
@@ -1417,8 +1407,6 @@ def _make_ctx_sim(skip_sim: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=False, skip_connectivity=True,
         skip_sim=skip_sim, skip_synth=True,
     )
@@ -1543,8 +1531,6 @@ def test_build_default_pipeline_uses_profile_tool_labels():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=False, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
@@ -1851,8 +1837,6 @@ def test_build_default_pipeline_uses_registry_backends():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        tile_config_path=db / "cfg.yaml",
-        project_config_path=db / "proj.yaml",
         semicolab=False, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )

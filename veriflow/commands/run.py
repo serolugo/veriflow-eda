@@ -134,8 +134,6 @@ def cmd_run(
         run_id=run_id,
         tile_dir=tile_dir,
         run_dir=runs_dir / run_id,
-        tile_config_path=tile_cfg_path,
-        project_config_path=project_cfg_path,
         semicolab=semicolab,
         skip_connectivity=skip_check,
         skip_sim=skip_sim,
