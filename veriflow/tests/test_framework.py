@@ -196,7 +196,7 @@ def test_flow_definition_work_dir_paths(tmp_path):
     req = RunRequest(top_module="top", work_dir=tmp_path)
     flow.run(req)
     ctx = recorder.received_ctx
-    assert ctx.db_path == tmp_path
+    assert ctx.db_path is None
     assert ctx.run_dir == tmp_path
     # Derived paths should be inside work_dir
     assert ctx.sim_dir == tmp_path / "out" / "sim"
@@ -243,3 +243,52 @@ def test_flow_definition_duplicate_error_includes_stage_name():
 def test_flow_definition_distinct_stage_names_allowed():
     flow = FlowDefinition([PassStage(), PassStage2()])
     assert len(flow.stages) == 2
+
+
+# ── db_path decoupling ────────────────────────────────────────────────────────
+
+def test_flow_definition_no_db_path(tmp_path):
+    recorder = RecordingStage()
+    flow = FlowDefinition([recorder])
+    flow.run(RunRequest(top_module="top", work_dir=tmp_path))
+    assert recorder.received_ctx.db_path is None
+
+
+def test_run_context_log_rel_without_db_path(tmp_path):
+    from veriflow.models.run_context import RunContext
+    ctx = RunContext(
+        tile_id="X", run_id="run-001",
+        tile_dir=tmp_path,
+        run_dir=tmp_path / "runs" / "run-001",
+        tile_config_path=tmp_path / "tile_config.yaml",
+        project_config_path=tmp_path / "project_config.yaml",
+        semicolab=False,
+        skip_connectivity=False,
+        skip_sim=False,
+        skip_synth=False,
+    )
+    p = tmp_path / "some" / "path.log"
+    assert ctx.log_rel(p) == p.as_posix()
+
+
+def test_run_context_log_rel_with_db_path(tmp_path):
+    from veriflow.models.run_context import RunContext
+    db = tmp_path / "db"
+    tile_dir = db / "tiles" / "T"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        tile_id="T", run_id="run-001",
+        tile_dir=tile_dir,
+        run_dir=run_dir,
+        tile_config_path=db / "cfg.yaml",
+        project_config_path=db / "proj.yaml",
+        semicolab=False,
+        skip_connectivity=False,
+        skip_sim=False,
+        skip_synth=False,
+        db_path=db,
+    )
+    inside = db / "tiles" / "T" / "runs" / "run-001" / "out" / "synth" / "logs" / "synth.log"
+    assert ctx.log_rel(inside) == "tiles/T/runs/run-001/out/synth/logs/synth.log"
+    outside = tmp_path / "elsewhere" / "file.log"
+    assert ctx.log_rel(outside) == outside.as_posix()

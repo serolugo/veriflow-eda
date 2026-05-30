@@ -22,7 +22,6 @@ class FlowDefinition:
 
     def run(self, request: RunRequest) -> RunResult:
         ctx = RunContext(
-            db_path=request.work_dir,
             tile_id="framework-run",
             run_id="run-001",
             tile_dir=request.work_dir,

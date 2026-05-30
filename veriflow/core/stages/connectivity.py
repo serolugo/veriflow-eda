@@ -43,11 +43,7 @@ class ConnectivityStage(PipelineStage):
             log_path=conn_log_path,
         )
 
-        tiles_dir = ctx.db_path / "tiles"
-        try:
-            log_rel = "tiles/" + conn_log_path.relative_to(tiles_dir).as_posix()
-        except ValueError:
-            log_rel = conn_log_path.as_posix()
+        log_rel = ctx.log_rel(conn_log_path)
 
         return StageResult(
             name=self.name,
