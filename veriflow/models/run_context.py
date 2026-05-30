@@ -4,7 +4,6 @@ from pathlib import Path
 
 @dataclass
 class RunContext:
-    db_path: Path
     tile_id: str
     run_id: str
     tile_dir: Path
@@ -15,6 +14,16 @@ class RunContext:
     skip_connectivity: bool
     skip_sim: bool
     skip_synth: bool
+    db_path: Path | None = None
+
+    def log_rel(self, path: Path) -> str:
+        """Return path relative to db/tiles when db_path is set, else as_posix()."""
+        if self.db_path is None:
+            return path.as_posix()
+        try:
+            return "tiles/" + path.relative_to(self.db_path / "tiles").as_posix()
+        except ValueError:
+            return path.as_posix()
 
     @property
     def src_dir(self) -> Path:

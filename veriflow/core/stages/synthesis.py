@@ -37,11 +37,7 @@ class SynthesisStage(PipelineStage):
             synth_log_path=synth_log_path,
         )
 
-        tiles_dir = ctx.db_path / "tiles"
-        try:
-            log_rel = "tiles/" + synth_log_path.relative_to(tiles_dir).as_posix()
-        except ValueError:
-            log_rel = synth_log_path.as_posix()
+        log_rel = ctx.log_rel(synth_log_path)
 
         metrics = {
             "cells": parsed.get("cells", ""),

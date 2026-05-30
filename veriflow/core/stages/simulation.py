@@ -52,16 +52,8 @@ class SimulationStage(PipelineStage):
             semicolab=ctx.semicolab,
         )
 
-        tiles_dir = ctx.db_path / "tiles"
-
-        def _rel(p: Path) -> str:
-            try:
-                return "tiles/" + p.relative_to(tiles_dir).as_posix()
-            except ValueError:
-                return p.as_posix()
-
-        log_paths = [_rel(sim_log_path)] if sim_log_path.exists() else None
-        wave_files = [_rel(wave_path)] if wave_path.exists() else None
+        log_paths = [ctx.log_rel(sim_log_path)] if sim_log_path.exists() else None
+        wave_files = [ctx.log_rel(wave_path)] if wave_path.exists() else None
 
         metrics: dict = {}
         if parsed.get("sim_time"):
