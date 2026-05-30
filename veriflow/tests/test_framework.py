@@ -224,3 +224,22 @@ def test_flow_definition_skipped_stage_does_not_fail(tmp_path):
     flow = FlowDefinition([SkippedStage()])
     result = flow.run(RunRequest(top_module="top", work_dir=tmp_path))
     assert result.status == "PASS"
+
+
+# ── 6. FlowDefinition duplicate stage guard ───────────────────────────────────
+
+def test_flow_definition_rejects_duplicate_stage_names():
+    with pytest.raises(VeriFlowError) as exc_info:
+        FlowDefinition([PassStage(), PassStage()])
+    assert exc_info.value.code == "VF_FLOW_DUPLICATE_STAGE"
+
+
+def test_flow_definition_duplicate_error_includes_stage_name():
+    with pytest.raises(VeriFlowError) as exc_info:
+        FlowDefinition([PassStage(), PassStage()])
+    assert "pass_stage" in str(exc_info.value)
+
+
+def test_flow_definition_distinct_stage_names_allowed():
+    flow = FlowDefinition([PassStage(), PassStage2()])
+    assert len(flow.stages) == 2
