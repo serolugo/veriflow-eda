@@ -26,8 +26,6 @@ class FlowDefinition:
             run_id="run-001",
             tile_dir=request.work_dir,
             run_dir=request.work_dir,
-            tile_config_path=request.work_dir / "tile_config.yaml",
-            project_config_path=request.work_dir / "project_config.yaml",
             semicolab=request.semicolab,
             skip_connectivity=request.skip_connectivity,
             skip_sim=request.skip_sim,

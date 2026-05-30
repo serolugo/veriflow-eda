@@ -8,8 +8,6 @@ class RunContext:
     run_id: str
     tile_dir: Path
     run_dir: Path
-    tile_config_path: Path
-    project_config_path: Path
     semicolab: bool
     skip_connectivity: bool
     skip_sim: bool
