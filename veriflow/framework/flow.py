@@ -4,7 +4,7 @@ from veriflow.core import VeriFlowError
 from veriflow.framework.request import RunRequest
 from veriflow.framework.result import RunResult
 from veriflow.framework.stage import Stage
-from veriflow.models.run_context import RunContext
+from veriflow.models.stage_context import ExecutionContext
 from veriflow.models.stage_result import StageResult
 
 
@@ -21,10 +21,7 @@ class FlowDefinition:
         self.stages = stages
 
     def run(self, request: RunRequest) -> RunResult:
-        ctx = RunContext(
-            tile_id="framework-run",
-            run_id="run-001",
-            tile_dir=request.work_dir,
+        ctx = ExecutionContext(
             run_dir=request.work_dir,
             semicolab=request.semicolab,
             skip_connectivity=request.skip_connectivity,

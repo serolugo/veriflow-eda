@@ -6,7 +6,7 @@ from veriflow.core.backends.base import SynthesisBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 from veriflow.core.pipeline import PipelineStage
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
-from veriflow.models.run_context import RunContext
+from veriflow.models.stage_context import StageContext
 from veriflow.models.stage_result import StageResult
 
 
@@ -25,7 +25,7 @@ class SynthesisStage(PipelineStage):
         self._profile = profile or default_execution_profile()
         self._backend = backend or YosysSynthesisBackend()
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         tool = self._profile.synthesis_tool
         if ctx.skip_synth:
             return StageResult(name=self.name, status="SKIPPED", tool=tool)
