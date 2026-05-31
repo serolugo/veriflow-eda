@@ -11,6 +11,7 @@ from veriflow.core.pipeline import PipelineRunner
 from veriflow.core.stages.connectivity import ConnectivityStage
 from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
+from veriflow.framework.design import Design
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
 
 
@@ -26,29 +27,29 @@ def build_default_pipeline(
 ) -> PipelineRunner:
     """Construct the fixed default pipeline: connectivity → simulation → synthesis."""
     p = profile or default_execution_profile()
-    return PipelineRunner([
-        ConnectivityStage(
-            rtl_files=rtl_files,
-            tb_base_path=tb_base_path,
-            tb_tasks_path=tb_tasks_path,
-            top_module=top_module,
-            profile=p,
-            backend=get_connectivity_backend(p.connectivity_backend),
-        ),
-        SimulationStage(
-            rtl_files=rtl_files,
-            tb_files=tb_files,
-            tb_base_path=tb_base_path,
-            tb_tasks_path=tb_tasks_path,
-            top_module=top_module,
-            has_tb=has_tb,
-            profile=p,
-            backend=get_simulation_backend(p.simulation_backend),
-        ),
-        SynthesisStage(
-            rtl_files=rtl_files,
-            top_module=top_module,
-            profile=p,
-            backend=get_synthesis_backend(p.synthesis_backend),
-        ),
-    ])
+    design = Design(
+        top_module=top_module,
+        rtl_sources=rtl_files,
+        tb_sources=tb_files,
+    )
+    return PipelineRunner(
+        stages=[
+            ConnectivityStage(
+                tb_base_path=tb_base_path,
+                tb_tasks_path=tb_tasks_path,
+                profile=p,
+                backend=get_connectivity_backend(p.connectivity_backend),
+            ),
+            SimulationStage(
+                tb_base_path=tb_base_path,
+                tb_tasks_path=tb_tasks_path,
+                profile=p,
+                backend=get_simulation_backend(p.simulation_backend),
+            ),
+            SynthesisStage(
+                profile=p,
+                backend=get_synthesis_backend(p.synthesis_backend),
+            ),
+        ],
+        design=design,
+    )

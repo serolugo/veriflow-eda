@@ -534,3 +534,88 @@ def test_public_exports_include_flow_and_stage_input():
 def test_public_exports_do_not_include_legacy_stage_adapter():
     import veriflow.framework as fw
     assert not hasattr(fw, "LegacyStageAdapter")
+
+
+# ── 10. Flow with migrated built-in stages ───────────────────────────────────
+
+def test_flow_runs_synthesis_stage_natively(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "7", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    result = Flow([stage]).run(design, RunRequest(work_dir=tmp_path, skip_synth=False))
+    assert result.status == "PASS"
+    assert "synthesis" in result.stages
+    assert result.stages["synthesis"].status == "PASS"
+    mock_backend.run_synthesis.assert_called_once()
+
+
+def test_flow_runs_connectivity_stage_natively(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.backends.base import ConnectivityBackend
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+    stage = ConnectivityStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    result = Flow([stage]).run(
+        design,
+        RunRequest(work_dir=tmp_path, skip_connectivity=False, semicolab=True),
+    )
+    assert result.status == "PASS"
+    mock_backend.run_connectivity.assert_called_once()
+    call_kwargs = mock_backend.run_connectivity.call_args
+    assert call_kwargs.kwargs["top_module"] == "top"
+
+
+def test_flow_runs_simulation_stage_natively(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {"sim_time": "5ns", "seed": "1"})
+    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    result = Flow([stage]).run(design, RunRequest(work_dir=tmp_path, skip_sim=False))
+    assert result.status == "PASS"
+    mock_backend.run_simulation.assert_called_once()
+
+
+def test_flow_built_in_stages_receive_design_from_flow(tmp_path):
+    """Built-in stages read RTL/top from StageInput.design, not their constructor."""
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "2", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    # Constructor has no rtl_files or top_module
+    stage = SynthesisStage(backend=mock_backend)
+
+    rtl = Path("/nonexistent/specific.v")
+    design = Design(top_module="specific_top", rtl_sources=[rtl])
+
+    Flow([stage]).run(design, RunRequest(work_dir=tmp_path, skip_synth=False))
+
+    call_kwargs = mock_backend.run_synthesis.call_args
+    assert call_kwargs.kwargs["rtl_files"] == [rtl]
+    assert call_kwargs.kwargs["top_module"] == "specific_top"
