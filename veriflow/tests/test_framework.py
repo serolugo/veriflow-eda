@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from veriflow.core import VeriFlowError
-from veriflow.core.pipeline import PipelineStage
 from veriflow.framework import (
     Design,
-    FlowDefinition,
+    Flow,
     RunRequest,
     RunResult,
     Stage,
+    StageInput,
     StageRegistry,
 )
 from veriflow.models.run_context import RunContext
@@ -21,57 +21,78 @@ from veriflow.models.stage_result import StageResult
 
 # ── Stub stages ──────────────────────────────────────────────────────────────
 
-class PassStage(Stage):
+class PassStage:
     name = "pass_stage"
 
-    def run(self, ctx: StageContext) -> StageResult:
+    def run(self, input: StageInput) -> StageResult:
         return StageResult(name=self.name, status="PASS")
 
 
-class FailStage(Stage):
+class FailStage:
     name = "fail_stage"
 
-    def run(self, ctx: StageContext) -> StageResult:
+    def run(self, input: StageInput) -> StageResult:
         return StageResult(name=self.name, status="FAIL")
 
 
-class RecordingStage(Stage):
-    """Records the context it was called with."""
+class RecordingStage:
+    """Records the StageInput it was called with."""
     name = "recording_stage"
 
     def __init__(self) -> None:
-        self.received_ctx: StageContext | None = None
+        self.received_input: StageInput | None = None
 
-    def run(self, ctx: StageContext) -> StageResult:
-        self.received_ctx = ctx
+    def run(self, input: StageInput) -> StageResult:
+        self.received_input = input
         return StageResult(name=self.name, status="PASS")
 
 
-class PassStage2(Stage):
+class NamedRecordingStage:
+    """Configurable-name recording stage for multi-stage tests."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.received_input: StageInput | None = None
+
+    def run(self, input: StageInput) -> StageResult:
+        self.received_input = input
+        return StageResult(name=self.name, status="PASS")
+
+
+class PassStage2:
     name = "pass_stage_2"
 
-    def run(self, ctx: StageContext) -> StageResult:
+    def run(self, input: StageInput) -> StageResult:
         return StageResult(name=self.name, status="PASS")
 
 
-class SkippedStage(Stage):
+class SkippedStage:
     name = "skipped_stage"
 
-    def run(self, ctx: StageContext) -> StageResult:
+    def run(self, input: StageInput) -> StageResult:
         return StageResult(name=self.name, status="SKIPPED")
 
 
-class LogRelStage(Stage):
-    """Returns a log path computed via ctx.log_rel() for path-relativity checks."""
+class LogRelStage:
+    """Returns a log path computed via context.log_rel() for path-relativity checks."""
     name = "log_rel_stage"
 
-    def run(self, ctx: StageContext) -> StageResult:
-        log_path = ctx.synth_dir / "logs" / "synth.log"
+    def run(self, input: StageInput) -> StageResult:
+        log_path = input.context.synth_dir / "logs" / "synth.log"
         return StageResult(
             name=self.name,
             status="PASS",
-            log_paths=[ctx.log_rel(log_path)],
+            log_paths=[input.context.log_rel(log_path)],
         )
+
+
+class MutatingStage:
+    """Mutates the prior_results dict it receives to probe isolation."""
+    name = "mutating_stage"
+
+    def run(self, input: StageInput) -> StageResult:
+        input.prior_results["injected"] = StageResult(name="injected", status="PASS")
+        return StageResult(name=self.name, status="PASS")
 
 
 # ── Fixture: reset StageRegistry between tests ───────────────────────────────
@@ -81,6 +102,12 @@ def clear_registry():
     StageRegistry.clear()
     yield
     StageRegistry.clear()
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+def _design() -> Design:
+    return Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
 
 
 # ── 0. Design ─────────────────────────────────────────────────────────────────
@@ -138,13 +165,39 @@ def test_design_exported_from_framework():
     assert FrameworkDesign is Design
 
 
-# ── 1. Stage alias ────────────────────────────────────────────────────────────
-
-def test_stage_is_pipeline_stage():
-    assert Stage is PipelineStage
+def test_design_has_no_tb_base_path():
+    assert not hasattr(_design(), "tb_base_path")
 
 
-# ── 2. StageRegistry ─────────────────────────────────────────────────────────
+def test_design_has_no_tb_tasks_path():
+    assert not hasattr(_design(), "tb_tasks_path")
+
+
+# ── 1. StageInput ─────────────────────────────────────────────────────────────
+
+def test_stage_input_stores_design_context_prior_results(tmp_path):
+    design = _design()
+    ctx = ExecutionContext(run_dir=tmp_path)
+    prior = {"a": StageResult(name="a", status="PASS")}
+    si = StageInput(design=design, context=ctx, prior_results=prior)
+    assert si.design is design
+    assert si.context is ctx
+    assert si.prior_results == prior
+
+
+def test_stage_input_default_prior_results_is_empty(tmp_path):
+    si = StageInput(design=_design(), context=ExecutionContext(run_dir=tmp_path))
+    assert si.prior_results == {}
+
+
+# ── 2. Stage (Protocol) ───────────────────────────────────────────────────────
+
+def test_stage_is_not_pipeline_stage():
+    from veriflow.core.pipeline import PipelineStage
+    assert Stage is not PipelineStage
+
+
+# ── 3. StageRegistry ─────────────────────────────────────────────────────────
 
 def test_stage_registry_register_and_get():
     StageRegistry.register("pass_stage", PassStage)
@@ -164,10 +217,10 @@ def test_stage_registry_unknown_raises():
     assert exc_info.value.code == "VF_STAGE_UNKNOWN"
 
 
-# ── 3. RunRequest ─────────────────────────────────────────────────────────────
+# ── 4. RunRequest ─────────────────────────────────────────────────────────────
 
 def test_run_request_defaults():
-    req = RunRequest(top_module="my_mod", work_dir=Path("/tmp/work"))
+    req = RunRequest(work_dir=Path("/tmp/work"))
     assert req.semicolab is False
     assert req.skip_connectivity is False
     assert req.skip_sim is False
@@ -175,12 +228,17 @@ def test_run_request_defaults():
 
 
 def test_run_request_normalizes_work_dir():
-    req = RunRequest(top_module="my_mod", work_dir="/tmp/work")  # type: ignore[arg-type]
+    req = RunRequest(work_dir="/tmp/work")  # type: ignore[arg-type]
     assert isinstance(req.work_dir, Path)
     assert req.work_dir == Path("/tmp/work")
 
 
-# ── 4. RunResult ──────────────────────────────────────────────────────────────
+def test_run_request_has_no_top_module():
+    req = RunRequest(work_dir=Path("/tmp/work"))
+    assert not hasattr(req, "top_module")
+
+
+# ── 5. RunResult ──────────────────────────────────────────────────────────────
 
 def test_run_result_to_dict():
     sr = StageResult(name="connectivity", status="PASS", tool="iverilog")
@@ -216,12 +274,55 @@ def test_run_result_from_stages_completed_counts_as_pass():
     assert rr.status == "PASS"
 
 
-# ── 5. FlowDefinition ─────────────────────────────────────────────────────────
+# ── 6. Flow ───────────────────────────────────────────────────────────────────
 
-def test_flow_definition_runs_stub_stages(tmp_path):
-    flow = FlowDefinition([PassStage(), PassStage2()])
-    req = RunRequest(top_module="top", work_dir=tmp_path)
-    result = flow.run(req)
+def test_flow_executes_stages_using_stage_input(tmp_path):
+    recorder = RecordingStage()
+    Flow([recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    assert recorder.received_input is not None
+    assert isinstance(recorder.received_input, StageInput)
+
+
+def test_flow_passes_same_design_to_each_stage(tmp_path):
+    design = _design()
+    first = NamedRecordingStage("first")
+    second = NamedRecordingStage("second")
+    Flow([first, second]).run(design, RunRequest(work_dir=tmp_path))
+    assert first.received_input.design is design
+    assert second.received_input.design is design
+
+
+def test_flow_passes_execution_context_through_stage_input(tmp_path):
+    recorder = RecordingStage()
+    Flow([recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    assert isinstance(recorder.received_input.context, ExecutionContext)
+
+
+def test_flow_second_stage_receives_first_result_in_prior_results(tmp_path):
+    first = NamedRecordingStage("first")
+    second = NamedRecordingStage("second")
+    Flow([first, second]).run(_design(), RunRequest(work_dir=tmp_path))
+    assert "first" in second.received_input.prior_results
+    assert second.received_input.prior_results["first"].status == "PASS"
+
+
+def test_flow_first_stage_has_empty_prior_results(tmp_path):
+    first = NamedRecordingStage("first")
+    Flow([first]).run(_design(), RunRequest(work_dir=tmp_path))
+    assert first.received_input.prior_results == {}
+
+
+def test_flow_prior_results_isolation(tmp_path):
+    mutator = MutatingStage()
+    recorder = RecordingStage()
+    Flow([mutator, recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    assert "injected" not in recorder.received_input.prior_results
+    assert "mutating_stage" in recorder.received_input.prior_results
+
+
+def test_flow_runs_stub_stages(tmp_path):
+    flow = Flow([PassStage(), PassStage2()])
+    result = flow.run(_design(), RunRequest(work_dir=tmp_path))
     assert isinstance(result, RunResult)
     assert result.status == "PASS"
     assert len(result.stages) == 2
@@ -229,95 +330,76 @@ def test_flow_definition_runs_stub_stages(tmp_path):
     assert "pass_stage_2" in result.stages
 
 
-def test_flow_definition_early_exit_on_fail(tmp_path):
+def test_flow_early_exit_on_fail(tmp_path):
     never_called = RecordingStage()
-    flow = FlowDefinition([FailStage(), never_called])
-    req = RunRequest(top_module="top", work_dir=tmp_path)
-    result = flow.run(req)
+    flow = Flow([FailStage(), never_called])
+    result = flow.run(_design(), RunRequest(work_dir=tmp_path))
     assert result.status == "FAIL"
     assert "fail_stage" in result.stages
-    # Stage after the FAIL must not have been reached
     assert "recording_stage" not in result.stages
-    assert never_called.received_ctx is None
+    assert never_called.received_input is None
 
 
-def test_flow_definition_propagates_skip_flags(tmp_path):
+def test_flow_propagates_skip_flags(tmp_path):
     recorder = RecordingStage()
-    flow = FlowDefinition([recorder])
+    flow = Flow([recorder])
     req = RunRequest(
-        top_module="top",
         work_dir=tmp_path,
         skip_connectivity=True,
         skip_sim=True,
         semicolab=True,
     )
-    flow.run(req)
-    ctx = recorder.received_ctx
-    assert ctx is not None
+    flow.run(_design(), req)
+    ctx = recorder.received_input.context
     assert ctx.skip_connectivity is True
     assert ctx.skip_sim is True
     assert ctx.semicolab is True
     assert ctx.skip_synth is False
 
 
-def test_flow_definition_work_dir_paths(tmp_path):
+def test_flow_work_dir_paths(tmp_path):
     recorder = RecordingStage()
-    flow = FlowDefinition([recorder])
-    req = RunRequest(top_module="top", work_dir=tmp_path)
-    flow.run(req)
-    ctx = recorder.received_ctx
+    Flow([recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    ctx = recorder.received_input.context
     assert isinstance(ctx, ExecutionContext)
     assert ctx.run_dir == tmp_path
-    # Derived paths should be inside work_dir
     assert ctx.sim_dir == tmp_path / "out" / "sim"
     assert ctx.synth_dir == tmp_path / "out" / "synth"
     assert ctx.impl_dir == tmp_path / "out" / "connectivity"
 
 
-def test_flow_definition_empty_stages(tmp_path):
-    flow = FlowDefinition([])
-    result = flow.run(RunRequest(top_module="top", work_dir=tmp_path))
+def test_flow_empty_stages(tmp_path):
+    result = Flow([]).run(_design(), RunRequest(work_dir=tmp_path))
     assert result.status == "PASS"
     assert result.stages == {}
 
 
-def test_flow_definition_skipped_stage_does_not_fail(tmp_path):
-    flow = FlowDefinition([SkippedStage()])
-    result = flow.run(RunRequest(top_module="top", work_dir=tmp_path))
+def test_flow_skipped_stage_does_not_fail(tmp_path):
+    result = Flow([SkippedStage()]).run(_design(), RunRequest(work_dir=tmp_path))
     assert result.status == "PASS"
 
 
-# ── 6. FlowDefinition duplicate stage guard ───────────────────────────────────
-
-def test_flow_definition_rejects_duplicate_stage_names():
+def test_flow_rejects_duplicate_stage_names():
     with pytest.raises(VeriFlowError) as exc_info:
-        FlowDefinition([PassStage(), PassStage()])
+        Flow([PassStage(), PassStage()])
     assert exc_info.value.code == "VF_FLOW_DUPLICATE_STAGE"
 
 
-def test_flow_definition_duplicate_error_includes_stage_name():
+def test_flow_duplicate_error_includes_stage_name():
     with pytest.raises(VeriFlowError) as exc_info:
-        FlowDefinition([PassStage(), PassStage()])
+        Flow([PassStage(), PassStage()])
     assert "pass_stage" in str(exc_info.value)
 
 
-def test_flow_definition_distinct_stage_names_allowed():
-    flow = FlowDefinition([PassStage(), PassStage2()])
+def test_flow_distinct_stage_names_allowed():
+    flow = Flow([PassStage(), PassStage2()])
     assert len(flow.stages) == 2
-
-
-# ── 7. FlowDefinition uses ExecutionContext ───────────────────────────────────
-
-def test_flow_receives_execution_context(tmp_path):
-    recorder = RecordingStage()
-    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
-    assert isinstance(recorder.received_ctx, ExecutionContext)
 
 
 def test_flow_context_has_no_database_identity(tmp_path):
     recorder = RecordingStage()
-    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
-    ctx = recorder.received_ctx
+    Flow([recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    ctx = recorder.received_input.context
     assert not hasattr(ctx, "tile_id")
     assert not hasattr(ctx, "run_id")
     assert not hasattr(ctx, "tile_dir")
@@ -325,21 +407,12 @@ def test_flow_context_has_no_database_identity(tmp_path):
 
 
 def test_flow_artifact_paths_are_run_relative(tmp_path):
-    result = FlowDefinition([LogRelStage()]).run(
-        RunRequest(top_module="top", work_dir=tmp_path)
-    )
+    result = Flow([LogRelStage()]).run(_design(), RunRequest(work_dir=tmp_path))
     log_path = result.stages["log_rel_stage"].log_paths[0]
     assert log_path == "out/synth/logs/synth.log"
 
 
-def test_flow_definition_no_db_path(tmp_path):
-    recorder = RecordingStage()
-    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
-    assert isinstance(recorder.received_ctx, ExecutionContext)
-    assert not hasattr(recorder.received_ctx, "db_path")
-
-
-# ── 8. ExecutionContext ───────────────────────────────────────────────────────
+# ── 7. ExecutionContext ───────────────────────────────────────────────────────
 
 def test_execution_context_constructs_with_path(tmp_path):
     ctx = ExecutionContext(run_dir=tmp_path)
@@ -392,7 +465,7 @@ def test_execution_context_defaults(tmp_path):
     assert ctx.skip_synth is False
 
 
-# ── 9. RunContext database compatibility ──────────────────────────────────────
+# ── 8. RunContext database compatibility ──────────────────────────────────────
 
 def test_run_context_satisfies_stage_context_attributes(tmp_path):
     ctx = RunContext(
@@ -448,3 +521,16 @@ def test_run_context_log_rel_with_db_path(tmp_path):
     assert ctx.log_rel(inside) == "tiles/T/runs/run-001/out/synth/logs/synth.log"
     outside = tmp_path / "elsewhere" / "file.log"
     assert ctx.log_rel(outside) == outside.as_posix()
+
+
+# ── 9. Public exports ─────────────────────────────────────────────────────────
+
+def test_public_exports_include_flow_and_stage_input():
+    import veriflow.framework as fw
+    assert hasattr(fw, "Flow")
+    assert hasattr(fw, "StageInput")
+
+
+def test_public_exports_do_not_include_legacy_stage_adapter():
+    import veriflow.framework as fw
+    assert not hasattr(fw, "LegacyStageAdapter")

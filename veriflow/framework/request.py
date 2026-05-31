@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
 @dataclass
 class RunRequest:
-    top_module: str
     work_dir: Path
     semicolab: bool = False
     skip_connectivity: bool = False
