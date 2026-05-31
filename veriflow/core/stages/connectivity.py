@@ -6,7 +6,7 @@ from veriflow.core.backends.base import ConnectivityBackend
 from veriflow.core.backends.icarus import IcarusConnectivityBackend
 from veriflow.core.pipeline import PipelineStage
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
-from veriflow.models.run_context import RunContext
+from veriflow.models.stage_context import StageContext
 from veriflow.models.stage_result import StageResult
 
 
@@ -29,7 +29,7 @@ class ConnectivityStage(PipelineStage):
         self._profile = profile or default_execution_profile()
         self._backend = backend or IcarusConnectivityBackend()
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         tool = self._profile.connectivity_tool
         if ctx.skip_connectivity:
             return StageResult(name=self.name, status="SKIPPED", tool=tool)

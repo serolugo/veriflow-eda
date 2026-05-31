@@ -14,6 +14,7 @@ from veriflow.framework import (
     StageRegistry,
 )
 from veriflow.models.run_context import RunContext
+from veriflow.models.stage_context import ExecutionContext, StageContext
 from veriflow.models.stage_result import StageResult
 
 
@@ -22,25 +23,25 @@ from veriflow.models.stage_result import StageResult
 class PassStage(Stage):
     name = "pass_stage"
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         return StageResult(name=self.name, status="PASS")
 
 
 class FailStage(Stage):
     name = "fail_stage"
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         return StageResult(name=self.name, status="FAIL")
 
 
 class RecordingStage(Stage):
-    """Records the RunContext it was called with."""
+    """Records the context it was called with."""
     name = "recording_stage"
 
     def __init__(self) -> None:
-        self.received_ctx: RunContext | None = None
+        self.received_ctx: StageContext | None = None
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         self.received_ctx = ctx
         return StageResult(name=self.name, status="PASS")
 
@@ -48,15 +49,28 @@ class RecordingStage(Stage):
 class PassStage2(Stage):
     name = "pass_stage_2"
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         return StageResult(name=self.name, status="PASS")
 
 
 class SkippedStage(Stage):
     name = "skipped_stage"
 
-    def run(self, ctx: RunContext) -> StageResult:
+    def run(self, ctx: StageContext) -> StageResult:
         return StageResult(name=self.name, status="SKIPPED")
+
+
+class LogRelStage(Stage):
+    """Returns a log path computed via ctx.log_rel() for path-relativity checks."""
+    name = "log_rel_stage"
+
+    def run(self, ctx: StageContext) -> StageResult:
+        log_path = ctx.synth_dir / "logs" / "synth.log"
+        return StageResult(
+            name=self.name,
+            status="PASS",
+            log_paths=[ctx.log_rel(log_path)],
+        )
 
 
 # ── Fixture: reset StageRegistry between tests ───────────────────────────────
@@ -196,21 +210,12 @@ def test_flow_definition_work_dir_paths(tmp_path):
     req = RunRequest(top_module="top", work_dir=tmp_path)
     flow.run(req)
     ctx = recorder.received_ctx
-    assert ctx.db_path is None
+    assert isinstance(ctx, ExecutionContext)
     assert ctx.run_dir == tmp_path
     # Derived paths should be inside work_dir
     assert ctx.sim_dir == tmp_path / "out" / "sim"
     assert ctx.synth_dir == tmp_path / "out" / "synth"
     assert ctx.impl_dir == tmp_path / "out" / "connectivity"
-
-
-def test_flow_definition_sentinel_ids(tmp_path):
-    recorder = RecordingStage()
-    flow = FlowDefinition([recorder])
-    flow.run(RunRequest(top_module="top", work_dir=tmp_path))
-    ctx = recorder.received_ctx
-    assert ctx.tile_id == "framework-run"
-    assert ctx.run_id == "run-001"
 
 
 def test_flow_definition_empty_stages(tmp_path):
@@ -245,17 +250,117 @@ def test_flow_definition_distinct_stage_names_allowed():
     assert len(flow.stages) == 2
 
 
-# ── db_path decoupling ────────────────────────────────────────────────────────
+# ── 7. FlowDefinition uses ExecutionContext ───────────────────────────────────
+
+def test_flow_receives_execution_context(tmp_path):
+    recorder = RecordingStage()
+    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
+    assert isinstance(recorder.received_ctx, ExecutionContext)
+
+
+def test_flow_context_has_no_database_identity(tmp_path):
+    recorder = RecordingStage()
+    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
+    ctx = recorder.received_ctx
+    assert not hasattr(ctx, "tile_id")
+    assert not hasattr(ctx, "run_id")
+    assert not hasattr(ctx, "tile_dir")
+    assert not hasattr(ctx, "db_path")
+
+
+def test_flow_artifact_paths_are_run_relative(tmp_path):
+    result = FlowDefinition([LogRelStage()]).run(
+        RunRequest(top_module="top", work_dir=tmp_path)
+    )
+    log_path = result.stages["log_rel_stage"].log_paths[0]
+    assert log_path == "out/synth/logs/synth.log"
+
 
 def test_flow_definition_no_db_path(tmp_path):
     recorder = RecordingStage()
-    flow = FlowDefinition([recorder])
-    flow.run(RunRequest(top_module="top", work_dir=tmp_path))
-    assert recorder.received_ctx.db_path is None
+    FlowDefinition([recorder]).run(RunRequest(top_module="top", work_dir=tmp_path))
+    assert isinstance(recorder.received_ctx, ExecutionContext)
+    assert not hasattr(recorder.received_ctx, "db_path")
+
+
+# ── 8. ExecutionContext ───────────────────────────────────────────────────────
+
+def test_execution_context_constructs_with_path(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.run_dir == tmp_path
+
+
+def test_execution_context_normalizes_str_run_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=str(tmp_path))  # type: ignore[arg-type]
+    assert isinstance(ctx.run_dir, Path)
+    assert ctx.run_dir == tmp_path
+
+
+def test_execution_context_derives_out_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.out_dir == tmp_path / "out"
+
+
+def test_execution_context_derives_impl_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.impl_dir == tmp_path / "out" / "connectivity"
+
+
+def test_execution_context_derives_sim_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.sim_dir == tmp_path / "out" / "sim"
+
+
+def test_execution_context_derives_synth_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.synth_dir == tmp_path / "out" / "synth"
+
+
+def test_execution_context_log_rel_inside_run_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    inside = tmp_path / "out" / "synth" / "logs" / "synth.log"
+    assert ctx.log_rel(inside) == "out/synth/logs/synth.log"
+
+
+def test_execution_context_log_rel_outside_run_dir(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path / "subdir")
+    outside = tmp_path / "other" / "file.log"
+    assert ctx.log_rel(outside) == outside.as_posix()
+
+
+def test_execution_context_defaults(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert ctx.semicolab is False
+    assert ctx.skip_connectivity is False
+    assert ctx.skip_sim is False
+    assert ctx.skip_synth is False
+
+
+# ── 9. RunContext database compatibility ──────────────────────────────────────
+
+def test_run_context_satisfies_stage_context_attributes(tmp_path):
+    ctx = RunContext(
+        tile_id="T", run_id="run-001",
+        tile_dir=tmp_path,
+        run_dir=tmp_path / "runs" / "run-001",
+        semicolab=False,
+        skip_connectivity=False,
+        skip_sim=False,
+        skip_synth=False,
+    )
+    assert hasattr(ctx, "run_dir")
+    assert hasattr(ctx, "semicolab")
+    assert hasattr(ctx, "skip_connectivity")
+    assert hasattr(ctx, "skip_sim")
+    assert hasattr(ctx, "skip_synth")
+    assert hasattr(ctx, "out_dir")
+    assert hasattr(ctx, "impl_dir")
+    assert hasattr(ctx, "sim_dir")
+    assert hasattr(ctx, "synth_dir")
+    assert callable(ctx.log_rel)
 
 
 def test_run_context_log_rel_without_db_path(tmp_path):
-    from veriflow.models.run_context import RunContext
     ctx = RunContext(
         tile_id="X", run_id="run-001",
         tile_dir=tmp_path,
@@ -270,7 +375,6 @@ def test_run_context_log_rel_without_db_path(tmp_path):
 
 
 def test_run_context_log_rel_with_db_path(tmp_path):
-    from veriflow.models.run_context import RunContext
     db = tmp_path / "db"
     tile_dir = db / "tiles" / "T"
     run_dir = tile_dir / "runs" / "run-001"
