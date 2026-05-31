@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from veriflow.core.backends.base import SynthesisBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 from veriflow.core.pipeline import PipelineStage
+from veriflow.framework.stage_input import StageInput
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
-from veriflow.models.stage_context import StageContext
 from veriflow.models.stage_result import StageResult
 
 
@@ -15,25 +13,23 @@ class SynthesisStage(PipelineStage):
 
     def __init__(
         self,
-        rtl_files: list[Path],
-        top_module: str,
         profile: ExecutionProfile | None = None,
         backend: SynthesisBackend | None = None,
     ) -> None:
-        self.rtl_files = rtl_files
-        self.top_module = top_module
         self._profile = profile or default_execution_profile()
         self._backend = backend or YosysSynthesisBackend()
 
-    def run(self, ctx: StageContext) -> StageResult:
+    def run(self, input: StageInput) -> StageResult:
+        design = input.design
+        ctx = input.context
         tool = self._profile.synthesis_tool
         if ctx.skip_synth:
             return StageResult(name=self.name, status="SKIPPED", tool=tool)
 
         synth_log_path = ctx.synth_dir / "logs" / "synth.log"
         status, parsed = self._backend.run_synthesis(
-            rtl_files=self.rtl_files,
-            top_module=self.top_module,
+            rtl_files=design.rtl_sources,
+            top_module=design.top_module,
             synth_log_path=synth_log_path,
         )
 

@@ -215,7 +215,7 @@ def cmd_run(
     if not skip_check:
         print_section("Connectivity")
         print_status("Connectivity check", "RUN")
-    _conn_sr = PipelineRunner([conn_stage]).run(ctx)["connectivity"]
+    _conn_sr = PipelineRunner([conn_stage], design=pipeline.design).run(ctx)["connectivity"]
     conn_result = _conn_sr.status
     if not skip_check:
         print_status("Connectivity check", conn_result)
@@ -237,7 +237,7 @@ def cmd_run(
     if not skip_sim and has_tb:
         print_section("Simulation")
         print_status("Simulation", "RUN")
-    _sim_sr = PipelineRunner([sim_stage]).run(ctx)["simulation"]
+    _sim_sr = PipelineRunner([sim_stage], design=pipeline.design).run(ctx)["simulation"]
     sim_result = _sim_sr.status
     sim_parsed = dict(_sim_sr.metrics) if _sim_sr.metrics else {"sim_time": "", "seed": ""}
     if not skip_sim and has_tb:
@@ -247,7 +247,7 @@ def cmd_run(
     if not skip_synth:
         print_section("Synthesis")
         print_status("Synthesis", "RUN")
-    _synth_sr = PipelineRunner([synth_stage]).run(ctx)["synthesis"]
+    _synth_sr = PipelineRunner([synth_stage], design=pipeline.design).run(ctx)["synthesis"]
     synth_result = _synth_sr.status
     synth_parsed = dict(_synth_sr.metrics) if _synth_sr.metrics else {"cells": "", "warnings": "0", "errors": "0", "has_latches": False}
     if not skip_synth:

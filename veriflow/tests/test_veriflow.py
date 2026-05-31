@@ -8,7 +8,26 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from veriflow.framework.design import Design
+from veriflow.framework.stage_input import StageInput
+
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+def _make_design(top_module: str = "my_tile") -> Design:
+    return Design(top_module=top_module, rtl_sources=[Path("/nonexistent/my_tile.v")])
+
+
+def _make_design_with_tb(top_module: str = "my_tile") -> Design:
+    return Design(
+        top_module=top_module,
+        rtl_sources=[Path("/nonexistent/my_tile.v")],
+        tb_sources=[Path("/nonexistent/tb_tile.v")],
+    )
+
+
+def _make_stage_input(ctx, design: Design | None = None) -> StageInput:
+    return StageInput(design=design or _make_design(), context=ctx)
+
 
 def _make_db(tmp: Path) -> Path:
     """Initialize a fresh database inside tmp."""
@@ -1215,9 +1234,10 @@ def test_connectivity_stage_is_pipeline_stage():
 def test_connectivity_stage_skipped_returns_stage_result():
     from veriflow.core.stages.connectivity import ConnectivityStage
     from veriflow.models.stage_result import StageResult
+    ctx = _make_ctx_conn(skip_connectivity=True)
     result = ConnectivityStage(
-        rtl_files=[], tb_base_path=None, tb_tasks_path=None, top_module="my_tile",
-    ).run(_make_ctx_conn(skip_connectivity=True))
+        tb_base_path=None, tb_tasks_path=None,
+    ).run(_make_stage_input(ctx))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "connectivity"
@@ -1281,7 +1301,7 @@ def test_pipeline_stage_not_implemented():
     from veriflow.core.pipeline import PipelineStage
     raised = False
     try:
-        PipelineStage().run(_make_ctx())
+        PipelineStage().run(_make_stage_input(_make_ctx()))
     except NotImplementedError:
         raised = True
     assert raised, "PipelineStage.run() must raise NotImplementedError"
@@ -1297,7 +1317,8 @@ def test_synthesis_stage_is_pipeline_stage():
 def test_synthesis_stage_skipped_returns_stage_result():
     from veriflow.core.stages.synthesis import SynthesisStage
     from veriflow.models.stage_result import StageResult
-    result = SynthesisStage(rtl_files=[], top_module="my_tile").run(_make_ctx(skip_synth=True))
+    ctx = _make_ctx(skip_synth=True)
+    result = SynthesisStage().run(_make_stage_input(ctx))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "synthesis"
@@ -1311,7 +1332,7 @@ def test_build_default_pipeline_returns_runner():
     from veriflow.core.pipeline import PipelineRunner
     from veriflow.core.pipeline_builder import build_default_pipeline
     runner = build_default_pipeline(
-        rtl_files=[],
+        rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
         tb_base_path=None,
         tb_tasks_path=None,
@@ -1324,7 +1345,7 @@ def test_build_default_pipeline_returns_runner():
 def test_build_default_pipeline_stage_order():
     from veriflow.core.pipeline_builder import build_default_pipeline
     runner = build_default_pipeline(
-        rtl_files=[],
+        rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
         tb_base_path=None,
         tb_tasks_path=None,
@@ -1344,17 +1365,17 @@ def test_pipeline_runner_executes_in_order():
 
     class StageA(PipelineStage):
         name = "stage_a"
-        def run(self, ctx):
+        def run(self, input):
             call_order.append("a")
             return StageResult(name=self.name, status="PASS")
 
     class StageB(PipelineStage):
         name = "stage_b"
-        def run(self, ctx):
+        def run(self, input):
             call_order.append("b")
             return StageResult(name=self.name, status="PASS")
 
-    PipelineRunner([StageA(), StageB()]).run(_make_ctx())
+    PipelineRunner([StageA(), StageB()], design=_make_design()).run(_make_ctx())
     assert call_order == ["a", "b"]
 
 
@@ -1364,15 +1385,15 @@ def test_pipeline_runner_returns_stage_result_by_name():
 
     class StageA(PipelineStage):
         name = "stage_a"
-        def run(self, ctx):
+        def run(self, input):
             return StageResult(name=self.name, status="PASS")
 
     class StageB(PipelineStage):
         name = "stage_b"
-        def run(self, ctx):
+        def run(self, input):
             return StageResult(name=self.name, status="SKIPPED")
 
-    results = PipelineRunner([StageA(), StageB()]).run(_make_ctx())
+    results = PipelineRunner([StageA(), StageB()], design=_make_design()).run(_make_ctx())
     assert set(results.keys()) == {"stage_a", "stage_b"}
     assert results["stage_a"].status == "PASS"
     assert results["stage_b"].status == "SKIPPED"
@@ -1385,12 +1406,12 @@ def test_pipeline_runner_propagates_veriflow_error():
 
     class FailStage(PipelineStage):
         name = "fail_stage"
-        def run(self, ctx):
+        def run(self, input):
             raise VeriFlowError("stage failed", code="VF_TEST_FAIL")
 
     raised = False
     try:
-        PipelineRunner([FailStage()]).run(_make_ctx())
+        PipelineRunner([FailStage()], design=_make_design()).run(_make_ctx())
     except VeriFlowError as e:
         raised = True
         assert e.code == "VF_TEST_FAIL"
@@ -1422,10 +1443,10 @@ def test_simulation_stage_is_pipeline_stage():
 def test_simulation_stage_skipped_returns_stage_result():
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.models.stage_result import StageResult
+    ctx = _make_ctx_sim(skip_sim=True)
     result = SimulationStage(
-        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
-        top_module="my_tile", has_tb=True,
-    ).run(_make_ctx_sim(skip_sim=True))
+        tb_base_path=None, tb_tasks_path=None,
+    ).run(_make_stage_input(ctx, design=_make_design_with_tb()))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "simulation"
@@ -1436,10 +1457,10 @@ def test_simulation_stage_skipped_returns_stage_result():
 def test_simulation_stage_skipped_no_tb():
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.models.stage_result import StageResult
+    ctx = _make_ctx_sim(skip_sim=False)
     result = SimulationStage(
-        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
-        top_module="my_tile", has_tb=False,
-    ).run(_make_ctx_sim(skip_sim=False))
+        tb_base_path=None, tb_tasks_path=None,
+    ).run(_make_stage_input(ctx, design=_make_design()))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "simulation"
@@ -1498,7 +1519,7 @@ def test_build_default_pipeline_accepts_profile():
     from veriflow.core.pipeline_builder import build_default_pipeline
     from veriflow.models.execution_profile import default_execution_profile
     runner = build_default_pipeline(
-        rtl_files=[],
+        rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
         tb_base_path=None,
         tb_tasks_path=None,
@@ -1521,7 +1542,8 @@ def test_build_default_pipeline_uses_profile_tool_labels():
         synthesis_tool="yosys",
     )
     runner = build_default_pipeline(
-        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        rtl_files=[Path("/nonexistent/my_tile.v")], tb_files=[],
+        tb_base_path=None, tb_tasks_path=None,
         top_module="my_tile", has_tb=False, profile=profile,
     )
 
@@ -1669,10 +1691,8 @@ def test_connectivity_stage_uses_backend():
     mock_backend.run_connectivity.return_value = "PASS"
 
     stage = ConnectivityStage(
-        rtl_files=[],
         tb_base_path=None,
         tb_tasks_path=None,
-        top_module="top",
         backend=mock_backend,
     )
 
@@ -1682,7 +1702,7 @@ def test_connectivity_stage_uses_backend():
         ctx.skip_connectivity = False
         ctx.impl_dir = tmp / "impl"
         ctx.db_path = tmp / "db"
-        result = stage.run(ctx)
+        result = stage.run(_make_stage_input(ctx))
         mock_backend.run_connectivity.assert_called_once()
         assert result.status == "PASS"
     finally:
@@ -1698,12 +1718,8 @@ def test_simulation_stage_uses_backend():
     mock_backend.run_simulation.return_value = ("COMPLETED", {"sim_time": "10ns", "seed": "42"})
 
     stage = SimulationStage(
-        rtl_files=[],
-        tb_files=[],
         tb_base_path=None,
         tb_tasks_path=None,
-        top_module="top",
-        has_tb=True,
         backend=mock_backend,
     )
 
@@ -1714,7 +1730,7 @@ def test_simulation_stage_uses_backend():
         ctx.semicolab = True
         ctx.sim_dir = tmp / "sim"
         ctx.db_path = tmp / "db"
-        result = stage.run(ctx)
+        result = stage.run(_make_stage_input(ctx, design=_make_design_with_tb()))
         mock_backend.run_simulation.assert_called_once()
         assert result.status == "COMPLETED"
     finally:
@@ -1732,11 +1748,7 @@ def test_synthesis_stage_uses_backend():
         {"cells": "3", "warnings": "0", "errors": "0", "has_latches": False},
     )
 
-    stage = SynthesisStage(
-        rtl_files=[],
-        top_module="top",
-        backend=mock_backend,
-    )
+    stage = SynthesisStage(backend=mock_backend)
 
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -1744,7 +1756,7 @@ def test_synthesis_stage_uses_backend():
         ctx.skip_synth = False
         ctx.synth_dir = tmp / "synth"
         ctx.db_path = tmp / "db"
-        result = stage.run(ctx)
+        result = stage.run(_make_stage_input(ctx))
         mock_backend.run_synthesis.assert_called_once()
         assert result.status == "PASS"
     finally:
@@ -1827,7 +1839,8 @@ def test_build_default_pipeline_uses_registry_backends():
         synthesis_backend="yosys",
     )
     runner = build_default_pipeline(
-        rtl_files=[], tb_files=[], tb_base_path=None, tb_tasks_path=None,
+        rtl_files=[Path("/nonexistent/my_tile.v")], tb_files=[],
+        tb_base_path=None, tb_tasks_path=None,
         top_module="my_tile", has_tb=False, profile=profile,
     )
 
@@ -2016,6 +2029,371 @@ def test_load_profile_invalid_technology_raises():
         shutil.rmtree(tmp)
 
 
+# ── A. Stage migration tests ──────────────────────────────────────────────────
+
+def test_synthesis_stage_reads_design_rtl_and_top_module():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "5", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+
+    rtl = Path("/nonexistent/top.v")
+    design = Design(top_module="my_top", rtl_sources=[rtl])
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_synth = False
+        ctx.synth_dir = tmp / "synth"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_synthesis.call_args
+        assert call_kwargs.kwargs["rtl_files"] == [rtl]
+        assert call_kwargs.kwargs["top_module"] == "my_top"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_reads_rtl_and_tb_sources_from_design():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+
+    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+
+    rtl = Path("/nonexistent/top.v")
+    tb = Path("/nonexistent/tb.v")
+    design = Design(top_module="my_top", rtl_sources=[rtl], tb_sources=[tb])
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.semicolab = False
+        ctx.sim_dir = tmp / "sim"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_simulation.call_args
+        assert call_kwargs.kwargs["rtl_files"] == [rtl]
+        assert call_kwargs.kwargs["tb_files"] == [tb]
+        assert call_kwargs.kwargs["top_module"] == "my_top"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_no_tb_skips_from_empty_tb_sources():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+
+    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None)
+    design = Design(top_module="my_top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    ctx = MagicMock()
+    ctx.skip_sim = False
+    result = stage.run(StageInput(design=design, context=ctx))
+    assert result.status == "SKIPPED"
+
+
+def test_connectivity_stage_reads_design_rtl_and_top_module():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.backends.base import ConnectivityBackend
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+
+    stage = ConnectivityStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+
+    rtl = Path("/nonexistent/top.v")
+    design = Design(top_module="my_top", rtl_sources=[rtl])
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_connectivity = False
+        ctx.impl_dir = tmp / "impl"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_connectivity.call_args
+        assert call_kwargs.kwargs["rtl_files"] == [rtl]
+        assert call_kwargs.kwargs["top_module"] == "my_top"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_connectivity_stage_passes_tb_paths_to_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.backends.base import ConnectivityBackend
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+
+    tb_base = Path("/tb/tb_tile.v")
+    tb_tasks = Path("/tb/tb_tasks.v")
+    stage = ConnectivityStage(
+        tb_base_path=tb_base,
+        tb_tasks_path=tb_tasks,
+        backend=mock_backend,
+    )
+
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_connectivity = False
+        ctx.impl_dir = tmp / "impl"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_connectivity.call_args
+        assert call_kwargs.kwargs["tb_base_path"] == tb_base
+        assert call_kwargs.kwargs["tb_tasks_path"] == tb_tasks
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_passes_tb_paths_to_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+
+    tb_base = Path("/tb/tb_tile.v")
+    tb_tasks = Path("/tb/tb_tasks.v")
+    stage = SimulationStage(
+        tb_base_path=tb_base,
+        tb_tasks_path=tb_tasks,
+        backend=mock_backend,
+    )
+
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.semicolab = True
+        ctx.sim_dir = tmp / "sim"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_simulation.call_args
+        assert call_kwargs.kwargs["tb_base_path"] == tb_base
+        assert call_kwargs.kwargs["tb_tasks_path"] == tb_tasks
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_stage_context_paths_unchanged_after_migration():
+    """log_rel and output dirs are unaffected by the migration."""
+    from veriflow.models.run_context import RunContext
+    db = Path("/fake/db")
+    tile_dir = db / "tiles" / "X"
+    run_dir = tile_dir / "runs" / "run-001"
+    ctx = RunContext(
+        db_path=db, tile_id="X", run_id="run-001",
+        tile_dir=tile_dir, run_dir=run_dir,
+        semicolab=False, skip_connectivity=True,
+        skip_sim=True, skip_synth=True,
+    )
+    log_file = run_dir / "out" / "synth" / "logs" / "synth.log"
+    assert ctx.log_rel(log_file) == "tiles/X/runs/run-001/out/synth/logs/synth.log"
+    assert ctx.synth_dir == run_dir / "out" / "synth"
+    assert ctx.impl_dir == run_dir / "out" / "connectivity"
+
+
+# ── B. PipelineRunner compatibility tests ────────────────────────────────────
+
+def test_pipeline_runner_injects_design_into_stage_input():
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+    from veriflow.models.stage_result import StageResult
+
+    received: list[StageInput] = []
+
+    class RecStage(PipelineStage):
+        name = "rec"
+        def run(self, input):
+            received.append(input)
+            return StageResult(name=self.name, status="PASS")
+
+    design = _make_design()
+    PipelineRunner([RecStage()], design=design).run(_make_ctx())
+    assert len(received) == 1
+    assert received[0].design is design
+
+
+def test_pipeline_runner_passes_prior_results_to_subsequent_stages():
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+    from veriflow.models.stage_result import StageResult
+
+    received_prior: list[dict] = []
+
+    class StageA(PipelineStage):
+        name = "a"
+        def run(self, input):
+            return StageResult(name=self.name, status="PASS")
+
+    class StageB(PipelineStage):
+        name = "b"
+        def run(self, input):
+            received_prior.append(dict(input.prior_results))
+            return StageResult(name=self.name, status="PASS")
+
+    PipelineRunner([StageA(), StageB()], design=_make_design()).run(_make_ctx())
+    assert "a" in received_prior[0]
+    assert received_prior[0]["a"].status == "PASS"
+
+
+def test_pipeline_runner_runs_all_stages_including_after_fail():
+    """PipelineRunner has no early-exit semantics — all stages always execute."""
+    from veriflow.core.pipeline import PipelineRunner, PipelineStage
+    from veriflow.models.stage_result import StageResult
+
+    executed: list[str] = []
+
+    class FailStage(PipelineStage):
+        name = "fail"
+        def run(self, input):
+            executed.append("fail")
+            return StageResult(name=self.name, status="FAIL")
+
+    class AfterFailStage(PipelineStage):
+        name = "after"
+        def run(self, input):
+            executed.append("after")
+            return StageResult(name=self.name, status="PASS")
+
+    PipelineRunner([FailStage(), AfterFailStage()], design=_make_design()).run(_make_ctx())
+    assert executed == ["fail", "after"]
+
+
+# ── C. Flow real-stage compatibility tests ────────────────────────────────────
+
+def test_flow_executes_synthesis_stage_over_design():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+    from veriflow.framework.flow import Flow
+    from veriflow.framework.request import RunRequest
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "3", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+
+    design = Design(
+        top_module="my_top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        result = Flow([stage]).run(design, RunRequest(work_dir=tmp, skip_synth=False))
+        assert result.status == "PASS"
+        mock_backend.run_synthesis.assert_called_once()
+        call_kwargs = mock_backend.run_synthesis.call_args
+        assert call_kwargs.kwargs["top_module"] == "my_top"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_flow_executes_stages_without_constructor_rtl():
+    """Migrated stages accept no Design-owned data in their constructor."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    # These constructors must work without rtl_files / top_module / tb_files / has_tb
+    _ = ConnectivityStage(tb_base_path=None, tb_tasks_path=None)
+    _ = SimulationStage(tb_base_path=None, tb_tasks_path=None)
+    _ = SynthesisStage()
+
+
+def test_flow_stops_on_fail_with_real_stage():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SynthesisBackend, SimulationBackend
+    from veriflow.framework.flow import Flow
+    from veriflow.framework.request import RunRequest
+
+    mock_synth = MagicMock(spec=SynthesisBackend)
+    mock_synth.run_synthesis.return_value = (
+        "FAIL",
+        {"cells": "", "warnings": "1", "errors": "1", "has_latches": False},
+    )
+    mock_sim = MagicMock(spec=SimulationBackend)
+
+    design = Design(
+        top_module="my_top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        flow = Flow([
+            SynthesisStage(backend=mock_synth),
+            SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_sim),
+        ])
+        result = flow.run(design, RunRequest(work_dir=tmp, skip_synth=False, skip_sim=False))
+        assert result.status == "FAIL"
+        assert "synthesis" in result.stages
+        assert "simulation" not in result.stages
+        mock_sim.run_simulation.assert_not_called()
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── D. Database/CLI compatibility: artifact paths ────────────────────────────
+
+def test_cmd_run_artifact_paths_are_tiles_relative():
+    """RunContext.log_rel() yields tiles/... paths; results.json reflects that."""
+    import json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        tile_id = row["tile_id"]
+        results_path = db / "tiles" / tile_id / "runs" / "run-001" / "results.json"
+        assert results_path.exists()
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        # Manifest artifact path must be tiles-relative
+        manifest_paths = data["artifacts"]["manifest"]
+        assert len(manifest_paths) == 1
+        assert manifest_paths[0].startswith("tiles/")
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_pipeline_runner_design_is_accessible():
+    """PipelineRunner exposes .design so cmd_run can pass it to single-stage wrappers."""
+    from veriflow.core.pipeline import PipelineRunner
+    design = _make_design()
+    runner = PipelineRunner(stages=[], design=design)
+    assert runner.design is design
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -2130,4 +2508,23 @@ ALL_TESTS = [
     ("load_profile_unknown_key_raises",                     test_load_profile_unknown_key_raises),
     ("load_profile_invalid_backend_raises",                 test_load_profile_invalid_backend_raises),
     ("load_profile_invalid_technology_raises",              test_load_profile_invalid_technology_raises),
+    # stage migration
+    ("synthesis_stage_reads_design_rtl_and_top_module",     test_synthesis_stage_reads_design_rtl_and_top_module),
+    ("simulation_stage_reads_rtl_and_tb_sources_from_design", test_simulation_stage_reads_rtl_and_tb_sources_from_design),
+    ("simulation_stage_no_tb_skips_from_empty_tb_sources",  test_simulation_stage_no_tb_skips_from_empty_tb_sources),
+    ("connectivity_stage_reads_design_rtl_and_top_module",  test_connectivity_stage_reads_design_rtl_and_top_module),
+    ("connectivity_stage_passes_tb_paths_to_backend",       test_connectivity_stage_passes_tb_paths_to_backend),
+    ("simulation_stage_passes_tb_paths_to_backend",         test_simulation_stage_passes_tb_paths_to_backend),
+    ("stage_context_paths_unchanged_after_migration",       test_stage_context_paths_unchanged_after_migration),
+    # PipelineRunner compatibility
+    ("pipeline_runner_injects_design_into_stage_input",     test_pipeline_runner_injects_design_into_stage_input),
+    ("pipeline_runner_passes_prior_results_to_subsequent_stages", test_pipeline_runner_passes_prior_results_to_subsequent_stages),
+    ("pipeline_runner_runs_all_stages_including_after_fail",test_pipeline_runner_runs_all_stages_including_after_fail),
+    # Flow real-stage compatibility
+    ("flow_executes_synthesis_stage_over_design",           test_flow_executes_synthesis_stage_over_design),
+    ("flow_executes_stages_without_constructor_rtl",        test_flow_executes_stages_without_constructor_rtl),
+    ("flow_stops_on_fail_with_real_stage",                  test_flow_stops_on_fail_with_real_stage),
+    # Database/CLI compatibility
+    ("cmd_run_artifact_paths_are_tiles_relative",           test_cmd_run_artifact_paths_are_tiles_relative),
+    ("pipeline_runner_design_is_accessible",                test_pipeline_runner_design_is_accessible),
 ]
