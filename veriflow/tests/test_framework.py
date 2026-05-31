@@ -7,6 +7,7 @@ import pytest
 from veriflow.core import VeriFlowError
 from veriflow.core.pipeline import PipelineStage
 from veriflow.framework import (
+    Design,
     FlowDefinition,
     RunRequest,
     RunResult,
@@ -80,6 +81,61 @@ def clear_registry():
     StageRegistry.clear()
     yield
     StageRegistry.clear()
+
+
+# ── 0. Design ─────────────────────────────────────────────────────────────────
+
+def test_design_constructs_with_path_inputs():
+    d = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+    assert d.top_module == "top"
+    assert d.rtl_sources == [Path("/nonexistent/top.v")]
+
+
+def test_design_normalizes_str_to_path():
+    d = Design(top_module="top", rtl_sources=["/nonexistent/top.v"])  # type: ignore[list-item]
+    assert isinstance(d.rtl_sources[0], Path)
+
+
+def test_design_normalizes_str_tb_sources():
+    d = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=["/nonexistent/tb.v"],  # type: ignore[list-item]
+    )
+    assert isinstance(d.tb_sources[0], Path)
+
+
+def test_design_allows_empty_tb_sources():
+    d = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+    assert d.tb_sources == []
+
+
+def test_design_rejects_empty_top_module():
+    with pytest.raises(VeriFlowError) as exc_info:
+        Design(top_module="", rtl_sources=[Path("/nonexistent/top.v")])
+    assert exc_info.value.code == "VF_DESIGN_TOP_REQUIRED"
+
+
+def test_design_rejects_whitespace_top_module():
+    with pytest.raises(VeriFlowError) as exc_info:
+        Design(top_module="   ", rtl_sources=[Path("/nonexistent/top.v")])
+    assert exc_info.value.code == "VF_DESIGN_TOP_REQUIRED"
+
+
+def test_design_rejects_empty_rtl_sources():
+    with pytest.raises(VeriFlowError) as exc_info:
+        Design(top_module="top", rtl_sources=[])
+    assert exc_info.value.code == "VF_DESIGN_RTL_REQUIRED"
+
+
+def test_design_does_not_require_files_to_exist():
+    d = Design(top_module="top", rtl_sources=[Path("/definitely/does/not/exist.v")])
+    assert d.rtl_sources[0] == Path("/definitely/does/not/exist.v")
+
+
+def test_design_exported_from_framework():
+    from veriflow.framework import Design as FrameworkDesign
+    assert FrameworkDesign is Design
 
 
 # ── 1. Stage alias ────────────────────────────────────────────────────────────
