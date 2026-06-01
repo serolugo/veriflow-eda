@@ -83,27 +83,46 @@ def _read_user_test(tb_files: list[Path]) -> str:
     return "\n".join(parts).strip()
 
 
+def _build_interface_check_wrapper(top_module: str, interface_profile: object) -> str:
+    """Generate a minimal Verilog elaboration wrapper from an InterfaceProfile.
+
+    The wrapper declares one signal per port using the profile's declared width
+    and direction, then instantiates top_module with named port connections.
+    It contains no clock behaviour, reset, tasks, stimulus, assertions or user
+    test content.
+
+    Diagnostic limitation: Verilog elaboration backends (including Icarus
+    Verilog) report port-not-found errors when a declared port name is absent
+    from the DUT, and typically emit width-mismatch warnings when a connected
+    signal has a different width.  However, they do NOT flag DUT ports that are
+    absent from the profile — those remain unconnected without an error.
+    The profile therefore acts as a declared set of connections, not a
+    mandatory complete enumeration of the DUT's interface.
+    """
+    lines = ["module interface_check_wrapper;"]
+    for port in interface_profile.ports:
+        sig_type = "reg" if port.direction == "input" else "wire"
+        if port.width == 1:
+            lines.append(f"  {sig_type} {port.name};")
+        else:
+            lines.append(f"  {sig_type} [{port.width - 1}:0] {port.name};")
+    lines.append(f"  {top_module} DUT (")
+    port_lines = [f"    .{p.name}({p.name})" for p in interface_profile.ports]
+    lines.append(",\n".join(port_lines))
+    lines.append("  );")
+    lines.append("endmodule")
+    return "\n".join(lines) + "\n"
+
+
 def _inject_tb(
     tb_base_path: Path,
     top_module: str,
-    tb_files: list[Path],
 ) -> Path:
-    """
-    Read tb_base.v (tb_tile.v in semicolab mode) and inject:
-      1. DUT instantiation at /* MODULE_INSTANTIATION */
-      2. User test code at /* USER_TEST */
-    Write result to a temporary file and return its path.
-    """
+    """Read tb_tile.v and inject DUT instantiation for Semicolab simulation."""
     content = tb_base_path.read_text(encoding="utf-8")
-
-    # Inject DUT
     content = content.replace(MODULE_INST_PLACEHOLDER, _build_dut_inst(top_module))
-
-    # Extract user test from tb_tile.v markers (same file as the wrapper)
-    # This is the primary source — user writes test directly in tb_tile.v
     user_test = _read_user_test([tb_base_path])
     content = content.replace(USER_TEST_PLACEHOLDER, user_test)
-
     tmp = tempfile.NamedTemporaryFile(
         mode="w",
         suffix=".v",
@@ -140,34 +159,41 @@ def _prepare_universal_tb(tb_files: list[Path]) -> Path:
 
 def run_connectivity_check(
     rtl_files: list[Path],
-    tb_base_path: Path,
-    tb_tasks_path: Path,
+    interface_profile: object,
     top_module: str,
     log_path: Path,
 ) -> str:
-    """
-    Run iverilog connectivity check.
+    """Run iverilog interface/connectivity check using a generated elaboration wrapper.
+
+    Compiles only the RTL sources and a minimal wrapper generated from
+    interface_profile.  Does not read or compile user testbench files.
     Returns 'PASS' or 'FAIL'.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Connectivity check uses no user TB files — just DUT injection
-    tmp_tb = _inject_tb(tb_base_path, top_module, tb_files=[])
+    wrapper_content = _build_interface_check_wrapper(top_module, interface_profile)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".v",
+        delete=False,
+        encoding="utf-8",
+    )
+    tmp.write(wrapper_content)
+    tmp.close()
+    tmp_path = Path(tmp.name)
 
     try:
-        include_dir = tb_tasks_path.parent
         cmd = (
             ["iverilog", "-o", "/dev/null" if _is_unix() else "NUL"]
-            + ["-I", include_dir.as_posix()]
             + [f.as_posix() for f in rtl_files]
-            + [Path(tmp_tb).as_posix()]
+            + [tmp_path.as_posix()]
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
         log_content = result.stdout + result.stderr
         log_path.write_text(log_content, encoding="utf-8")
         return "PASS" if result.returncode == 0 else "FAIL"
     finally:
-        Path(tmp_tb).unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
 
 
 def run_simulation(
@@ -189,10 +215,8 @@ def run_simulation(
     wave_path.parent.mkdir(parents=True, exist_ok=True)
 
     if semicolab:
-        # Semicolab mode: inject DUT + user test into tb_tile.v (tb_base)
-        # Exclude tb_tasks.v from tb_files — it is already included via `include in the wrapper
-        user_tb_files = [f for f in tb_files if f.name not in ("tb_tasks.v", "tb_tile.v")]
-        tmp_tb = _inject_tb(tb_base_path, top_module, tb_files=user_tb_files)
+        # Semicolab mode: inject DUT + user stimulus into tb_tile.v (tb_base)
+        tmp_tb = _inject_tb(tb_base_path, top_module)
         include_dir = tb_tasks_path.parent if tb_tasks_path else None
     else:
         # Universal mode: ensure $dumpfile is present, compile directly

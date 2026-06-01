@@ -11,15 +11,13 @@ class IcarusConnectivityBackend(ConnectivityBackend):
     def run_connectivity(
         self,
         rtl_files: list[Path],
-        tb_base_path: Path,
-        tb_tasks_path: Path,
+        interface_profile: object,
         top_module: str,
         log_path: Path,
     ) -> str:
         return run_connectivity_check(
             rtl_files=rtl_files,
-            tb_base_path=tb_base_path,
-            tb_tasks_path=tb_tasks_path,
+            interface_profile=interface_profile,
             top_module=top_module,
             log_path=log_path,
         )

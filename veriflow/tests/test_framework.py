@@ -562,10 +562,12 @@ def test_flow_runs_connectivity_stage_natively(tmp_path):
     from unittest.mock import MagicMock
     from veriflow.core.stages.connectivity import ConnectivityStage
     from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
-    stage = ConnectivityStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    profile = semicolab_interface_profile()
+    stage = ConnectivityStage(interface_profile=profile, backend=mock_backend)
     design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
 
     result = Flow([stage]).run(
@@ -576,6 +578,7 @@ def test_flow_runs_connectivity_stage_natively(tmp_path):
     mock_backend.run_connectivity.assert_called_once()
     call_kwargs = mock_backend.run_connectivity.call_args
     assert call_kwargs.kwargs["top_module"] == "top"
+    assert call_kwargs.kwargs["interface_profile"] is profile
 
 
 def test_flow_runs_simulation_stage_natively(tmp_path):
