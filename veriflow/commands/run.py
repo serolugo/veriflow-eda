@@ -188,6 +188,10 @@ def cmd_run(
     # ── Detect tool version
     iverilog_version = detect_iverilog_version()
 
+    # ── Resolve interface profile for connectivity (Semicolab only)
+    from veriflow.models.interface_profile import semicolab_interface_profile
+    interface_profile = semicolab_interface_profile() if semicolab else None
+
     # ── Build pipeline stages
     pipeline = build_default_pipeline(
         rtl_files=rtl_files,
@@ -196,6 +200,7 @@ def cmd_run(
         tb_tasks_path=tb_tasks_path,
         top_module=tile_config.top_module,
         has_tb=has_tb,
+        interface_profile=interface_profile,
     )
     conn_stage, sim_stage, synth_stage = pipeline.stages
 

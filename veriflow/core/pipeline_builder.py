@@ -24,8 +24,14 @@ def build_default_pipeline(
     top_module: str,
     has_tb: bool,
     profile: ExecutionProfile | None = None,
+    interface_profile: object | None = None,
 ) -> PipelineRunner:
-    """Construct the fixed default pipeline: connectivity → simulation → synthesis."""
+    """Construct the fixed default pipeline: connectivity → simulation → synthesis.
+
+    interface_profile is forwarded to ConnectivityStage.  tb_base_path and
+    tb_tasks_path are forwarded to SimulationStage only (remaining simulation
+    debt: Semicolab simulation still reads the mixed harness file).
+    """
     p = profile or default_execution_profile()
     design = Design(
         top_module=top_module,
@@ -35,8 +41,7 @@ def build_default_pipeline(
     return PipelineRunner(
         stages=[
             ConnectivityStage(
-                tb_base_path=tb_base_path,
-                tb_tasks_path=tb_tasks_path,
+                interface_profile=interface_profile,
                 profile=p,
                 backend=get_connectivity_backend(p.connectivity_backend),
             ),

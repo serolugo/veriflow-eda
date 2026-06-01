@@ -1236,7 +1236,7 @@ def test_connectivity_stage_skipped_returns_stage_result():
     from veriflow.models.stage_result import StageResult
     ctx = _make_ctx_conn(skip_connectivity=True)
     result = ConnectivityStage(
-        tb_base_path=None, tb_tasks_path=None,
+        interface_profile=None,
     ).run(_make_stage_input(ctx))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
@@ -1629,12 +1629,13 @@ def test_backends_package_exports():
 def test_icarus_connectivity_backend_delegates_to_runner():
     from unittest.mock import patch
     from veriflow.core.backends.icarus import IcarusConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
     backend = IcarusConnectivityBackend()
+    profile = semicolab_interface_profile()
     with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="PASS") as mock_fn:
         result = backend.run_connectivity(
             rtl_files=[Path("a.v")],
-            tb_base_path=Path("tb.v"),
-            tb_tasks_path=Path("tasks.v"),
+            interface_profile=profile,
             top_module="top",
             log_path=Path("conn.log"),
         )
@@ -1686,13 +1687,13 @@ def test_connectivity_stage_uses_backend():
     from unittest.mock import MagicMock
     from veriflow.core.stages.connectivity import ConnectivityStage
     from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
 
     stage = ConnectivityStage(
-        tb_base_path=None,
-        tb_tasks_path=None,
+        interface_profile=semicolab_interface_profile(),
         backend=mock_backend,
     )
 
@@ -2105,11 +2106,12 @@ def test_connectivity_stage_reads_design_rtl_and_top_module():
     from unittest.mock import MagicMock
     from veriflow.core.stages.connectivity import ConnectivityStage
     from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
 
-    stage = ConnectivityStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    stage = ConnectivityStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
 
     rtl = Path("/nonexistent/top.v")
     design = Design(top_module="my_top", rtl_sources=[rtl])
@@ -2127,19 +2129,18 @@ def test_connectivity_stage_reads_design_rtl_and_top_module():
         shutil.rmtree(tmp)
 
 
-def test_connectivity_stage_passes_tb_paths_to_backend():
+def test_connectivity_stage_passes_interface_profile_to_backend():
     from unittest.mock import MagicMock
     from veriflow.core.stages.connectivity import ConnectivityStage
     from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
 
-    tb_base = Path("/tb/tb_tile.v")
-    tb_tasks = Path("/tb/tb_tasks.v")
+    profile = semicolab_interface_profile()
     stage = ConnectivityStage(
-        tb_base_path=tb_base,
-        tb_tasks_path=tb_tasks,
+        interface_profile=profile,
         backend=mock_backend,
     )
 
@@ -2152,8 +2153,7 @@ def test_connectivity_stage_passes_tb_paths_to_backend():
         ctx.impl_dir = tmp / "impl"
         stage.run(StageInput(design=design, context=ctx))
         call_kwargs = mock_backend.run_connectivity.call_args
-        assert call_kwargs.kwargs["tb_base_path"] == tb_base
-        assert call_kwargs.kwargs["tb_tasks_path"] == tb_tasks
+        assert call_kwargs.kwargs["interface_profile"] is profile
     finally:
         shutil.rmtree(tmp)
 
@@ -2315,7 +2315,7 @@ def test_flow_executes_stages_without_constructor_rtl():
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.core.stages.connectivity import ConnectivityStage
     # These constructors must work without rtl_files / top_module / tb_files / has_tb
-    _ = ConnectivityStage(tb_base_path=None, tb_tasks_path=None)
+    _ = ConnectivityStage(interface_profile=None)
     _ = SimulationStage(tb_base_path=None, tb_tasks_path=None)
     _ = SynthesisStage()
 
@@ -2394,6 +2394,248 @@ def test_pipeline_runner_design_is_accessible():
     assert runner.design is design
 
 
+# ── InterfaceProfile model tests ─────────────────────────────────────────────
+
+def test_semicolab_interface_profile_has_nine_ports():
+    from veriflow.models.interface_profile import semicolab_interface_profile
+    p = semicolab_interface_profile()
+    assert p.name == "semicolab"
+    assert len(p.ports) == 9
+    port_map = {port.name: port for port in p.ports}
+    assert port_map["clk"].direction == "input"    and port_map["clk"].width == 1
+    assert port_map["arst_n"].direction == "input" and port_map["arst_n"].width == 1
+    assert port_map["csr_in"].direction == "input" and port_map["csr_in"].width == 16
+    assert port_map["data_reg_a"].direction == "input"  and port_map["data_reg_a"].width == 32
+    assert port_map["data_reg_b"].direction == "input"  and port_map["data_reg_b"].width == 32
+    assert port_map["data_reg_c"].direction == "output" and port_map["data_reg_c"].width == 32
+    assert port_map["csr_out"].direction == "output"    and port_map["csr_out"].width == 16
+    assert port_map["csr_in_re"].direction == "output"  and port_map["csr_in_re"].width == 1
+    assert port_map["csr_out_we"].direction == "output" and port_map["csr_out_we"].width == 1
+
+
+def test_interface_profile_rejects_empty_name():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import InterfacePort, InterfaceProfile
+    port = InterfacePort("clk", "input", 1)
+    raised = False
+    try:
+        InterfaceProfile(name="", ports=(port,))
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_NAME_REQUIRED"
+    assert raised
+
+
+def test_interface_profile_rejects_empty_ports():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import InterfaceProfile
+    raised = False
+    try:
+        InterfaceProfile(name="test", ports=())
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_PORT_REQUIRED"
+    assert raised
+
+
+def test_interface_port_rejects_width_zero():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import InterfacePort
+    raised = False
+    try:
+        InterfacePort("clk", "input", 0)
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_PORT_WIDTH_INVALID"
+    assert raised
+
+
+def test_interface_port_rejects_empty_name():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import InterfacePort
+    raised = False
+    try:
+        InterfacePort("", "input", 1)
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_PORT_NAME_REQUIRED"
+    assert raised
+
+
+def test_interface_profile_rejects_duplicate_port_names():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import InterfacePort, InterfaceProfile
+    raised = False
+    try:
+        InterfaceProfile(
+            name="dup",
+            ports=(
+                InterfacePort("clk", "input", 1),
+                InterfacePort("clk", "input", 1),
+            ),
+        )
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_PORT_DUPLICATE"
+        assert "clk" in str(e)
+    assert raised
+
+
+# ── Generated wrapper tests ────────────────────────────────────────────────────
+
+def test_build_interface_check_wrapper_semicolab_ports():
+    from veriflow.core.sim_runner import _build_interface_check_wrapper
+    from veriflow.models.interface_profile import semicolab_interface_profile
+    wrapper = _build_interface_check_wrapper("my_tile", semicolab_interface_profile())
+    for name in ("clk", "arst_n", "csr_in", "data_reg_a", "data_reg_b",
+                 "data_reg_c", "csr_out", "csr_in_re", "csr_out_we"):
+        assert name in wrapper, f"Port {name!r} missing from wrapper"
+        assert f".{name}({name})" in wrapper, f"Named connection for {name!r} missing"
+    assert "my_tile DUT" in wrapper
+
+
+def test_build_interface_check_wrapper_custom_profile():
+    from veriflow.core.sim_runner import _build_interface_check_wrapper
+    from veriflow.models.interface_profile import InterfacePort, InterfaceProfile
+    profile = InterfaceProfile(
+        name="custom",
+        ports=(
+            InterfacePort("a_in", "input", 8),
+            InterfacePort("b_out", "output", 4),
+        ),
+    )
+    wrapper = _build_interface_check_wrapper("custom_dut", profile)
+    # Named connections present
+    assert ".a_in(a_in)" in wrapper
+    assert ".b_out(b_out)" in wrapper
+    assert "custom_dut DUT" in wrapper
+    # Widths derived from profile, not hardcoded
+    assert "[7:0]" in wrapper, "8-bit port must declare [7:0]"
+    assert "[3:0]" in wrapper, "4-bit port must declare [3:0]"
+    # No Semicolab-specific ports appear
+    for semicolab_port in ("csr_in", "csr_out", "arst_n", "data_reg_a",
+                           "data_reg_b", "data_reg_c", "csr_in_re", "csr_out_we"):
+        assert semicolab_port not in wrapper, \
+            f"Semicolab port {semicolab_port!r} must not appear in a custom-profile wrapper"
+
+
+def test_build_interface_check_wrapper_no_stimulus_content():
+    from veriflow.core.sim_runner import _build_interface_check_wrapper
+    from veriflow.models.interface_profile import semicolab_interface_profile
+    wrapper = _build_interface_check_wrapper("my_tile", semicolab_interface_profile())
+    for forbidden in ("USER TEST", "$display", "$finish", "initial begin",
+                      "`include", "tb_tasks", "tb_tile"):
+        assert forbidden not in wrapper, f"Stimulus/harness content {forbidden!r} must not appear"
+    # No filesystem path separators — wrapper must contain no file paths at all
+    assert "/" not in wrapper and "\\" not in wrapper, \
+        "Wrapper must not contain any filesystem path"
+
+
+def test_build_interface_check_wrapper_width_signals():
+    from veriflow.core.sim_runner import _build_interface_check_wrapper
+    from veriflow.models.interface_profile import semicolab_interface_profile
+    wrapper = _build_interface_check_wrapper("my_tile", semicolab_interface_profile())
+    assert "[15:0]" in wrapper   # csr_in / csr_out width
+    assert "[31:0]" in wrapper   # data_reg_a/b/c width
+
+
+def test_run_connectivity_check_compiles_wrapper_not_tb_files():
+    """run_connectivity_check passes RTL + generated wrapper to iverilog; no -I, no TB paths."""
+    from unittest.mock import patch, MagicMock
+    from veriflow.core.sim_runner import run_connectivity_check
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    captured_cmds: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmds.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        rtl = tmp / "my_tile.v"
+        rtl.write_text("module my_tile; endmodule\n", encoding="utf-8")
+
+        with patch("veriflow.core.sim_runner.subprocess.run", side_effect=fake_run):
+            run_connectivity_check(
+                rtl_files=[rtl],
+                interface_profile=semicolab_interface_profile(),
+                top_module="my_tile",
+                log_path=tmp / "conn.log",
+            )
+
+        assert len(captured_cmds) == 1, "iverilog must be invoked exactly once"
+        cmd = captured_cmds[0]
+
+        # RTL source is in the command
+        assert rtl.as_posix() in cmd, "RTL file must be compiled"
+
+        # No TB include directory passed — tb_tasks.v is not needed
+        assert "-I" not in cmd, "No -I flag expected: TB include dir must not be present"
+
+        # No TB file paths in any argument
+        cmd_str = " ".join(cmd)
+        assert "tb_tile" not in cmd_str, "tb_tile.v path must not appear in iverilog command"
+        assert "tb_tasks" not in cmd_str, "tb_tasks.v path must not appear in iverilog command"
+
+        # Exactly RTL + one generated wrapper: two .v sources total
+        v_sources = [a for a in cmd if a.endswith(".v")]
+        assert len(v_sources) == 2, f"Expected rtl + wrapper (.v), got: {v_sources}"
+        assert rtl.as_posix() in v_sources, "RTL must be one of the two .v sources"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── Connectivity isolation tests ───────────────────────────────────────────────
+
+def test_connectivity_stage_never_opens_tb_sources():
+    """Connectivity must not reference Design.tb_sources — uses InterfaceProfile only."""
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    tb_never_opened = Path("/should/never/be/opened/tb_tile.v")
+    design_with_tb = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[tb_never_opened],
+    )
+    mock_backend = MagicMock()
+    mock_backend.run_connectivity.return_value = "PASS"
+    stage = ConnectivityStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_connectivity = False
+        ctx.impl_dir = tmp / "impl"
+        stage.run(StageInput(design=design_with_tb, context=ctx))
+        call_kwargs = mock_backend.run_connectivity.call_args
+        assert "tb_base_path" not in call_kwargs.kwargs
+        assert "tb_tasks_path" not in call_kwargs.kwargs
+        assert str(tb_never_opened) not in str(call_kwargs)
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_connectivity_stage_missing_profile_raises():
+    """Missing InterfaceProfile while connectivity executes raises VF_INTERFACE_PROFILE_REQUIRED."""
+    from unittest.mock import MagicMock
+    from veriflow.core import VeriFlowError
+    from veriflow.core.stages.connectivity import ConnectivityStage
+
+    stage = ConnectivityStage(interface_profile=None)
+    ctx = MagicMock()
+    ctx.skip_connectivity = False
+    raised = False
+    try:
+        stage.run(_make_stage_input(ctx))
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_INTERFACE_PROFILE_REQUIRED"
+    assert raised, "Expected VF_INTERFACE_PROFILE_REQUIRED"
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -2464,9 +2706,9 @@ ALL_TESTS = [
     ("simulation_stage_skipped_returns_stage_result", test_simulation_stage_skipped_returns_stage_result),
     ("simulation_stage_skipped_no_tb",              test_simulation_stage_skipped_no_tb),
     ("results_json_schema_version",                 test_results_json_schema_version),
-    ("connectivity_stage_is_pipeline_stage",              test_connectivity_stage_is_pipeline_stage),
-    ("connectivity_stage_skipped_returns_stage_result",   test_connectivity_stage_skipped_returns_stage_result),
-    ("connectivity_fail_still_finalizes_run",             test_connectivity_fail_still_finalizes_run),
+    ("connectivity_stage_is_pipeline_stage",                   test_connectivity_stage_is_pipeline_stage),
+    ("connectivity_stage_skipped_returns_stage_result",        test_connectivity_stage_skipped_returns_stage_result),
+    ("connectivity_fail_still_finalizes_run",                  test_connectivity_fail_still_finalizes_run),
     ("api_run_tile_returns_dict",                         test_api_run_tile_returns_dict),
     ("api_run_tile_propagates_veriflow_error",            test_api_run_tile_propagates_veriflow_error),
     ("api_run_tile_rejects_waves_non_interactive",        test_api_run_tile_rejects_waves_non_interactive),
@@ -2481,10 +2723,10 @@ ALL_TESTS = [
     ("icarus_simulation_backend_exists",                  test_icarus_simulation_backend_exists),
     ("yosys_synthesis_backend_exists",                    test_yosys_synthesis_backend_exists),
     ("backends_package_exports",                          test_backends_package_exports),
-    ("icarus_connectivity_backend_delegates_to_runner",   test_icarus_connectivity_backend_delegates_to_runner),
+    ("icarus_connectivity_backend_delegates_to_runner",        test_icarus_connectivity_backend_delegates_to_runner),
     ("icarus_simulation_backend_delegates_to_runner",     test_icarus_simulation_backend_delegates_to_runner),
     ("yosys_synthesis_backend_delegates_to_runner",       test_yosys_synthesis_backend_delegates_to_runner),
-    ("connectivity_stage_uses_backend",                   test_connectivity_stage_uses_backend),
+    ("connectivity_stage_uses_backend",                        test_connectivity_stage_uses_backend),
     ("simulation_stage_uses_backend",                     test_simulation_stage_uses_backend),
     ("synthesis_stage_uses_backend",                      test_synthesis_stage_uses_backend),
     # backend registry
@@ -2513,7 +2755,7 @@ ALL_TESTS = [
     ("simulation_stage_reads_rtl_and_tb_sources_from_design", test_simulation_stage_reads_rtl_and_tb_sources_from_design),
     ("simulation_stage_no_tb_skips_from_empty_tb_sources",  test_simulation_stage_no_tb_skips_from_empty_tb_sources),
     ("connectivity_stage_reads_design_rtl_and_top_module",  test_connectivity_stage_reads_design_rtl_and_top_module),
-    ("connectivity_stage_passes_tb_paths_to_backend",       test_connectivity_stage_passes_tb_paths_to_backend),
+    ("connectivity_stage_passes_interface_profile_to_backend", test_connectivity_stage_passes_interface_profile_to_backend),
     ("simulation_stage_passes_tb_paths_to_backend",         test_simulation_stage_passes_tb_paths_to_backend),
     ("stage_context_paths_unchanged_after_migration",       test_stage_context_paths_unchanged_after_migration),
     # PipelineRunner compatibility
@@ -2527,4 +2769,20 @@ ALL_TESTS = [
     # Database/CLI compatibility
     ("cmd_run_artifact_paths_are_tiles_relative",           test_cmd_run_artifact_paths_are_tiles_relative),
     ("pipeline_runner_design_is_accessible",                test_pipeline_runner_design_is_accessible),
+    # InterfaceProfile model
+    ("semicolab_interface_profile_has_nine_ports",          test_semicolab_interface_profile_has_nine_ports),
+    ("interface_profile_rejects_empty_name",                test_interface_profile_rejects_empty_name),
+    ("interface_profile_rejects_empty_ports",               test_interface_profile_rejects_empty_ports),
+    ("interface_port_rejects_width_zero",                   test_interface_port_rejects_width_zero),
+    ("interface_port_rejects_empty_name",                   test_interface_port_rejects_empty_name),
+    ("interface_profile_rejects_duplicate_port_names",      test_interface_profile_rejects_duplicate_port_names),
+    # Generated interface wrapper
+    ("build_interface_check_wrapper_semicolab_ports",       test_build_interface_check_wrapper_semicolab_ports),
+    ("build_interface_check_wrapper_custom_profile",        test_build_interface_check_wrapper_custom_profile),
+    ("build_interface_check_wrapper_no_stimulus_content",   test_build_interface_check_wrapper_no_stimulus_content),
+    ("build_interface_check_wrapper_width_signals",         test_build_interface_check_wrapper_width_signals),
+    ("run_connectivity_check_compiles_wrapper_not_tb_files",test_run_connectivity_check_compiles_wrapper_not_tb_files),
+    # Connectivity isolation
+    ("connectivity_stage_never_opens_tb_sources",           test_connectivity_stage_never_opens_tb_sources),
+    ("connectivity_stage_missing_profile_raises",           test_connectivity_stage_missing_profile_raises),
 ]

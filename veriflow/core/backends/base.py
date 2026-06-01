@@ -5,14 +5,13 @@ from pathlib import Path
 
 
 class ConnectivityBackend(abc.ABC):
-    """Abstract backend for RTL connectivity checking."""
+    """Abstract backend for RTL interface/connectivity checking."""
 
     @abc.abstractmethod
     def run_connectivity(
         self,
         rtl_files: list[Path],
-        tb_base_path: Path,
-        tb_tasks_path: Path,
+        interface_profile: object,
         top_module: str,
         log_path: Path,
     ) -> str:

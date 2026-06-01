@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from veriflow.core import VeriFlowError
 from veriflow.core.backends.base import ConnectivityBackend
 from veriflow.core.backends.icarus import IcarusConnectivityBackend
 from veriflow.core.pipeline import PipelineStage
@@ -15,13 +14,11 @@ class ConnectivityStage(PipelineStage):
 
     def __init__(
         self,
-        tb_base_path: Path | None,
-        tb_tasks_path: Path | None,
+        interface_profile: object | None,
         profile: ExecutionProfile | None = None,
         backend: ConnectivityBackend | None = None,
     ) -> None:
-        self.tb_base_path = tb_base_path
-        self.tb_tasks_path = tb_tasks_path
+        self.interface_profile = interface_profile
         self._profile = profile or default_execution_profile()
         self._backend = backend or IcarusConnectivityBackend()
 
@@ -32,11 +29,16 @@ class ConnectivityStage(PipelineStage):
         if ctx.skip_connectivity:
             return StageResult(name=self.name, status="SKIPPED", tool=tool)
 
+        if self.interface_profile is None:
+            raise VeriFlowError(
+                "Connectivity/interface validation requires an InterfaceProfile",
+                code="VF_INTERFACE_PROFILE_REQUIRED",
+            )
+
         conn_log_path = ctx.impl_dir / "logs" / "connectivity.log"
         status = self._backend.run_connectivity(
             rtl_files=design.rtl_sources,
-            tb_base_path=self.tb_base_path,
-            tb_tasks_path=self.tb_tasks_path,
+            interface_profile=self.interface_profile,
             top_module=design.top_module,
             log_path=conn_log_path,
         )
