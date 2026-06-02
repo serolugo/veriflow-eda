@@ -61,7 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--force", action="store_true", help="Overwrite existing database")
 
     # create-tile
-    sub.add_parser("create-tile", help="Create a new tile entry")
+    p_ct = sub.add_parser("create-tile", help="Create a new tile entry")
+    p_ct.add_argument(
+        "--top-module",
+        default="",
+        metavar="NAME",
+        dest="top_module",
+        help="RTL top module name (required for Semicolab projects)",
+    )
 
     # run
     p_run = sub.add_parser("run", help="Run the verification pipeline")
@@ -160,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.command == "create-tile":
                     dispatched = True
                     from veriflow.commands.create_tile import cmd_create_tile
-                    cmd_create_tile(db)
+                    cmd_create_tile(db, top_module=args.top_module)
 
                 elif args.command == "run":
                     if non_interactive and args.waves:

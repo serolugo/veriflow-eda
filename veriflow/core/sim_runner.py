@@ -1,86 +1,10 @@
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from veriflow.core.log_parser import parse_sim_log
-
-USER_TEST_PLACEHOLDER   = "/* USER_TEST */"
-MODULE_INST_PLACEHOLDER = "/* MODULE_INSTANTIATION */"
-
-_DUMPFILE_INJECT = """\
-
-initial begin
-    $dumpfile("waves.vcd");
-    $dumpvars(0, tb);
-end
-"""
-
-
-def _build_dut_inst(top_module: str) -> str:
-    return f"""{top_module} DUT (
-    .clk       (clk),
-    .arst_n    (arst_n),
-    .csr_in    (csr_in),
-    .data_reg_a(data_reg_a),
-    .data_reg_b(data_reg_b),
-    .data_reg_c(data_reg_c),
-    .csr_out   (csr_out),
-    .csr_in_re (csr_in_re),
-    .csr_out_we(csr_out_we)
-);"""
-
-
-def _ensure_dumpfile(content: str) -> str:
-    """
-    If the TB content does not already contain a $dumpfile call,
-    inject one right after the first 'module <name>;' or 'module <name> (...);' line.
-    This ensures waveforms are always generated regardless of what the user wrote.
-    """
-    if "$dumpfile" in content:
-        return content
-
-    # Find end of module declaration (after the semicolon closing it)
-    m = re.search(r"(module\s+\w+[^;]*;)", content)
-    if m:
-        insert_pos = m.end()
-        return content[:insert_pos] + _DUMPFILE_INJECT + content[insert_pos:]
-
-    # Fallback: prepend at the start of the file
-    return _DUMPFILE_INJECT + content
-
-
-def _read_user_test(tb_files: list[Path]) -> str:
-    """
-    Collect user test code from all files in src/tb/.
-    Skips tb_tasks.v (already included via `include in the wrapper).
-    Strips timescale, module declarations, and endmodule — only keeps
-    the raw statements inside // USER TEST STARTS HERE // markers if present,
-    otherwise includes the full file content.
-    """
-    parts = []
-    for f in tb_files:
-        # Skip tb_tasks.v — already included via `include in tb_tile.v
-        if f.name == "tb_tasks.v":
-            continue
-        content = f.read_text(encoding="utf-8")
-
-        # If file has USER TEST markers, extract only what's between them
-        m = re.search(
-            r"//\s*USER TEST STARTS HERE\s*//(.*)//\s*USER TEST ENDS HERE\s*//",
-            content,
-            re.DOTALL,
-        )
-        if m:
-            parts.append(m.group(1))
-        else:
-            # Strip timescale, module/endmodule wrappers if present
-            content = re.sub(r"`timescale[^\n]*\n", "", content)
-            content = re.sub(r"\bmodule\s+\w+\s*;", "", content)
-            content = re.sub(r"\bendmodule\b", "", content)
-            parts.append(content)
-
-    return "\n".join(parts).strip()
 
 
 def _build_interface_check_wrapper(top_module: str, interface_profile: object) -> str:
@@ -112,49 +36,6 @@ def _build_interface_check_wrapper(top_module: str, interface_profile: object) -
     lines.append("  );")
     lines.append("endmodule")
     return "\n".join(lines) + "\n"
-
-
-def _inject_tb(
-    tb_base_path: Path,
-    top_module: str,
-) -> Path:
-    """Read tb_tile.v and inject DUT instantiation for Semicolab simulation."""
-    content = tb_base_path.read_text(encoding="utf-8")
-    content = content.replace(MODULE_INST_PLACEHOLDER, _build_dut_inst(top_module))
-    user_test = _read_user_test([tb_base_path])
-    content = content.replace(USER_TEST_PLACEHOLDER, user_test)
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".v",
-        delete=False,
-        encoding="utf-8",
-    )
-    tmp.write(content)
-    tmp.close()
-    return Path(tmp.name)
-
-
-def _prepare_universal_tb(tb_files: list[Path]) -> Path:
-    """
-    For universal mode: read tb_tile.v, ensure $dumpfile is present,
-    write to a temporary file and return its path.
-    """
-    if not tb_files:
-        raise ValueError("No TB files found for universal mode simulation")
-
-    # Use the first tb file as the main TB
-    content = tb_files[0].read_text(encoding="utf-8")
-    content = _ensure_dumpfile(content)
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".v",
-        delete=False,
-        encoding="utf-8",
-    )
-    tmp.write(content)
-    tmp.close()
-    return Path(tmp.name)
 
 
 def run_connectivity_check(
@@ -199,39 +80,29 @@ def run_connectivity_check(
 def run_simulation(
     rtl_files: list[Path],
     tb_files: list[Path],
-    tb_base_path,
-    tb_tasks_path,
-    top_module: str,
+    tb_top: str,
     sim_log_path: Path,
     wave_path: Path,
-    semicolab: bool = True,
 ) -> tuple[str, dict]:
-    """
-    Compile and run simulation using iverilog/vvp.
-    Returns (result, parsed_log_dict).
-    result is 'COMPLETED' or 'FAILED'.
+    """Compile and run simulation using iverilog/vvp.
+
+    Compiles all rtl_files and tb_files together.  The testbench top module is
+    selected explicitly via -s tb_top.  No injection, no temp TB sources, no
+    include paths for hidden helpers.
+
+    Returns (status, parsed_log_dict) where status is 'COMPLETED' or 'FAILED'.
     """
     sim_log_path.parent.mkdir(parents=True, exist_ok=True)
     wave_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if semicolab:
-        # Semicolab mode: inject DUT + user stimulus into tb_tile.v (tb_base)
-        tmp_tb = _inject_tb(tb_base_path, top_module)
-        include_dir = tb_tasks_path.parent if tb_tasks_path else None
-    else:
-        # Universal mode: ensure $dumpfile is present, compile directly
-        tmp_tb = _prepare_universal_tb(tb_files)
-        include_dir = None
 
     tmp_dir = Path(tempfile.mkdtemp())
     compiled = tmp_dir / "sim.out"
 
     try:
         compile_cmd = (
-            ["iverilog", "-o", compiled.as_posix()]
-            + (["-I", include_dir.as_posix()] if include_dir else [])
+            ["iverilog", "-o", compiled.as_posix(), "-s", tb_top]
             + [f.as_posix() for f in rtl_files]
-            + [Path(tmp_tb).as_posix()]
+            + [f.as_posix() for f in tb_files]
         )
         compile_result = subprocess.run(compile_cmd, capture_output=True, text=True)
         compile_log = compile_result.stdout + compile_result.stderr
@@ -254,8 +125,6 @@ def run_simulation(
         status = "COMPLETED" if run_result.returncode == 0 else "FAILED"
         return status, parsed
     finally:
-        Path(tmp_tb).unlink(missing_ok=True)
-        import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
@@ -294,7 +163,6 @@ def launch_waves(wave_path: Path) -> None:
     """
     import os
     import platform
-    import shutil
 
     # Docker — always use Surfer WASM
     if os.environ.get("SEMICOLAB_DOCKER"):

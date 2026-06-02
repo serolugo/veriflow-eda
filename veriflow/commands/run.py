@@ -171,20 +171,6 @@ def cmd_run(
         console.print(f"  [warn]⚠[/warn]  [secondary]No TB files found — simulation will be skipped[/secondary]")
         skip_sim = True
 
-    # ── Template files
-    # In semicolab mode, tb_base.v and tb_tasks.v live in src/tb/
-    # In universal mode, tb_tile.v is compiled directly — no injection needed
-    if semicolab:
-        tb_base_path = run_dir / "src" / "tb" / "tb_tile.v"
-        tb_tasks_path = run_dir / "src" / "tb" / "tb_tasks.v"
-        if not tb_base_path.exists():
-            raise VeriFlowError(f"tb_tile.v not found in src/tb/: {tb_base_path}")
-        if not tb_tasks_path.exists():
-            raise VeriFlowError(f"tb_tasks.v not found in src/tb/: {tb_tasks_path}")
-    else:
-        tb_base_path = None
-        tb_tasks_path = None
-
     # ── Detect tool version
     iverilog_version = detect_iverilog_version()
 
@@ -196,10 +182,8 @@ def cmd_run(
     pipeline = build_default_pipeline(
         rtl_files=rtl_files,
         tb_files=tb_files,
-        tb_base_path=tb_base_path,
-        tb_tasks_path=tb_tasks_path,
+        tb_top=tile_config.tb_top_module,
         top_module=tile_config.top_module,
-        has_tb=has_tb,
         interface_profile=interface_profile,
     )
     conn_stage, sim_stage, synth_stage = pipeline.stages
