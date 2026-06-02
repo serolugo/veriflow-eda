@@ -588,7 +588,7 @@ def test_flow_runs_simulation_stage_natively(tmp_path):
 
     mock_backend = MagicMock(spec=SimulationBackend)
     mock_backend.run_simulation.return_value = ("COMPLETED", {"sim_time": "5ns", "seed": "1"})
-    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
     design = Design(
         top_module="top",
         rtl_sources=[Path("/nonexistent/top.v")],

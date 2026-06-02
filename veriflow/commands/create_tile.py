@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from veriflow.generators.readme import generate_readme
 from veriflow.models.project_config import ProjectConfig
 from veriflow.models.tile_config import TileConfig
 
+_VERILOG_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
 
 _TILE_CONFIG_TEMPLATE = """\
 # =============================================================================
@@ -20,6 +23,7 @@ _TILE_CONFIG_TEMPLATE = """\
 tile_name: ""       # Display name for this tile
 tile_author: ""     # Your full name
 top_module: ""      # Must match the RTL filename exactly (e.g. adder_tile)
+tb_top_module: "tb" # Testbench top module name (module declared in tb_tile.v)
 
 description: |
   # What does this tile do?
@@ -54,8 +58,14 @@ notes: |
 """
 
 
-def cmd_create_tile(db: Path) -> None:
-    """Create a new tile entry in the database."""
+def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
+    """Create a new tile entry in the database.
+
+    top_module: RTL top module name.  Required for Semicolab projects (raises
+    VF_TILE_TOP_MODULE_REQUIRED when missing).  When provided, it is written
+    into tile_config.yaml AND substituted into src/tb/tb_tile.v so that both
+    artifacts share the same declared DUT name as a single source of truth.
+    """
 
     validate_database(db)
 
@@ -65,16 +75,33 @@ def cmd_create_tile(db: Path) -> None:
     project_config = ProjectConfig.from_dict(raw)
     validate_project_config(project_config)
 
-    # 2. Get next tile_number
+    # 2. Validate top_module early — before any filesystem writes
+    if project_config.semicolab:
+        if not top_module or not top_module.strip():
+            raise VeriFlowError(
+                "top_module is required when creating a Semicolab tile. "
+                "Pass the RTL top module name so the testbench can be generated correctly.",
+                code="VF_TILE_TOP_MODULE_REQUIRED",
+            )
+        if not _VERILOG_ID_RE.match(top_module):
+            raise VeriFlowError(
+                f"top_module {top_module!r} is not a valid Verilog identifier. "
+                "Must start with a letter or underscore and contain only "
+                "letters, digits, underscores, or dollar signs.",
+                code="VF_TILE_TOP_MODULE_INVALID",
+                details={"top_module": top_module},
+            )
+
+    # 3. Get next tile_number
     tile_index_path = db / "tile_index.csv"
     tile_number = get_next_tile_number(tile_index_path)
     tile_number_str = f"{tile_number:04d}"
 
-    # 3. Set version/revision
+    # 4. Set version/revision
     id_version = 1
     id_revision = 1
 
-    # 4. Generate tile_id
+    # 5. Generate tile_id
     tile_id = generate_tile_id(
         project_config.id_prefix,
         tile_number,
@@ -85,16 +112,19 @@ def cmd_create_tile(db: Path) -> None:
 
     print(f"[create-tile] Generating tile {tile_number_str} -> {tile_id}")
 
-    # 5. Create config/tile_XXXX/
+    # 6. Create config/tile_XXXX/
     config_tile_dir = db / "config" / f"tile_{tile_number_str}"
     config_tile_dir.mkdir(parents=True, exist_ok=True)
     print(f"[create-tile] Created {config_tile_dir.relative_to(db)}")
 
-    # 6. Write single tile_config.yaml (tile + run fields merged)
-    (config_tile_dir / "tile_config.yaml").write_text(_TILE_CONFIG_TEMPLATE, encoding="utf-8")
+    # 7. Write single tile_config.yaml (tile + run fields merged)
+    config_text = _TILE_CONFIG_TEMPLATE
+    if top_module:
+        config_text = config_text.replace('top_module: ""', f'top_module: "{top_module}"')
+    (config_tile_dir / "tile_config.yaml").write_text(config_text, encoding="utf-8")
     print(f"[create-tile] Written tile_config.yaml")
 
-    # 7. Create src/rtl/ and src/tb/ with templates
+    # 8. Create src/rtl/ and src/tb/ with templates
     import shutil
     template_dir = Path(__file__).parent.parent / "template"
     for sub in ("src/rtl", "src/tb"):
@@ -104,20 +134,19 @@ def cmd_create_tile(db: Path) -> None:
 
     tb_dir = config_tile_dir / "src" / "tb"
     if project_config.semicolab:
-        tb_base = template_dir / "tb_base.v"
-        tb_tasks = template_dir / "tb_tasks.v"
-        if tb_base.exists():
-            shutil.copy2(tb_base, tb_dir / "tb_tile.v")
-        if tb_tasks.exists():
-            shutil.copy2(tb_tasks, tb_dir / "tb_tasks.v")
-        print(f"[create-tile] Created src/rtl/ and src/tb/ (semicolab: tb_tile.v + tb_tasks.v)")
+        tb_semicolab = template_dir / "tb_semicolab_template.v"
+        if tb_semicolab.exists():
+            content = tb_semicolab.read_text(encoding="utf-8")
+            content = content.replace("/* DUT_MODULE */", top_module)
+            (tb_dir / "tb_tile.v").write_text(content, encoding="utf-8")
+        print(f"[create-tile] Created src/rtl/ and src/tb/ (semicolab: tb_tile.v)")
     else:
         tb_universal = template_dir / "tb_universal_template.v"
         if tb_universal.exists():
             shutil.copy2(tb_universal, tb_dir / "tb_tile.v")
         print(f"[create-tile] Created src/rtl/ and src/tb/ (universal: empty tb_tile.v)")
 
-    # 8. Create tiles/<tile_id>/
+    # 9. Create tiles/<tile_id>/
     tile_dir = db / "tiles" / tile_id
     tile_dir.mkdir(parents=True, exist_ok=True)
     print(f"[create-tile] Created tiles/{tile_id}/")

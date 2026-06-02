@@ -37,6 +37,12 @@ def _make_db(tmp: Path) -> Path:
     return db
 
 
+def _make_tile(db: Path, top_module: str = "my_tile") -> None:
+    """Create a tile with a known top_module (required for Semicolab mode)."""
+    from veriflow.commands.create_tile import cmd_create_tile
+    cmd_create_tile(db, top_module=top_module)
+
+
 def _fill_project_config(db: Path, id_prefix: str = "TST-01") -> None:
     import yaml
     cfg = {
@@ -209,8 +215,7 @@ def test_create_tile_structure():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
 
         # Check config dir
         cfg_dir = db / "config" / "tile_0001"
@@ -235,8 +240,7 @@ def test_create_tile_tiles_dir():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         from veriflow.core.csv_store import read_tile_index
         rows = read_tile_index(db / "tile_index.csv")
         tile_id = rows[0]["tile_id"]
@@ -256,8 +260,7 @@ def test_csv_empty_file_rule():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
 
         tile_index = db / "tile_index.csv"
         content = tile_index.read_text(encoding="utf-8")
@@ -329,8 +332,7 @@ def test_bump_version():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         from veriflow.core.csv_store import get_tile_row
         row_before = get_tile_row(db / "tile_index.csv", "0001")
         old_id = row_before["tile_id"]
@@ -359,8 +361,7 @@ def test_bump_revision():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         from veriflow.core.csv_store import get_tile_row
         row_before = get_tile_row(db / "tile_index.csv", "0001")
         old_id = row_before["tile_id"]
@@ -419,8 +420,7 @@ def test_validation_missing_top_module():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         # tile_config has empty top_module
         from veriflow.core.validator import validate_run_inputs
@@ -445,8 +445,7 @@ def test_run_creates_structure():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -487,8 +486,7 @@ def test_run_copies_rtl():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -509,8 +507,7 @@ def test_run_multiple_runs():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -553,17 +550,16 @@ def test_manifest_custom_serializer():
     assert "results:" in rendered
 
 
-def test_semicolab_true_creates_tb_files():
-    """semicolab: true should copy tb_tile.v and tb_tasks.v to src/tb/"""
+def test_semicolab_true_creates_tb_tile_v():
+    """semicolab: true should create tb_tile.v (self-contained, no tb_tasks.v)"""
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
         _fill_project_config(db, id_prefix="TST-01")
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         tb_dir = db / "config" / "tile_0001" / "src" / "tb"
         assert (tb_dir / "tb_tile.v").exists(), "tb_tile.v not found"
-        assert (tb_dir / "tb_tasks.v").exists(), "tb_tasks.v not found"
+        assert not (tb_dir / "tb_tasks.v").exists(), "tb_tasks.v must not exist in new scaffold"
     finally:
         shutil.rmtree(tmp)
 
@@ -576,8 +572,7 @@ def test_semicolab_false_creates_empty_tb():
         db = _make_db(tmp)
         cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
         (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         tb_dir = db / "config" / "tile_0001" / "src" / "tb"
         assert (tb_dir / "tb_tile.v").exists(), "tb_tile.v not found"
         assert not (tb_dir / "tb_tasks.v").exists(), "tb_tasks.v should not exist in universal mode"
@@ -591,8 +586,7 @@ def test_semicolab_column_in_tile_index():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         from veriflow.core.csv_store import get_tile_row
         row = get_tile_row(db / "tile_index.csv", "0001")
         assert "semicolab" in row, "semicolab column missing from tile_index"
@@ -608,8 +602,7 @@ def test_semicolab_column_in_records():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -703,8 +696,7 @@ def test_veriflow_error_rtl_missing_code():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         tc = TileConfig.from_dict({"top_module": "my_tile"})
         try:
             validate_run_inputs(db, "0001", tc)
@@ -723,8 +715,7 @@ def test_veriflow_error_top_module_missing_code():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         tc = TileConfig.from_dict({})  # top_module = ""
         try:
@@ -744,8 +735,7 @@ def test_veriflow_error_top_module_file_missing_code():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         tc = TileConfig.from_dict({"top_module": "nonexistent_module"})
         try:
@@ -767,8 +757,7 @@ def test_cli_normal_no_json_flag():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -787,8 +776,7 @@ def test_cli_json_run_success():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -989,8 +977,7 @@ def test_api_run_tile_returns_dict():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -1073,8 +1060,7 @@ def test_cli_non_interactive_run_succeeds():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -1253,8 +1239,7 @@ def test_connectivity_fail_still_finalizes_run():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)  # semicolab=True by default
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -1334,10 +1319,8 @@ def test_build_default_pipeline_returns_runner():
     runner = build_default_pipeline(
         rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
-        tb_base_path=None,
-        tb_tasks_path=None,
+        tb_top="tb",
         top_module="my_tile",
-        has_tb=False,
     )
     assert isinstance(runner, PipelineRunner)
 
@@ -1347,10 +1330,8 @@ def test_build_default_pipeline_stage_order():
     runner = build_default_pipeline(
         rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
-        tb_base_path=None,
-        tb_tasks_path=None,
+        tb_top="tb",
         top_module="my_tile",
-        has_tb=False,
     )
     assert [s.name for s in runner.stages] == ["connectivity", "simulation", "synthesis"]
 
@@ -1444,9 +1425,7 @@ def test_simulation_stage_skipped_returns_stage_result():
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.models.stage_result import StageResult
     ctx = _make_ctx_sim(skip_sim=True)
-    result = SimulationStage(
-        tb_base_path=None, tb_tasks_path=None,
-    ).run(_make_stage_input(ctx, design=_make_design_with_tb()))
+    result = SimulationStage(tb_top="tb").run(_make_stage_input(ctx, design=_make_design_with_tb()))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "simulation"
@@ -1458,9 +1437,7 @@ def test_simulation_stage_skipped_no_tb():
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.models.stage_result import StageResult
     ctx = _make_ctx_sim(skip_sim=False)
-    result = SimulationStage(
-        tb_base_path=None, tb_tasks_path=None,
-    ).run(_make_stage_input(ctx, design=_make_design()))
+    result = SimulationStage(tb_top="tb").run(_make_stage_input(ctx, design=_make_design()))
     assert isinstance(result, StageResult)
     assert result.status == "SKIPPED"
     assert result.name == "simulation"
@@ -1474,8 +1451,7 @@ def test_results_json_schema_version():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -1521,10 +1497,8 @@ def test_build_default_pipeline_accepts_profile():
     runner = build_default_pipeline(
         rtl_files=[Path("/nonexistent/my_tile.v")],
         tb_files=[],
-        tb_base_path=None,
-        tb_tasks_path=None,
+        tb_top="tb",
         top_module="my_tile",
-        has_tb=False,
         profile=default_execution_profile(),
     )
     assert isinstance(runner, PipelineRunner)
@@ -1543,8 +1517,7 @@ def test_build_default_pipeline_uses_profile_tool_labels():
     )
     runner = build_default_pipeline(
         rtl_files=[Path("/nonexistent/my_tile.v")], tb_files=[],
-        tb_base_path=None, tb_tasks_path=None,
-        top_module="my_tile", has_tb=False, profile=profile,
+        tb_top="tb", top_module="my_tile", profile=profile,
     )
 
     db = Path("/fake/db")
@@ -1569,8 +1542,7 @@ def test_results_json_tool_strings_unchanged():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -1654,9 +1626,7 @@ def test_icarus_simulation_backend_delegates_to_runner():
         status, parsed = backend.run_simulation(
             rtl_files=[Path("a.v")],
             tb_files=[Path("tb.v")],
-            tb_base_path=Path("tb_base.v"),
-            tb_tasks_path=Path("tasks.v"),
-            top_module="top",
+            tb_top="tb",
             sim_log_path=Path("sim.log"),
             wave_path=Path("waves.vcd"),
         )
@@ -1718,17 +1688,12 @@ def test_simulation_stage_uses_backend():
     mock_backend = MagicMock(spec=SimulationBackend)
     mock_backend.run_simulation.return_value = ("COMPLETED", {"sim_time": "10ns", "seed": "42"})
 
-    stage = SimulationStage(
-        tb_base_path=None,
-        tb_tasks_path=None,
-        backend=mock_backend,
-    )
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
 
     tmp = Path(tempfile.mkdtemp())
     try:
         ctx = MagicMock()
         ctx.skip_sim = False
-        ctx.semicolab = True
         ctx.sim_dir = tmp / "sim"
         ctx.db_path = tmp / "db"
         result = stage.run(_make_stage_input(ctx, design=_make_design_with_tb()))
@@ -1841,8 +1806,7 @@ def test_build_default_pipeline_uses_registry_backends():
     )
     runner = build_default_pipeline(
         rtl_files=[Path("/nonexistent/my_tile.v")], tb_files=[],
-        tb_base_path=None, tb_tasks_path=None,
-        top_module="my_tile", has_tb=False, profile=profile,
+        tb_top="tb", top_module="my_tile", profile=profile,
     )
 
     db = Path("/fake/db")
@@ -2068,7 +2032,7 @@ def test_simulation_stage_reads_rtl_and_tb_sources_from_design():
     mock_backend = MagicMock(spec=SimulationBackend)
     mock_backend.run_simulation.return_value = ("COMPLETED", {})
 
-    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_backend)
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
 
     rtl = Path("/nonexistent/top.v")
     tb = Path("/nonexistent/tb.v")
@@ -2078,13 +2042,12 @@ def test_simulation_stage_reads_rtl_and_tb_sources_from_design():
     try:
         ctx = MagicMock()
         ctx.skip_sim = False
-        ctx.semicolab = False
         ctx.sim_dir = tmp / "sim"
         stage.run(StageInput(design=design, context=ctx))
         call_kwargs = mock_backend.run_simulation.call_args
         assert call_kwargs.kwargs["rtl_files"] == [rtl]
         assert call_kwargs.kwargs["tb_files"] == [tb]
-        assert call_kwargs.kwargs["top_module"] == "my_top"
+        assert call_kwargs.kwargs["tb_top"] == "tb"
     finally:
         shutil.rmtree(tmp)
 
@@ -2093,7 +2056,7 @@ def test_simulation_stage_no_tb_skips_from_empty_tb_sources():
     from unittest.mock import MagicMock
     from veriflow.core.stages.simulation import SimulationStage
 
-    stage = SimulationStage(tb_base_path=None, tb_tasks_path=None)
+    stage = SimulationStage(tb_top="tb")
     design = Design(top_module="my_top", rtl_sources=[Path("/nonexistent/top.v")])
 
     ctx = MagicMock()
@@ -2158,7 +2121,7 @@ def test_connectivity_stage_passes_interface_profile_to_backend():
         shutil.rmtree(tmp)
 
 
-def test_simulation_stage_passes_tb_paths_to_backend():
+def test_simulation_stage_passes_tb_top_to_backend():
     from unittest.mock import MagicMock
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.core.backends.base import SimulationBackend
@@ -2166,13 +2129,7 @@ def test_simulation_stage_passes_tb_paths_to_backend():
     mock_backend = MagicMock(spec=SimulationBackend)
     mock_backend.run_simulation.return_value = ("COMPLETED", {})
 
-    tb_base = Path("/tb/tb_tile.v")
-    tb_tasks = Path("/tb/tb_tasks.v")
-    stage = SimulationStage(
-        tb_base_path=tb_base,
-        tb_tasks_path=tb_tasks,
-        backend=mock_backend,
-    )
+    stage = SimulationStage(tb_top="my_testbench", backend=mock_backend)
 
     design = Design(
         top_module="top",
@@ -2184,12 +2141,13 @@ def test_simulation_stage_passes_tb_paths_to_backend():
     try:
         ctx = MagicMock()
         ctx.skip_sim = False
-        ctx.semicolab = True
         ctx.sim_dir = tmp / "sim"
         stage.run(StageInput(design=design, context=ctx))
         call_kwargs = mock_backend.run_simulation.call_args
-        assert call_kwargs.kwargs["tb_base_path"] == tb_base
-        assert call_kwargs.kwargs["tb_tasks_path"] == tb_tasks
+        assert call_kwargs.kwargs["tb_top"] == "my_testbench"
+        assert "tb_base_path" not in call_kwargs.kwargs
+        assert "tb_tasks_path" not in call_kwargs.kwargs
+        assert "semicolab" not in call_kwargs.kwargs
     finally:
         shutil.rmtree(tmp)
 
@@ -2314,9 +2272,9 @@ def test_flow_executes_stages_without_constructor_rtl():
     from veriflow.core.stages.synthesis import SynthesisStage
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.core.stages.connectivity import ConnectivityStage
-    # These constructors must work without rtl_files / top_module / tb_files / has_tb
+    # These constructors must work without rtl_files / top_module / tb_files
     _ = ConnectivityStage(interface_profile=None)
-    _ = SimulationStage(tb_base_path=None, tb_tasks_path=None)
+    _ = SimulationStage(tb_top="tb")
     _ = SynthesisStage()
 
 
@@ -2345,7 +2303,7 @@ def test_flow_stops_on_fail_with_real_stage():
     try:
         flow = Flow([
             SynthesisStage(backend=mock_synth),
-            SimulationStage(tb_base_path=None, tb_tasks_path=None, backend=mock_sim),
+            SimulationStage(tb_top="tb", backend=mock_sim),
         ])
         result = flow.run(design, RunRequest(work_dir=tmp, skip_synth=False, skip_sim=False))
         assert result.status == "FAIL"
@@ -2365,8 +2323,7 @@ def test_cmd_run_artifact_paths_are_tiles_relative():
     try:
         db = _make_db(tmp)
         _fill_project_config(db)
-        from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)
+        _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
@@ -2636,6 +2593,743 @@ def test_connectivity_stage_missing_profile_raises():
     assert raised, "Expected VF_INTERFACE_PROFILE_REQUIRED"
 
 
+# ── A. SimulationStage: generic self-contained simulation tests ───────────────
+
+def test_simulation_stage_rejects_empty_tb_top():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.stages.simulation import SimulationStage
+    raised = False
+    try:
+        SimulationStage(tb_top="")
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_SIM_TB_TOP_REQUIRED"
+    assert raised, "Expected VF_SIM_TB_TOP_REQUIRED for empty tb_top"
+
+
+def test_simulation_stage_rejects_whitespace_only_tb_top():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.stages.simulation import SimulationStage
+    raised = False
+    try:
+        SimulationStage(tb_top="   ")
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_SIM_TB_TOP_REQUIRED"
+    assert raised, "Expected VF_SIM_TB_TOP_REQUIRED for whitespace tb_top"
+
+
+def test_simulation_stage_passes_explicit_tb_top_to_backend():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+
+    stage = SimulationStage(tb_top="explicit_top", backend=mock_backend)
+    design = Design(
+        top_module="dut",
+        rtl_sources=[Path("/nonexistent/dut.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.sim_dir = tmp / "sim"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_simulation.call_args
+        assert call_kwargs.kwargs["tb_top"] == "explicit_top"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_passes_all_rtl_and_tb_sources():
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+
+    rtl1 = Path("/nonexistent/rtl1.v")
+    rtl2 = Path("/nonexistent/rtl2.v")
+    tb1 = Path("/nonexistent/tb1.v")
+    tb2 = Path("/nonexistent/tb2.v")
+
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
+    design = Design(top_module="dut", rtl_sources=[rtl1, rtl2], tb_sources=[tb1, tb2])
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.sim_dir = tmp / "sim"
+        stage.run(StageInput(design=design, context=ctx))
+        call_kwargs = mock_backend.run_simulation.call_args
+        assert call_kwargs.kwargs["rtl_files"] == [rtl1, rtl2]
+        assert call_kwargs.kwargs["tb_files"] == [tb1, tb2]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_simulation_stage_does_not_consult_ctx_semicolab():
+    """SimulationStage must not read ctx.semicolab; it is platform-neutral."""
+    from unittest.mock import MagicMock, PropertyMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
+    design = Design(
+        top_module="dut",
+        rtl_sources=[Path("/nonexistent/dut.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ctx = MagicMock()
+        ctx.skip_sim = False
+        ctx.sim_dir = tmp / "sim"
+        # Remove semicolab attribute to verify stage doesn't access it
+        del ctx.semicolab
+        stage.run(StageInput(design=design, context=ctx))
+        # If we got here without AttributeError, semicolab was not accessed
+        call_kwargs = mock_backend.run_simulation.call_args
+        assert "semicolab" not in call_kwargs.kwargs
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── B. Simulation runner tests ────────────────────────────────────────────────
+
+def test_run_simulation_command_contains_all_rtl_and_tb_files():
+    from unittest.mock import patch, MagicMock
+    from veriflow.core.sim_runner import run_simulation
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        rtl = tmp / "my_tile.v"
+        tb = tmp / "tb_tile.v"
+        rtl.write_text("module my_tile; endmodule\n", encoding="utf-8")
+        tb.write_text("module tb; endmodule\n", encoding="utf-8")
+
+        with patch("veriflow.core.sim_runner.subprocess.run", side_effect=fake_run):
+            run_simulation(
+                rtl_files=[rtl],
+                tb_files=[tb],
+                tb_top="tb",
+                sim_log_path=tmp / "sim.log",
+                wave_path=tmp / "waves" / "waves.vcd",
+            )
+
+        assert len(captured) >= 1
+        compile_cmd = captured[0]
+        assert rtl.as_posix() in compile_cmd, "RTL file must be in compile command"
+        assert tb.as_posix() in compile_cmd, "TB file must be in compile command"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_run_simulation_command_contains_minus_s_tb_top():
+    from unittest.mock import patch, MagicMock
+    from veriflow.core.sim_runner import run_simulation
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        rtl = tmp / "my_tile.v"
+        tb = tmp / "tb_tile.v"
+        rtl.write_text("module my_tile; endmodule\n", encoding="utf-8")
+        tb.write_text("module tb; endmodule\n", encoding="utf-8")
+
+        with patch("veriflow.core.sim_runner.subprocess.run", side_effect=fake_run):
+            run_simulation(
+                rtl_files=[rtl],
+                tb_files=[tb],
+                tb_top="tb",
+                sim_log_path=tmp / "sim.log",
+                wave_path=tmp / "waves" / "waves.vcd",
+            )
+
+        compile_cmd = captured[0]
+        assert "-s" in compile_cmd, "-s flag must be in compile command"
+        s_idx = compile_cmd.index("-s")
+        assert compile_cmd[s_idx + 1] == "tb", "-s must be followed by tb_top name"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_run_simulation_command_no_include_flag():
+    from unittest.mock import patch, MagicMock
+    from veriflow.core.sim_runner import run_simulation
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        rtl = tmp / "my_tile.v"
+        tb = tmp / "tb_tile.v"
+        rtl.write_text("module my_tile; endmodule\n", encoding="utf-8")
+        tb.write_text("module tb; endmodule\n", encoding="utf-8")
+
+        with patch("veriflow.core.sim_runner.subprocess.run", side_effect=fake_run):
+            run_simulation(
+                rtl_files=[rtl],
+                tb_files=[tb],
+                tb_top="tb",
+                sim_log_path=tmp / "sim.log",
+                wave_path=tmp / "waves" / "waves.vcd",
+            )
+
+        compile_cmd = captured[0]
+        assert "-I" not in compile_cmd, "No -I flag: no hidden include dirs allowed"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_run_simulation_command_no_injected_temp_tb():
+    """Compile command .v files must be exactly the provided rtl + tb files."""
+    from unittest.mock import patch, MagicMock
+    from veriflow.core.sim_runner import run_simulation
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        rtl = tmp / "my_tile.v"
+        tb = tmp / "tb_tile.v"
+        rtl.write_text("module my_tile; endmodule\n", encoding="utf-8")
+        tb.write_text("module tb; endmodule\n", encoding="utf-8")
+
+        with patch("veriflow.core.sim_runner.subprocess.run", side_effect=fake_run):
+            run_simulation(
+                rtl_files=[rtl],
+                tb_files=[tb],
+                tb_top="tb",
+                sim_log_path=tmp / "sim.log",
+                wave_path=tmp / "waves" / "waves.vcd",
+            )
+
+        compile_cmd = captured[0]
+        v_sources = [a for a in compile_cmd if a.endswith(".v")]
+        expected = {rtl.as_posix(), tb.as_posix()}
+        assert set(v_sources) == expected, (
+            f"Compile .v args must be exactly rtl+tb files. Got extra: {set(v_sources) - expected}"
+        )
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── C. Semicolab scaffold tests ───────────────────────────────────────────────
+
+def test_semicolab_scaffold_creates_tb_tile_v():
+    """Semicolab create_tile produces src/tb/tb_tile.v."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        assert (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").exists()
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_module_tb():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "module tb" in content, "Generated TB must declare 'module tb'"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_dut_top_module():
+    """Creating a Semicolab tile with a known top_module produces TB that names it."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db, top_module="my_adder_tile")
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "my_adder_tile" in content, "Configured DUT top module name must appear in TB"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_semicolab_ports():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        for port in ("clk", "arst_n", "csr_in", "data_reg_a", "data_reg_b",
+                     "data_reg_c", "csr_out", "csr_in_re", "csr_out_we"):
+            assert port in content, f"Semicolab port {port!r} missing from generated TB"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_dumpfile():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert '$dumpfile("waves.vcd")' in content
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_dumpvars():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "$dumpvars" in content
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_contains_stimulus_section():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "USER STIMULUS" in content, "Generated TB must have a user stimulus section"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_tb_no_unresolved_dut_placeholder():
+    """Generated TB must not contain the raw template marker /* DUT_MODULE */."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "/* DUT_MODULE */" not in content, "Raw DUT_MODULE placeholder must not remain"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_semicolab_scaffold_no_tb_tasks_v():
+    """New Semicolab scaffold must not produce tb_tasks.v."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        assert not (db / "config" / "tile_0001" / "src" / "tb" / "tb_tasks.v").exists()
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── D. Generic scaffold tests ─────────────────────────────────────────────────
+
+def test_generic_scaffold_no_semicolab_wiring():
+    """Non-Semicolab tile creation must not inject Semicolab ports or helpers."""
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        _make_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        for semicolab_port in ("csr_in", "csr_out", "data_reg_a", "data_reg_b", "data_reg_c",
+                               "csr_in_re", "csr_out_we"):
+            assert semicolab_port not in content, (
+                f"Semicolab port {semicolab_port!r} must not appear in universal scaffold"
+            )
+        assert "DUT_MODULE" not in content, "DUT_MODULE placeholder must not appear in universal scaffold"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── E. Database/flow wiring tests ─────────────────────────────────────────────
+
+def test_tile_config_contains_tb_top_module():
+    """Generated tile_config.yaml must contain tb_top_module: 'tb'."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        _make_tile(db)
+        import yaml
+        cfg = yaml.safe_load((db / "config" / "tile_0001" / "tile_config.yaml").read_text(encoding="utf-8"))
+        assert "tb_top_module" in cfg, "tile_config.yaml must contain tb_top_module"
+        assert cfg["tb_top_module"] == "tb"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_run_forwards_tb_top_module():
+    """cmd_run must pass tile_config.tb_top_module into the pipeline as tb_top."""
+    from unittest.mock import patch
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+
+        # Set tb_top_module to a custom value
+        cfg_path = db / "config" / "tile_0001" / "tile_config.yaml"
+        raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        raw.update({
+            "top_module": "my_tile",
+            "tb_top_module": "my_custom_tb",
+            "run_author": "Tester",
+            "objective": "Test",
+        })
+        cfg_path.write_text(yaml.dump(raw), encoding="utf-8")
+
+        captured_tb_top: list[str] = []
+
+        original_build = __import__(
+            "veriflow.core.pipeline_builder", fromlist=["build_default_pipeline"]
+        ).build_default_pipeline
+
+        def capturing_build(**kwargs):
+            captured_tb_top.append(kwargs.get("tb_top", ""))
+            return original_build(**kwargs)
+
+        from veriflow.commands.run import cmd_run
+        with patch("veriflow.commands.run.build_default_pipeline", side_effect=capturing_build):
+            cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+
+        assert len(captured_tb_top) == 1
+        assert captured_tb_top[0] == "my_custom_tb", (
+            f"Expected tb_top='my_custom_tb', got {captured_tb_top[0]!r}"
+        )
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_run_connectivity_still_uses_semicolab_interface_profile():
+    """Connectivity stage still uses semicolab_interface_profile() for Semicolab projects."""
+    from unittest.mock import patch
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)  # semicolab=True
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+
+        from veriflow.commands.run import cmd_run
+        with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="PASS"):
+            result = cmd_run(
+                db=db, tile_number="0001",
+                skip_check=False, skip_sim=True, skip_synth=True,
+            )
+        assert result["stages"]["connectivity"]["status"] == "PASS"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_tile_config_backward_compat_missing_tb_top_module():
+    """Old tile_config.yaml without tb_top_module key is still parseable.
+
+    tb_top_module defaults to 'tb' so old config files can be loaded without error.
+    This is PARSING compatibility only — old Semicolab workspaces using the former
+    injected/mixed testbench layout still require manual testbench migration before
+    functional simulation will succeed.
+    """
+    from veriflow.models.tile_config import TileConfig
+    cfg = TileConfig.from_dict({"top_module": "my_tile"})
+    assert cfg.tb_top_module == "tb"
+
+
+def test_tile_config_explicit_empty_tb_top_module_passes_through():
+    """Explicit empty tb_top_module in config passes through as empty string."""
+    from veriflow.models.tile_config import TileConfig
+    cfg = TileConfig.from_dict({"top_module": "my_tile", "tb_top_module": ""})
+    assert cfg.tb_top_module == ""
+
+
+def test_create_tile_semicolab_requires_top_module():
+    """Creating a Semicolab tile without top_module must raise VF_TILE_TOP_MODULE_REQUIRED."""
+    from veriflow.core import VeriFlowError
+    from veriflow.commands.create_tile import cmd_create_tile
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)  # semicolab=True by default
+        raised = False
+        try:
+            cmd_create_tile(db)  # no top_module → must fail for Semicolab
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_REQUIRED"
+        assert raised, "Expected VF_TILE_TOP_MODULE_REQUIRED when creating Semicolab tile without top_module"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_semicolab_whitespace_top_module_rejected():
+    """Whitespace-only top_module must be rejected for Semicolab tiles."""
+    from veriflow.core import VeriFlowError
+    from veriflow.commands.create_tile import cmd_create_tile
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)  # semicolab=True
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="   ")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_REQUIRED"
+        assert raised
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_non_semicolab_no_top_module_required():
+    """Non-Semicolab tile creation does not require top_module."""
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)  # no top_module — OK for non-Semicolab
+        assert (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").exists()
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_single_source_of_truth():
+    """--top-module NAME must propagate to BOTH tile_config.yaml AND tb_tile.v.
+
+    The DUT top module name is the single source of truth:
+    tile_config.top_module drives Design.top_module (→ synthesis, connectivity),
+    while tb_tile.v must instantiate the same module.
+    """
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db, id_prefix="TST-01")
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db, top_module="shift_mux")
+
+        cfg_path = db / "config" / "tile_0001" / "tile_config.yaml"
+        tb_path  = db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v"
+
+        raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert raw.get("top_module") == "shift_mux", (
+            f"tile_config.yaml must record top_module='shift_mux', got {raw.get('top_module')!r}"
+        )
+        assert raw.get("tb_top_module") == "tb", (
+            f"tile_config.yaml must have tb_top_module='tb', got {raw.get('tb_top_module')!r}"
+        )
+
+        tb_content = tb_path.read_text(encoding="utf-8")
+        assert "shift_mux DUT (" in tb_content, (
+            "tb_tile.v must instantiate shift_mux DUT — same name as tile_config.top_module"
+        )
+        assert "/* DUT_MODULE */" not in tb_content, (
+            "Raw DUT_MODULE placeholder must not remain in the generated TB"
+        )
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_generic_scaffold_tb_contains_waveform_dump():
+    """Non-Semicolab scaffold must include $dumpfile/$dumpvars for waveform generation."""
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db)
+        content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "$dumpfile" in content, "Generic scaffold must include $dumpfile"
+        assert "$dumpvars" in content, "Generic scaffold must include $dumpvars"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── top_module identifier validation ─────────────────────────────────────────
+
+def _make_semicolab_db(tmp: Path) -> Path:
+    """Initialize a Semicolab database inside tmp."""
+    db = _make_db(tmp)
+    _fill_project_config(db)  # semicolab=True by default
+    return db
+
+
+def test_create_tile_rejects_hyphen_in_top_module():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.core import VeriFlowError
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="shift-mux")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_INVALID", f"Expected VF_TILE_TOP_MODULE_INVALID, got {e.code}"
+        assert raised, "Expected VF_TILE_TOP_MODULE_INVALID for 'shift-mux'"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_rejects_leading_digit_in_top_module():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.core import VeriFlowError
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="123tile")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_INVALID"
+        assert raised, "Expected VF_TILE_TOP_MODULE_INVALID for '123tile'"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_rejects_space_in_top_module():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.core import VeriFlowError
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="bad name")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_INVALID"
+        assert raised, "Expected VF_TILE_TOP_MODULE_INVALID for 'bad name'"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_rejects_injection_attempt_in_top_module():
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.core import VeriFlowError
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module='shift_mux"; invalid')
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_TILE_TOP_MODULE_INVALID"
+        assert raised, "Expected VF_TILE_TOP_MODULE_INVALID for injection attempt"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_invalid_top_module_does_not_generate_files():
+    """Validation must fire before any file is written."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.core import VeriFlowError
+        from veriflow.commands.create_tile import cmd_create_tile
+        try:
+            cmd_create_tile(db, top_module="shift-mux")
+        except VeriFlowError:
+            pass
+        assert not (db / "config" / "tile_0001").exists(), (
+            "Config directory must not be created when top_module is invalid"
+        )
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_accepts_shift_mux():
+    """shift_mux is a valid Verilog identifier and must succeed."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db, top_module="shift_mux")
+        import yaml
+        raw = yaml.safe_load(
+            (db / "config" / "tile_0001" / "tile_config.yaml").read_text(encoding="utf-8")
+        )
+        assert raw.get("top_module") == "shift_mux"
+        tb = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "shift_mux DUT (" in tb
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_accepts_leading_underscore():
+    """_internal_tile is a valid Verilog identifier (starts with underscore)."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db, top_module="_internal_tile")
+        tb = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "_internal_tile DUT (" in tb
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_create_tile_accepts_trailing_digit():
+    """tile2 is a valid Verilog identifier (digit after initial letter)."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_semicolab_db(tmp)
+        from veriflow.commands.create_tile import cmd_create_tile
+        cmd_create_tile(db, top_module="tile2")
+        tb = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
+        assert "tile2 DUT (" in tb
+    finally:
+        shutil.rmtree(tmp)
+
+
 ALL_TESTS = [
     ("tile_id_generation",              test_tile_id_generation),
     ("tile_id_parsing",                 test_tile_id_parsing),
@@ -2659,7 +3353,7 @@ ALL_TESTS = [
     ("run_copies_rtl",                  test_run_copies_rtl),
     ("run_multiple_runs",               test_run_multiple_runs),
     ("manifest_custom_serializer",      test_manifest_custom_serializer),
-    ("semicolab_true_creates_tb_files",  test_semicolab_true_creates_tb_files),
+    ("semicolab_true_creates_tb_tile_v",  test_semicolab_true_creates_tb_tile_v),
     ("semicolab_false_creates_empty_tb", test_semicolab_false_creates_empty_tb),
     ("semicolab_column_in_tile_index",   test_semicolab_column_in_tile_index),
     ("semicolab_column_in_records",      test_semicolab_column_in_records),
@@ -2756,7 +3450,7 @@ ALL_TESTS = [
     ("simulation_stage_no_tb_skips_from_empty_tb_sources",  test_simulation_stage_no_tb_skips_from_empty_tb_sources),
     ("connectivity_stage_reads_design_rtl_and_top_module",  test_connectivity_stage_reads_design_rtl_and_top_module),
     ("connectivity_stage_passes_interface_profile_to_backend", test_connectivity_stage_passes_interface_profile_to_backend),
-    ("simulation_stage_passes_tb_paths_to_backend",         test_simulation_stage_passes_tb_paths_to_backend),
+    ("simulation_stage_passes_tb_top_to_backend",            test_simulation_stage_passes_tb_top_to_backend),
     ("stage_context_paths_unchanged_after_migration",       test_stage_context_paths_unchanged_after_migration),
     # PipelineRunner compatibility
     ("pipeline_runner_injects_design_into_stage_input",     test_pipeline_runner_injects_design_into_stage_input),
@@ -2785,4 +3479,50 @@ ALL_TESTS = [
     # Connectivity isolation
     ("connectivity_stage_never_opens_tb_sources",           test_connectivity_stage_never_opens_tb_sources),
     ("connectivity_stage_missing_profile_raises",           test_connectivity_stage_missing_profile_raises),
+    # A. SimulationStage: generic self-contained simulation
+    ("simulation_stage_rejects_empty_tb_top",               test_simulation_stage_rejects_empty_tb_top),
+    ("simulation_stage_rejects_whitespace_only_tb_top",     test_simulation_stage_rejects_whitespace_only_tb_top),
+    ("simulation_stage_passes_explicit_tb_top_to_backend",  test_simulation_stage_passes_explicit_tb_top_to_backend),
+    ("simulation_stage_passes_all_rtl_and_tb_sources",      test_simulation_stage_passes_all_rtl_and_tb_sources),
+    ("simulation_stage_does_not_consult_ctx_semicolab",     test_simulation_stage_does_not_consult_ctx_semicolab),
+    # B. Simulation runner
+    ("run_simulation_command_contains_all_rtl_and_tb_files",test_run_simulation_command_contains_all_rtl_and_tb_files),
+    ("run_simulation_command_contains_minus_s_tb_top",      test_run_simulation_command_contains_minus_s_tb_top),
+    ("run_simulation_command_no_include_flag",               test_run_simulation_command_no_include_flag),
+    ("run_simulation_command_no_injected_temp_tb",           test_run_simulation_command_no_injected_temp_tb),
+    # C. Semicolab scaffold
+    ("semicolab_scaffold_creates_tb_tile_v",                 test_semicolab_scaffold_creates_tb_tile_v),
+    ("semicolab_scaffold_tb_contains_module_tb",             test_semicolab_scaffold_tb_contains_module_tb),
+    ("semicolab_scaffold_tb_contains_dut_top_module",        test_semicolab_scaffold_tb_contains_dut_top_module),
+    ("semicolab_scaffold_tb_contains_semicolab_ports",       test_semicolab_scaffold_tb_contains_semicolab_ports),
+    ("semicolab_scaffold_tb_contains_dumpfile",              test_semicolab_scaffold_tb_contains_dumpfile),
+    ("semicolab_scaffold_tb_contains_dumpvars",              test_semicolab_scaffold_tb_contains_dumpvars),
+    ("semicolab_scaffold_tb_contains_stimulus_section",      test_semicolab_scaffold_tb_contains_stimulus_section),
+    ("semicolab_scaffold_tb_no_unresolved_dut_placeholder",  test_semicolab_scaffold_tb_no_unresolved_dut_placeholder),
+    ("semicolab_scaffold_no_tb_tasks_v",                     test_semicolab_scaffold_no_tb_tasks_v),
+    # D. Generic scaffold
+    ("generic_scaffold_no_semicolab_wiring",                 test_generic_scaffold_no_semicolab_wiring),
+    # E. Database/flow wiring
+    ("tile_config_contains_tb_top_module",                   test_tile_config_contains_tb_top_module),
+    ("cmd_run_forwards_tb_top_module",                       test_cmd_run_forwards_tb_top_module),
+    ("cmd_run_connectivity_still_uses_semicolab_interface_profile", test_cmd_run_connectivity_still_uses_semicolab_interface_profile),
+    ("tile_config_backward_compat_missing_tb_top_module",    test_tile_config_backward_compat_missing_tb_top_module),
+    ("tile_config_explicit_empty_tb_top_module_passes_through", test_tile_config_explicit_empty_tb_top_module_passes_through),
+    # create_tile validation
+    ("create_tile_semicolab_requires_top_module",            test_create_tile_semicolab_requires_top_module),
+    ("create_tile_semicolab_whitespace_top_module_rejected", test_create_tile_semicolab_whitespace_top_module_rejected),
+    ("create_tile_non_semicolab_no_top_module_required",     test_create_tile_non_semicolab_no_top_module_required),
+    # generic scaffold waveform
+    ("generic_scaffold_tb_contains_waveform_dump",           test_generic_scaffold_tb_contains_waveform_dump),
+    # single source of truth
+    ("create_tile_single_source_of_truth",                   test_create_tile_single_source_of_truth),
+    # top_module identifier validation
+    ("create_tile_rejects_hyphen_in_top_module",             test_create_tile_rejects_hyphen_in_top_module),
+    ("create_tile_rejects_leading_digit_in_top_module",      test_create_tile_rejects_leading_digit_in_top_module),
+    ("create_tile_rejects_space_in_top_module",              test_create_tile_rejects_space_in_top_module),
+    ("create_tile_rejects_injection_attempt_in_top_module",  test_create_tile_rejects_injection_attempt_in_top_module),
+    ("create_tile_invalid_top_module_does_not_generate_files", test_create_tile_invalid_top_module_does_not_generate_files),
+    ("create_tile_accepts_shift_mux",                        test_create_tile_accepts_shift_mux),
+    ("create_tile_accepts_leading_underscore",               test_create_tile_accepts_leading_underscore),
+    ("create_tile_accepts_trailing_digit",                   test_create_tile_accepts_trailing_digit),
 ]

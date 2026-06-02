@@ -26,12 +26,9 @@ class SimulationBackend(abc.ABC):
         self,
         rtl_files: list[Path],
         tb_files: list[Path],
-        tb_base_path,
-        tb_tasks_path,
-        top_module: str,
+        tb_top: str,
         sim_log_path: Path,
         wave_path: Path,
-        semicolab: bool = True,
     ) -> tuple[str, dict]:
         """Returns ('COMPLETED'|'FAILED', parsed_dict)."""
 

@@ -29,20 +29,14 @@ class IcarusSimulationBackend(SimulationBackend):
         self,
         rtl_files: list[Path],
         tb_files: list[Path],
-        tb_base_path,
-        tb_tasks_path,
-        top_module: str,
+        tb_top: str,
         sim_log_path: Path,
         wave_path: Path,
-        semicolab: bool = True,
     ) -> tuple[str, dict]:
         return run_simulation(
             rtl_files=rtl_files,
             tb_files=tb_files,
-            tb_base_path=tb_base_path,
-            tb_tasks_path=tb_tasks_path,
-            top_module=top_module,
+            tb_top=tb_top,
             sim_log_path=sim_log_path,
             wave_path=wave_path,
-            semicolab=semicolab,
         )

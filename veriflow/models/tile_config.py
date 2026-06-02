@@ -7,6 +7,7 @@ class TileConfig:
     tile_name: str
     tile_author: str
     top_module: str
+    tb_top_module: str
     description: str
     ports: str
     usage_guide: str
@@ -20,10 +21,13 @@ class TileConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "TileConfig":
+        raw_tb_top = data.get("tb_top_module")
+        tb_top_module = raw_tb_top if raw_tb_top is not None else "tb"
         return cls(
             tile_name=data.get("tile_name", "") or "",
             tile_author=data.get("tile_author", "") or "",
             top_module=data.get("top_module", "") or "",
+            tb_top_module=tb_top_module,
             description=data.get("description", "") or "",
             ports=data.get("ports", "") or "",
             usage_guide=data.get("usage_guide", "") or "",

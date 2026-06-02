@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from veriflow.core import VeriFlowError
 from veriflow.core.backends.base import SimulationBackend
 from veriflow.core.backends.icarus import IcarusSimulationBackend
 from veriflow.core.pipeline import PipelineStage
@@ -15,13 +14,16 @@ class SimulationStage(PipelineStage):
 
     def __init__(
         self,
-        tb_base_path: Path | None,
-        tb_tasks_path: Path | None,
+        tb_top: str,
         profile: ExecutionProfile | None = None,
         backend: SimulationBackend | None = None,
     ) -> None:
-        self.tb_base_path = tb_base_path
-        self.tb_tasks_path = tb_tasks_path
+        if not tb_top or not tb_top.strip():
+            raise VeriFlowError(
+                "tb_top must not be empty or whitespace-only",
+                code="VF_SIM_TB_TOP_REQUIRED",
+            )
+        self.tb_top = tb_top
         self._profile = profile or default_execution_profile()
         self._backend = backend or IcarusSimulationBackend()
 
@@ -38,12 +40,9 @@ class SimulationStage(PipelineStage):
         status, parsed = self._backend.run_simulation(
             rtl_files=design.rtl_sources,
             tb_files=design.tb_sources,
-            tb_base_path=self.tb_base_path,
-            tb_tasks_path=self.tb_tasks_path,
-            top_module=design.top_module,
+            tb_top=self.tb_top,
             sim_log_path=sim_log_path,
             wave_path=wave_path,
-            semicolab=ctx.semicolab,
         )
 
         log_paths = [ctx.log_rel(sim_log_path)] if sim_log_path.exists() else None
