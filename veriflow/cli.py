@@ -94,6 +94,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_br = sub.add_parser("bump-revision", help="Increment tile revision")
     p_br.add_argument("--tile", required=True, metavar="XXXX", help="Tile number")
 
+    # project (Project Mode — does not require --db)
+    p_project = sub.add_parser("project", help="Project Mode commands")
+    project_sub = p_project.add_subparsers(dest="project_command")
+    p_project_run = project_sub.add_parser("run", help="Run a project workflow")
+    p_project_run.add_argument(
+        "--config",
+        default="veriflow.yaml",
+        metavar="PATH",
+        help="Path to project config file (default: veriflow.yaml)",
+    )
+
     return parser
 
 
@@ -122,7 +133,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[ERROR] {err}", file=sys.stderr)
         return err.exit_code
 
-    if not args.db:
+    _DB_COMMANDS = {"init", "create-tile", "run", "bump-version", "waves", "bump-revision"}
+    if not args.db and args.command in _DB_COMMANDS:
         if json_mode:
             _emit_json({
                 "status": "ERROR",
@@ -132,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    db = Path(args.db)
+    db: Path | None = Path(args.db) if args.db else None
 
     # In JSON mode:
     #   • console.quiet suppresses Rich output (public API — no private attributes).
@@ -211,6 +223,25 @@ def main(argv: list[str] | None = None) -> int:
                     from veriflow.commands.bump_revision import cmd_bump_revision
                     cmd_bump_revision(db, tile_number=args.tile)
 
+                elif args.command == "project":
+                    project_cmd = getattr(args, "project_command", None)
+                    if project_cmd == "run":
+                        dispatched = True
+                        from veriflow.commands.run_project import cmd_run_project
+                        exit_code = cmd_run_project(Path(args.config))
+                    else:
+                        if json_mode:
+                            error_payload = {
+                                "status": "ERROR",
+                                "error": {
+                                    "code": "VF_UNKNOWN_COMMAND",
+                                    "message": "No project subcommand specified",
+                                },
+                            }
+                        else:
+                            parser.print_help()
+                        exit_code = 1
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -222,9 +253,15 @@ def main(argv: list[str] | None = None) -> int:
                         parser.print_help()
 
                 if dispatched:
-                    result_payload = {"status": "SUCCESS", "command": args.command}
-                    if args.command == "run" and run_result is not None:
-                        result_payload["run_result"] = run_result
+                    if args.command == "project":
+                        result_payload = {
+                            "status": "PASS" if exit_code == 0 else "FAIL",
+                            "command": args.command,
+                        }
+                    else:
+                        result_payload = {"status": "SUCCESS", "command": args.command}
+                        if args.command == "run" and run_result is not None:
+                            result_payload["run_result"] = run_result
 
             except VeriFlowError as e:
                 if json_mode:
