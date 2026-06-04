@@ -1188,7 +1188,7 @@ def test_launch_waves_local_without_surfer_prints_hint():
         real_shutil.which = old_which
 
 
-# ── ConnectivityStage unit tests ─────────────────────────────────────────────
+# ── InterfaceStage unit tests ─────────────────────────────────────────────
 
 def _make_ctx_conn(skip_connectivity: bool = True) -> "RunContext":
     from veriflow.models.run_context import RunContext
@@ -1205,16 +1205,16 @@ def _make_ctx_conn(skip_connectivity: bool = True) -> "RunContext":
 
 def test_connectivity_stage_is_pipeline_stage():
     from veriflow.core.pipeline import PipelineStage
-    from veriflow.core.stages.connectivity import ConnectivityStage
-    assert issubclass(ConnectivityStage, PipelineStage)
-    assert ConnectivityStage.name == "connectivity"
+    from veriflow.core.stages.connectivity import InterfaceStage
+    assert issubclass(InterfaceStage, PipelineStage)
+    assert InterfaceStage.name == "connectivity"
 
 
 def test_connectivity_stage_skipped_returns_stage_result():
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.models.stage_result import StageResult
     ctx = _make_ctx_conn(skip_connectivity=True)
-    result = ConnectivityStage(
+    result = InterfaceStage(
         interface_profile=None,
     ).run(_make_stage_input(ctx))
     assert isinstance(result, StageResult)
@@ -1648,14 +1648,14 @@ def test_yosys_synthesis_backend_delegates_to_runner():
 
 def test_connectivity_stage_uses_backend():
     from unittest.mock import MagicMock
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.core.backends.base import ConnectivityBackend
     from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
 
-    stage = ConnectivityStage(
+    stage = InterfaceStage(
         interface_profile=semicolab_interface_profile(),
         backend=mock_backend,
     )
@@ -2060,14 +2060,14 @@ def test_simulation_stage_no_tb_skips_from_empty_tb_sources():
 
 def test_connectivity_stage_reads_design_rtl_and_top_module():
     from unittest.mock import MagicMock
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.core.backends.base import ConnectivityBackend
     from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
 
-    stage = ConnectivityStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
+    stage = InterfaceStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
 
     rtl = Path("/nonexistent/top.v")
     design = Design(top_module="my_top", rtl_sources=[rtl])
@@ -2087,7 +2087,7 @@ def test_connectivity_stage_reads_design_rtl_and_top_module():
 
 def test_connectivity_stage_passes_interface_profile_to_backend():
     from unittest.mock import MagicMock
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.core.backends.base import ConnectivityBackend
     from veriflow.models.interface_profile import semicolab_interface_profile
 
@@ -2095,7 +2095,7 @@ def test_connectivity_stage_passes_interface_profile_to_backend():
     mock_backend.run_connectivity.return_value = "PASS"
 
     profile = semicolab_interface_profile()
-    stage = ConnectivityStage(
+    stage = InterfaceStage(
         interface_profile=profile,
         backend=mock_backend,
     )
@@ -2264,9 +2264,9 @@ def test_flow_executes_stages_without_constructor_rtl():
     """Migrated stages accept no Design-owned data in their constructor."""
     from veriflow.core.stages.synthesis import SynthesisStage
     from veriflow.core.stages.simulation import SimulationStage
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     # These constructors must work without rtl_files / top_module / tb_files
-    _ = ConnectivityStage(interface_profile=None)
+    _ = InterfaceStage(interface_profile=None)
     _ = SimulationStage(tb_top="tb")
     _ = SynthesisStage()
 
@@ -2541,7 +2541,7 @@ def test_run_connectivity_check_compiles_wrapper_not_tb_files():
 def test_connectivity_stage_never_opens_tb_sources():
     """Connectivity must not reference Design.tb_sources — uses InterfaceProfile only."""
     from unittest.mock import MagicMock
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.models.interface_profile import semicolab_interface_profile
 
     tb_never_opened = Path("/should/never/be/opened/tb_tile.v")
@@ -2552,7 +2552,7 @@ def test_connectivity_stage_never_opens_tb_sources():
     )
     mock_backend = MagicMock()
     mock_backend.run_connectivity.return_value = "PASS"
-    stage = ConnectivityStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
+    stage = InterfaceStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
 
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -2572,9 +2572,9 @@ def test_connectivity_stage_missing_profile_raises():
     """Missing InterfaceProfile while connectivity executes raises VF_INTERFACE_PROFILE_REQUIRED."""
     from unittest.mock import MagicMock
     from veriflow.core import VeriFlowError
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
 
-    stage = ConnectivityStage(interface_profile=None)
+    stage = InterfaceStage(interface_profile=None)
     ctx = MagicMock()
     ctx.skip_connectivity = False
     raised = False
