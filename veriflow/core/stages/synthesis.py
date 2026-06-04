@@ -27,6 +27,7 @@ class SynthesisStage(PipelineStage):
             return StageResult(name=self.name, status="SKIPPED", tool=tool)
 
         synth_log_path = ctx.synth_dir / "logs" / "synth.log"
+        synth_log_path.parent.mkdir(parents=True, exist_ok=True)
         status, parsed = self._backend.run_synthesis(
             rtl_files=design.rtl_sources,
             top_module=design.top_module,

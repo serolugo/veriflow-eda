@@ -36,6 +36,7 @@ class InterfaceStage(PipelineStage):
             )
 
         conn_log_path = ctx.impl_dir / "logs" / "connectivity.log"
+        conn_log_path.parent.mkdir(parents=True, exist_ok=True)
         status = self._backend.run_connectivity(
             rtl_files=design.rtl_sources,
             interface_profile=self.interface_profile,
