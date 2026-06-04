@@ -50,15 +50,8 @@ def _fill_project_config(db: Path, id_prefix: str = "TST-01") -> None:
         "project_name": "Test Project",
         "repo": "https://github.com/test/test",
         "description": "Test project for VeriFlow unit tests.\n",
+        "interface_name": "semicolab",
     }
-    (db / "project_config.yaml").write_text(
-        "\n".join(f"{k}: {v!r}" if isinstance(v, str) and "\n" not in v
-                  else (f"{k}: |\n  {v.strip()}" if "\n" in v else f"{k}: {v!r}")
-                  for k, v in cfg.items()),
-        encoding="utf-8",
-    )
-    # Use simple yaml.dump instead
-    import yaml
     (db / "project_config.yaml").write_text(yaml.dump(cfg, default_flow_style=False), encoding="utf-8")
 
 
@@ -565,12 +558,12 @@ def test_semicolab_true_creates_tb_tile_v():
 
 
 def test_semicolab_false_creates_empty_tb():
-    """semicolab: false should only copy empty tb_tile.v, no tb_tasks.v"""
+    """interface_name: null should copy empty tb_tile.v, no tb_tasks.v"""
     import yaml
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
         (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
         _make_tile(db)
         tb_dir = db / "config" / "tile_0001" / "src" / "tb"
@@ -2961,12 +2954,12 @@ def test_semicolab_scaffold_no_tb_tasks_v():
 # ── D. Generic scaffold tests ─────────────────────────────────────────────────
 
 def test_generic_scaffold_no_semicolab_wiring():
-    """Non-Semicolab tile creation must not inject Semicolab ports or helpers."""
+    """Generic project (interface_name: null) must not inject Semicolab ports or helpers."""
     import yaml
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
         (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
         _make_tile(db)
         content = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
@@ -3123,15 +3116,15 @@ def test_create_tile_semicolab_whitespace_top_module_rejected():
 
 
 def test_create_tile_non_semicolab_no_top_module_required():
-    """Non-Semicolab tile creation does not require top_module."""
+    """Generic project (interface_name: null) does not require top_module."""
     import yaml
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
         (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
         from veriflow.commands.create_tile import cmd_create_tile
-        cmd_create_tile(db)  # no top_module — OK for non-Semicolab
+        cmd_create_tile(db)  # no top_module — OK for generic project
         assert (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").exists()
     finally:
         shutil.rmtree(tmp)
@@ -3175,12 +3168,12 @@ def test_create_tile_single_source_of_truth():
 
 
 def test_generic_scaffold_tb_contains_waveform_dump():
-    """Non-Semicolab scaffold must include $dumpfile/$dumpvars for waveform generation."""
+    """Generic scaffold (interface_name: null) must include $dumpfile/$dumpvars for waveform generation."""
     import yaml
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "semicolab": False}
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
         (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
         from veriflow.commands.create_tile import cmd_create_tile
         cmd_create_tile(db)
@@ -3194,9 +3187,9 @@ def test_generic_scaffold_tb_contains_waveform_dump():
 # ── top_module identifier validation ─────────────────────────────────────────
 
 def _make_semicolab_db(tmp: Path) -> Path:
-    """Initialize a Semicolab database inside tmp."""
+    """Initialize a Semicolab database (interface_name: 'semicolab') inside tmp."""
     db = _make_db(tmp)
-    _fill_project_config(db)  # semicolab=True by default
+    _fill_project_config(db)  # interface_name: "semicolab"
     return db
 
 
@@ -3326,6 +3319,341 @@ def test_create_tile_accepts_trailing_digit():
         cmd_create_tile(db, top_module="tile2")
         tb = (db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v").read_text(encoding="utf-8")
         assert "tile2 DUT (" in tb
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── Interface name selection tests ───────────────────────────────────────────
+
+# B. ProjectConfig parsing
+
+def test_project_config_parses_interface_name_semicolab():
+    from veriflow.models.project_config import ProjectConfig
+    cfg = ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": "", "interface_name": "semicolab"})
+    assert cfg.interface_name == "semicolab"
+
+
+def test_project_config_parses_interface_name_null():
+    from veriflow.models.project_config import ProjectConfig
+    cfg = ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": "", "interface_name": None})
+    assert cfg.interface_name is None
+
+
+def test_project_config_missing_interface_name_raises():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    raised = False
+    try:
+        ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": ""})
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_PROJECT_INTERFACE_REQUIRED"
+        assert "interface_name" in str(e)
+    assert raised, "Absent interface_name must raise VF_PROJECT_INTERFACE_REQUIRED"
+
+
+def test_project_config_interface_name_whitespace_becomes_none():
+    from veriflow.models.project_config import ProjectConfig
+    cfg = ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": "", "interface_name": "   "})
+    assert cfg.interface_name is None
+
+
+def test_project_config_legacy_semicolab_true_raises():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    raised = False
+    try:
+        ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": "", "semicolab": True})
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+        assert "interface_name" in str(e)
+    assert raised, "Legacy semicolab: true must raise VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+
+
+def test_project_config_legacy_semicolab_false_raises():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    raised = False
+    try:
+        ProjectConfig.from_dict({"id_prefix": "X", "project_name": "P", "repo": "", "description": "", "semicolab": False})
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+    assert raised, "Legacy semicolab: false must raise VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+
+
+def test_project_config_legacy_error_includes_migration_guidance():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    try:
+        ProjectConfig.from_dict({"semicolab": True})
+    except VeriFlowError as e:
+        assert "semicolab: true" in str(e)
+        assert "semicolab: false" in str(e)
+        return
+    assert False, "Expected VeriFlowError"
+
+
+def test_project_config_both_keys_rejected():
+    """Having both semicolab and interface_name present is rejected."""
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    raised = False
+    try:
+        ProjectConfig.from_dict({
+            "id_prefix": "X", "project_name": "P", "repo": "", "description": "",
+            "semicolab": True, "interface_name": "semicolab",
+        })
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+    assert raised, "Both semicolab and interface_name must be rejected"
+
+
+def test_project_config_missing_interface_raises_required_not_legacy():
+    """Empty config (no semicolab, no interface_name) raises VF_PROJECT_INTERFACE_REQUIRED."""
+    from veriflow.core import VeriFlowError
+    from veriflow.models.project_config import ProjectConfig
+    raised = False
+    try:
+        ProjectConfig.from_dict({})
+    except VeriFlowError as e:
+        raised = True
+        assert e.code == "VF_PROJECT_INTERFACE_REQUIRED", f"Expected VF_PROJECT_INTERFACE_REQUIRED, got {e.code!r}"
+    assert raised, "Empty config must raise VF_PROJECT_INTERFACE_REQUIRED, not VF_PROJECT_INTERFACE_CONFIG_LEGACY"
+
+
+# D. Database execution
+
+def test_cmd_run_generic_project_skips_connectivity():
+    """interface_name: null automatically skips connectivity in normal runs."""
+    import yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        result = cmd_run(db=db, tile_number="0001", skip_sim=True, skip_synth=True)
+        assert result["stages"]["connectivity"]["status"] == "SKIPPED"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_run_only_check_no_interface_raises():
+    """only_check=True with no interface profile raises VF_INTERFACE_CHECK_NO_PROFILE."""
+    import yaml
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        raised = False
+        try:
+            cmd_run(db=db, tile_number="0001", only_check=True)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_INTERFACE_CHECK_NO_PROFILE"
+        assert raised, "Expected VF_INTERFACE_CHECK_NO_PROFILE"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_run_unknown_interface_raises_before_stages():
+    """Unknown interface_name raises VF_INTERFACE_UNKNOWN before any stage executes."""
+    import yaml
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        # Set up a valid semicolab config and create the tile
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        # Overwrite project_config with an unknown interface before running
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": "future_interface"}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.run import cmd_run
+        raised = False
+        try:
+            cmd_run(db=db, tile_number="0001", skip_sim=True, skip_synth=True)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_INTERFACE_UNKNOWN"
+        assert raised, "Expected VF_INTERFACE_UNKNOWN for unknown interface_name"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_create_tile_unknown_interface_raises_before_files():
+    """Unknown interface_name in create_tile raises VF_INTERFACE_UNKNOWN before writing files."""
+    import yaml
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": "future_interface"}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="my_tile")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_INTERFACE_UNKNOWN"
+        assert raised, "Expected VF_INTERFACE_UNKNOWN"
+        assert not (db / "config" / "tile_0001").exists(), "No files must be written before validation"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# F. Artifact compatibility
+
+def test_results_json_semicolab_field_is_boolean():
+    """results.json['semicolab'] must remain a boolean (not a string or missing)."""
+    import json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        result = cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        assert isinstance(result["semicolab"], bool), "semicolab in return dict must be bool"
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert isinstance(data["semicolab"], bool), "results.json semicolab must be bool"
+        assert data["semicolab"] is True
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_results_json_schema_version_unchanged_after_refactor():
+    """results.json schema_version must remain '1.1' after the interface_name refactor."""
+    import json
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        from veriflow.core.csv_store import get_tile_row
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert data["schema_version"] == "1.1"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_records_csv_semicolab_field_is_true_false_string():
+    """CSV Semicolab field must be the string 'true' or 'false', not a boolean."""
+    import csv, yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        rows = list(csv.DictReader((db / "records.csv").read_text(encoding="utf-8").splitlines()))
+        assert len(rows) == 1
+        assert rows[0]["Semicolab"] in ("true", "false"), "Semicolab CSV field must be 'true' or 'false'"
+        assert rows[0]["Semicolab"] == "true"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_records_csv_generic_project_semicolab_is_false_string():
+    """Generic project (interface_name: null) writes Semicolab='false' to CSV."""
+    import csv, yaml
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": "", "interface_name": None}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        from veriflow.commands.run import cmd_run
+        cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
+        rows = list(csv.DictReader((db / "records.csv").read_text(encoding="utf-8").splitlines()))
+        assert rows[0]["Semicolab"] == "false"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_run_missing_interface_raises_required():
+    """cmd_run must raise VF_PROJECT_INTERFACE_REQUIRED when interface_name is absent."""
+    import yaml
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        _fill_project_config(db)
+        _make_tile(db)
+        _add_rtl(db, "0001", "my_tile")
+        _fill_tile_config(db, "0001", "my_tile")
+        _fill_run_config(db, "0001")
+        # Write a config with no interface_name key at all
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": ""}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.run import cmd_run
+        raised = False
+        try:
+            cmd_run(db=db, tile_number="0001", skip_sim=True, skip_synth=True)
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_PROJECT_INTERFACE_REQUIRED"
+        assert raised, "Missing interface_name must raise VF_PROJECT_INTERFACE_REQUIRED in cmd_run"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_cmd_create_tile_missing_interface_raises_required():
+    """cmd_create_tile must raise VF_PROJECT_INTERFACE_REQUIRED when interface_name is absent."""
+    import yaml
+    from veriflow.core import VeriFlowError
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        cfg = {"id_prefix": "TST-01", "project_name": "Test", "repo": "", "description": ""}
+        (db / "project_config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+        from veriflow.commands.create_tile import cmd_create_tile
+        raised = False
+        try:
+            cmd_create_tile(db, top_module="my_tile")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_PROJECT_INTERFACE_REQUIRED"
+        assert raised, "Missing interface_name must raise VF_PROJECT_INTERFACE_REQUIRED in cmd_create_tile"
+        assert not (db / "config" / "tile_0001").exists(), "No files must be written before the error"
     finally:
         shutil.rmtree(tmp)
 
@@ -3525,4 +3853,24 @@ ALL_TESTS = [
     ("create_tile_accepts_shift_mux",                        test_create_tile_accepts_shift_mux),
     ("create_tile_accepts_leading_underscore",               test_create_tile_accepts_leading_underscore),
     ("create_tile_accepts_trailing_digit",                   test_create_tile_accepts_trailing_digit),
+    # interface_name selection (this PR)
+    ("project_config_parses_interface_name_semicolab",       test_project_config_parses_interface_name_semicolab),
+    ("project_config_parses_interface_name_null",            test_project_config_parses_interface_name_null),
+    ("project_config_missing_interface_name_raises",         test_project_config_missing_interface_name_raises),
+    ("project_config_interface_name_whitespace_becomes_none",test_project_config_interface_name_whitespace_becomes_none),
+    ("project_config_legacy_semicolab_true_raises",          test_project_config_legacy_semicolab_true_raises),
+    ("project_config_legacy_semicolab_false_raises",         test_project_config_legacy_semicolab_false_raises),
+    ("project_config_legacy_error_includes_migration_guidance", test_project_config_legacy_error_includes_migration_guidance),
+    ("project_config_both_keys_rejected",                    test_project_config_both_keys_rejected),
+    ("project_config_missing_interface_raises_required_not_legacy", test_project_config_missing_interface_raises_required_not_legacy),
+    ("cmd_run_generic_project_skips_connectivity",           test_cmd_run_generic_project_skips_connectivity),
+    ("cmd_run_only_check_no_interface_raises",               test_cmd_run_only_check_no_interface_raises),
+    ("cmd_run_unknown_interface_raises_before_stages",       test_cmd_run_unknown_interface_raises_before_stages),
+    ("cmd_create_tile_unknown_interface_raises_before_files",test_cmd_create_tile_unknown_interface_raises_before_files),
+    ("cmd_run_missing_interface_raises_required",            test_cmd_run_missing_interface_raises_required),
+    ("cmd_create_tile_missing_interface_raises_required",    test_cmd_create_tile_missing_interface_raises_required),
+    ("results_json_semicolab_field_is_boolean",              test_results_json_semicolab_field_is_boolean),
+    ("results_json_schema_version_unchanged_after_refactor", test_results_json_schema_version_unchanged_after_refactor),
+    ("records_csv_semicolab_field_is_true_false_string",     test_records_csv_semicolab_field_is_true_false_string),
+    ("records_csv_generic_project_semicolab_is_false_string",test_records_csv_generic_project_semicolab_is_false_string),
 ]

@@ -221,7 +221,6 @@ def test_stage_registry_unknown_raises():
 
 def test_run_request_defaults():
     req = RunRequest(work_dir=Path("/tmp/work"))
-    assert req.semicolab is False
     assert req.skip_connectivity is False
     assert req.skip_sim is False
     assert req.skip_synth is False
@@ -347,13 +346,11 @@ def test_flow_propagates_skip_flags(tmp_path):
         work_dir=tmp_path,
         skip_connectivity=True,
         skip_sim=True,
-        semicolab=True,
     )
     flow.run(_design(), req)
     ctx = recorder.received_input.context
     assert ctx.skip_connectivity is True
     assert ctx.skip_sim is True
-    assert ctx.semicolab is True
     assert ctx.skip_synth is False
 
 
@@ -459,7 +456,6 @@ def test_execution_context_log_rel_outside_run_dir(tmp_path):
 
 def test_execution_context_defaults(tmp_path):
     ctx = ExecutionContext(run_dir=tmp_path)
-    assert ctx.semicolab is False
     assert ctx.skip_connectivity is False
     assert ctx.skip_sim is False
     assert ctx.skip_synth is False
@@ -523,6 +519,53 @@ def test_run_context_log_rel_with_db_path(tmp_path):
     assert ctx.log_rel(outside) == outside.as_posix()
 
 
+# ── A. Interface resolver ─────────────────────────────────────────────────────
+
+def test_get_interface_profile_semicolab_returns_profile():
+    from veriflow.models.interface_profile import get_interface_profile
+    profile = get_interface_profile("semicolab")
+    assert profile is not None
+    assert profile.name == "semicolab"
+    assert len(profile.ports) == 9
+
+
+def test_get_interface_profile_none_returns_none():
+    from veriflow.models.interface_profile import get_interface_profile
+    assert get_interface_profile(None) is None
+
+
+def test_get_interface_profile_unknown_raises():
+    from veriflow.core import VeriFlowError
+    from veriflow.models.interface_profile import get_interface_profile
+    with pytest.raises(VeriFlowError) as exc_info:
+        get_interface_profile("nonexistent_interface")
+    assert exc_info.value.code == "VF_INTERFACE_UNKNOWN"
+
+
+def test_get_interface_profile_exported_from_models():
+    from veriflow.models import get_interface_profile
+    assert callable(get_interface_profile)
+
+
+# ── B. Framework context cleanup ─────────────────────────────────────────────
+
+def test_run_request_has_no_semicolab():
+    req = RunRequest(work_dir=Path("/tmp/work"))
+    assert not hasattr(req, "semicolab")
+
+
+def test_execution_context_has_no_semicolab(tmp_path):
+    ctx = ExecutionContext(run_dir=tmp_path)
+    assert not hasattr(ctx, "semicolab")
+
+
+def test_flow_context_has_no_semicolab(tmp_path):
+    recorder = RecordingStage()
+    Flow([recorder]).run(_design(), RunRequest(work_dir=tmp_path))
+    ctx = recorder.received_input.context
+    assert not hasattr(ctx, "semicolab")
+
+
 # ── 9. Public exports ─────────────────────────────────────────────────────────
 
 def test_public_exports_include_flow_and_stage_input():
@@ -572,7 +615,7 @@ def test_flow_runs_connectivity_stage_natively(tmp_path):
 
     result = Flow([stage]).run(
         design,
-        RunRequest(work_dir=tmp_path, skip_connectivity=False, semicolab=True),
+        RunRequest(work_dir=tmp_path, skip_connectivity=False),
     )
     assert result.status == "PASS"
     mock_backend.run_connectivity.assert_called_once()

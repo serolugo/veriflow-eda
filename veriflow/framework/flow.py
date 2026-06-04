@@ -25,7 +25,6 @@ class Flow:
     def run(self, design: Design, request: RunRequest) -> RunResult:
         context = ExecutionContext(
             run_dir=request.work_dir,
-            semicolab=request.semicolab,
             skip_connectivity=request.skip_connectivity,
             skip_sim=request.skip_sim,
             skip_synth=request.skip_synth,

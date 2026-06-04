@@ -69,3 +69,20 @@ def semicolab_interface_profile() -> InterfaceProfile:
             InterfacePort("csr_out_we", "output", 1),
         ),
     )
+
+
+def get_interface_profile(name: str | None) -> InterfaceProfile | None:
+    """Return the InterfaceProfile for *name*, or None for a generic project.
+
+    Raises VF_INTERFACE_UNKNOWN for any non-empty name that is not registered.
+    """
+    if name is None:
+        return None
+    if name == "semicolab":
+        return semicolab_interface_profile()
+    raise VeriFlowError(
+        f"Unknown interface name {name!r}. Registered interfaces: semicolab\n"
+        "  Set interface_name to a registered value in project_config.yaml.",
+        code="VF_INTERFACE_UNKNOWN",
+        details={"interface_name": name},
+    )
