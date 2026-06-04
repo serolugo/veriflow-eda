@@ -603,14 +603,14 @@ def test_flow_runs_synthesis_stage_natively(tmp_path):
 
 def test_flow_runs_connectivity_stage_natively(tmp_path):
     from unittest.mock import MagicMock
-    from veriflow.core.stages.connectivity import ConnectivityStage
+    from veriflow.core.stages.connectivity import InterfaceStage
     from veriflow.core.backends.base import ConnectivityBackend
     from veriflow.models.interface_profile import semicolab_interface_profile
 
     mock_backend = MagicMock(spec=ConnectivityBackend)
     mock_backend.run_connectivity.return_value = "PASS"
     profile = semicolab_interface_profile()
-    stage = ConnectivityStage(interface_profile=profile, backend=mock_backend)
+    stage = InterfaceStage(interface_profile=profile, backend=mock_backend)
     design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
 
     result = Flow([stage]).run(

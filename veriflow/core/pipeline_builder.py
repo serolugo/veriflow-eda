@@ -8,7 +8,7 @@ from veriflow.core.backends.registry import (
     get_synthesis_backend,
 )
 from veriflow.core.pipeline import PipelineRunner
-from veriflow.core.stages.connectivity import ConnectivityStage
+from veriflow.core.stages.connectivity import InterfaceStage
 from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
 from veriflow.framework.design import Design
@@ -26,7 +26,7 @@ def build_default_pipeline(
 ) -> PipelineRunner:
     """Construct the fixed default pipeline: connectivity → simulation → synthesis.
 
-    interface_profile is forwarded to ConnectivityStage.  tb_top selects the
+    interface_profile is forwarded to InterfaceStage.  tb_top selects the
     testbench top module for SimulationStage and is required to be non-empty.
     """
     p = profile or default_execution_profile()
@@ -37,7 +37,7 @@ def build_default_pipeline(
     )
     return PipelineRunner(
         stages=[
-            ConnectivityStage(
+            InterfaceStage(
                 interface_profile=interface_profile,
                 profile=p,
                 backend=get_connectivity_backend(p.connectivity_backend),

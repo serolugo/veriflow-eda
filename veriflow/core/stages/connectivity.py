@@ -9,7 +9,7 @@ from veriflow.models.execution_profile import ExecutionProfile, default_executio
 from veriflow.models.stage_result import StageResult
 
 
-class ConnectivityStage(PipelineStage):
+class InterfaceStage(PipelineStage):
     name = "connectivity"
 
     def __init__(
