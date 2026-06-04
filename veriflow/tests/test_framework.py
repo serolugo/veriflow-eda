@@ -665,3 +665,233 @@ def test_flow_built_in_stages_receive_design_from_flow(tmp_path):
     call_kwargs = mock_backend.run_synthesis.call_args
     assert call_kwargs.kwargs["rtl_files"] == [rtl]
     assert call_kwargs.kwargs["top_module"] == "specific_top"
+
+
+# ── 11. Stage artifact directory preparation ─────────────────────────────────
+
+def test_interface_stage_creates_log_parent_dir(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import InterfaceStage
+    from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+    stage = InterfaceStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    expected_dir = tmp_path / "out" / "connectivity" / "logs"
+    assert not expected_dir.exists()
+
+    result = Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    assert result.status == "PASS"
+    assert expected_dir.exists()
+    assert expected_dir.is_dir()
+
+
+def test_simulation_stage_creates_log_and_wave_parent_dirs(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+    stage = SimulationStage(tb_top="tb", backend=mock_backend)
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    expected_log_dir = tmp_path / "out" / "sim" / "logs"
+    expected_wave_dir = tmp_path / "out" / "sim" / "waves"
+    assert not expected_log_dir.exists()
+    assert not expected_wave_dir.exists()
+
+    result = Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    assert result.status == "PASS"
+    assert expected_log_dir.exists() and expected_log_dir.is_dir()
+    assert expected_wave_dir.exists() and expected_wave_dir.is_dir()
+
+
+def test_synthesis_stage_creates_log_parent_dir(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "4", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    expected_dir = tmp_path / "out" / "synth" / "logs"
+    assert not expected_dir.exists()
+
+    result = Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    assert result.status == "PASS"
+    assert expected_dir.exists()
+    assert expected_dir.is_dir()
+
+
+def test_flow_all_built_in_stages_from_empty_work_dir(tmp_path):
+    """Flow with all three built-in stages succeeds with no pre-created directories."""
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import InterfaceStage
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import ConnectivityBackend, SimulationBackend, SynthesisBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    conn_backend = MagicMock(spec=ConnectivityBackend)
+    conn_backend.run_connectivity.return_value = "PASS"
+    sim_backend = MagicMock(spec=SimulationBackend)
+    sim_backend.run_simulation.return_value = ("COMPLETED", {})
+    synth_backend = MagicMock(spec=SynthesisBackend)
+    synth_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+
+    flow = Flow([
+        InterfaceStage(interface_profile=semicolab_interface_profile(), backend=conn_backend),
+        SimulationStage(tb_top="tb", backend=sim_backend),
+        SynthesisStage(backend=synth_backend),
+    ])
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    assert list(tmp_path.iterdir()) == []
+
+    result = flow.run(design, RunRequest(work_dir=tmp_path))
+
+    assert result.status == "PASS"
+    assert "connectivity" in result.stages
+    assert "simulation" in result.stages
+    assert "synthesis" in result.stages
+    assert (tmp_path / "out" / "connectivity" / "logs").is_dir()
+    assert (tmp_path / "out" / "sim" / "logs").is_dir()
+    assert (tmp_path / "out" / "sim" / "waves").is_dir()
+    assert (tmp_path / "out" / "synth" / "logs").is_dir()
+
+
+def test_interface_stage_artifact_paths_unchanged(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import InterfaceStage
+    from veriflow.core.backends.base import ConnectivityBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    mock_backend = MagicMock(spec=ConnectivityBackend)
+    mock_backend.run_connectivity.return_value = "PASS"
+    stage = InterfaceStage(interface_profile=semicolab_interface_profile(), backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    call_kwargs = mock_backend.run_connectivity.call_args
+    assert call_kwargs.kwargs["log_path"] == tmp_path / "out" / "connectivity" / "logs" / "connectivity.log"
+
+
+def test_simulation_stage_artifact_paths_unchanged(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.backends.base import SimulationBackend
+
+    mock_backend = MagicMock(spec=SimulationBackend)
+    mock_backend.run_simulation.return_value = ("COMPLETED", {})
+    stage = SimulationStage(tb_top="tb_top", backend=mock_backend)
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    call_kwargs = mock_backend.run_simulation.call_args
+    assert call_kwargs.kwargs["sim_log_path"] == tmp_path / "out" / "sim" / "logs" / "sim.log"
+    assert call_kwargs.kwargs["wave_path"] == tmp_path / "out" / "sim" / "waves" / "waves.vcd"
+
+
+def test_synthesis_stage_artifact_paths_unchanged(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "0", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+
+    Flow([stage]).run(design, RunRequest(work_dir=tmp_path))
+
+    call_kwargs = mock_backend.run_synthesis.call_args
+    assert call_kwargs.kwargs["synth_log_path"] == tmp_path / "out" / "synth" / "logs" / "synth.log"
+
+
+def test_stage_keys_unchanged(tmp_path):
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.connectivity import InterfaceStage
+    from veriflow.core.stages.simulation import SimulationStage
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import ConnectivityBackend, SimulationBackend, SynthesisBackend
+    from veriflow.models.interface_profile import semicolab_interface_profile
+
+    conn_backend = MagicMock(spec=ConnectivityBackend)
+    conn_backend.run_connectivity.return_value = "PASS"
+    sim_backend = MagicMock(spec=SimulationBackend)
+    sim_backend.run_simulation.return_value = ("COMPLETED", {})
+    synth_backend = MagicMock(spec=SynthesisBackend)
+    synth_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "0", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+
+    flow = Flow([
+        InterfaceStage(interface_profile=semicolab_interface_profile(), backend=conn_backend),
+        SimulationStage(tb_top="tb", backend=sim_backend),
+        SynthesisStage(backend=synth_backend),
+    ])
+    design = Design(
+        top_module="top",
+        rtl_sources=[Path("/nonexistent/top.v")],
+        tb_sources=[Path("/nonexistent/tb.v")],
+    )
+
+    result = flow.run(design, RunRequest(work_dir=tmp_path))
+
+    assert result.stages["connectivity"].name == "connectivity"
+    assert result.stages["simulation"].name == "simulation"
+    assert result.stages["synthesis"].name == "synthesis"
+
+
+def test_mkdir_is_idempotent_on_existing_dirs(tmp_path):
+    """Repeated mkdir(parents=True, exist_ok=True) calls must not raise."""
+    from unittest.mock import MagicMock
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_backend = MagicMock(spec=SynthesisBackend)
+    mock_backend.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "0", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+    stage = SynthesisStage(backend=mock_backend)
+    design = Design(top_module="top", rtl_sources=[Path("/nonexistent/top.v")])
+    req = RunRequest(work_dir=tmp_path)
+
+    (tmp_path / "out" / "synth" / "logs").mkdir(parents=True, exist_ok=True)
+
+    result = Flow([stage]).run(design, req)
+    assert result.status == "PASS"

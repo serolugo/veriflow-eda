@@ -36,6 +36,8 @@ class SimulationStage(PipelineStage):
 
         sim_log_path = ctx.sim_dir / "logs" / "sim.log"
         wave_path = ctx.sim_dir / "waves" / "waves.vcd"
+        sim_log_path.parent.mkdir(parents=True, exist_ok=True)
+        wave_path.parent.mkdir(parents=True, exist_ok=True)
 
         status, parsed = self._backend.run_simulation(
             rtl_files=design.rtl_sources,
