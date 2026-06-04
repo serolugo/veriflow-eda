@@ -9,7 +9,6 @@ class StageContext(Protocol):
     """Minimum contract consumed by built-in stages."""
 
     run_dir: Path
-    semicolab: bool
     skip_connectivity: bool
     skip_sim: bool
     skip_synth: bool
@@ -34,7 +33,6 @@ class ExecutionContext:
     """Database-independent execution context for framework/API flows."""
 
     run_dir: Path
-    semicolab: bool = False
     skip_connectivity: bool = False
     skip_sim: bool = False
     skip_synth: bool = False

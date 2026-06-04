@@ -7,7 +7,6 @@ from pathlib import Path
 @dataclass
 class RunRequest:
     work_dir: Path
-    semicolab: bool = False
     skip_connectivity: bool = False
     skip_sim: bool = False
     skip_synth: bool = False

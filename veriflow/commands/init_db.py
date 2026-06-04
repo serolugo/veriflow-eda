@@ -7,9 +7,9 @@ _PROJECT_CONFIG_TEMPLATE = """\
 id_prefix: ""
 project_name: ""
 repo: ""
-semicolab: true
+interface_name: "semicolab"
 description: |
-  
+
 """
 
 _TILE_INDEX_HEADER = "tile_number,tile_id,tile_name,tile_author,version,revision\n"

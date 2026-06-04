@@ -75,8 +75,13 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     project_config = ProjectConfig.from_dict(raw)
     validate_project_config(project_config)
 
-    # 2. Validate top_module early — before any filesystem writes
-    if project_config.semicolab:
+    # 2. Resolve interface and validate top_module early — before any filesystem writes
+    from veriflow.models.interface_profile import get_interface_profile
+    interface_name = project_config.interface_name
+    get_interface_profile(interface_name)  # raises VF_INTERFACE_UNKNOWN for unregistered names
+    is_semicolab = interface_name == "semicolab"
+
+    if is_semicolab:
         if not top_module or not top_module.strip():
             raise VeriFlowError(
                 "top_module is required when creating a Semicolab tile. "
@@ -133,7 +138,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
         (d / ".gitkeep").touch()
 
     tb_dir = config_tile_dir / "src" / "tb"
-    if project_config.semicolab:
+    if is_semicolab:
         tb_semicolab = template_dir / "tb_semicolab_template.v"
         if tb_semicolab.exists():
             content = tb_semicolab.read_text(encoding="utf-8")
@@ -176,7 +181,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
         "tile_author": "",
         "version": f"{id_version:02d}",
         "revision": f"{id_revision:02d}",
-        "semicolab": "true" if project_config.semicolab else "false",
+        "semicolab": "true" if is_semicolab else "false",
     })
     print(f"[create-tile] Appended row to tile_index.csv")
 

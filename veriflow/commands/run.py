@@ -94,15 +94,27 @@ def cmd_run(
     tile_config = TileConfig.from_dict(yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {})
     run_config = tile_config  # run fields are now merged into tile_config
 
-    # Read project config for semicolab flag
+    # Read project config and resolve interface selection
     from veriflow.models.project_config import ProjectConfig
+    from veriflow.models.interface_profile import get_interface_profile
     project_cfg_path = db / "project_config.yaml"
     project_config = ProjectConfig.from_dict(yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {})
-    semicolab = project_config.semicolab
+    interface_name = project_config.interface_name
+    interface_profile = get_interface_profile(interface_name)
 
-    # In non-semicolab mode, skip connectivity check automatically
-    if not semicolab and not only_check:
+    if only_check and interface_profile is None:
+        raise VeriFlowError(
+            "Cannot run connectivity check (--only-check): no interface profile is configured.\n"
+            "  Set 'interface_name' in project_config.yaml to enable interface checking.\n"
+            "  Example: interface_name: \"semicolab\"",
+            code="VF_INTERFACE_CHECK_NO_PROFILE",
+        )
+
+    # Projects with no interface profile skip connectivity automatically
+    if interface_profile is None:
         skip_check = True
+
+    legacy_semicolab = interface_name == "semicolab"
 
     validate_run_inputs(db, tile_number_str, tile_config)
 
@@ -134,7 +146,7 @@ def cmd_run(
         run_id=run_id,
         tile_dir=tile_dir,
         run_dir=runs_dir / run_id,
-        semicolab=semicolab,
+        semicolab=legacy_semicolab,
         skip_connectivity=skip_check,
         skip_sim=skip_sim,
         skip_synth=skip_synth,
@@ -174,9 +186,7 @@ def cmd_run(
     # ── Detect tool version
     iverilog_version = detect_iverilog_version()
 
-    # ── Resolve interface profile for connectivity (Semicolab only)
-    from veriflow.models.interface_profile import semicolab_interface_profile
-    interface_profile = semicolab_interface_profile() if semicolab else None
+    # interface_profile already resolved from project_config above
 
     # ── Build pipeline stages
     pipeline = build_default_pipeline(
