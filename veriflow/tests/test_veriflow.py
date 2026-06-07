@@ -3023,7 +3023,7 @@ def test_cmd_run_forwards_tb_top_module():
             return original_build(**kwargs)
 
         from veriflow.commands.run import cmd_run
-        with patch("veriflow.commands.run.build_default_pipeline", side_effect=capturing_build):
+        with patch("veriflow.workflows.database.build_default_pipeline", side_effect=capturing_build):
             cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
 
         assert len(captured_tb_top) == 1
