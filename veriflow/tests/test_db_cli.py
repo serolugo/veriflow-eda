@@ -6,9 +6,11 @@ Covers:
   B. Dispatch — each subcommand calls the correct handler with correct args
   C. Legacy compatibility — flat legacy commands and `project run` unaffected
   D. Error behavior — missing required args fail clearly
+  E. Read-only read commands (list-tiles, list-runs, show-run)
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -364,3 +366,396 @@ def test_legacy_db_commands_require_db_unchanged():
     from veriflow.cli import main
     rc = main(["init"])
     assert rc != 0
+
+
+# ── E. Read-only commands: helpers ────────────────────────────────────────────
+
+def _make_tile_info(
+    number: str = "0001",
+    tile_id: str = "tile_0001",
+    name: str = "my_tile",
+    author: str = "author",
+) -> "DatabaseTileInfo":
+    from veriflow.workflows.database import DatabaseTileInfo
+    return DatabaseTileInfo(
+        tile_number=number,
+        tile_id=tile_id,
+        tile_name=name,
+        tile_author=author,
+        version="1",
+        revision="0",
+        semicolab=True,
+    )
+
+
+def _make_run_info(
+    tile_id: str = "tile_0001",
+    run_id: str = "run-001",
+    status: str = "PASS",
+    run_dir: Path | None = None,
+) -> "DatabaseRunInfo":
+    from veriflow.workflows.database import DatabaseRunInfo
+    return DatabaseRunInfo(
+        tile_id=tile_id,
+        run_id=run_id,
+        run_dir=run_dir or Path("/fake/run"),
+        status=status,
+        date="2026-01-01",
+        objective="test objective",
+    )
+
+
+def _make_run_result(
+    tile_id: str = "tile_0001",
+    run_id: str = "run-001",
+    status: str = "PASS",
+) -> "DatabaseRunResult":
+    from veriflow.workflows.database import DatabaseRunResult
+    from veriflow.models.stage_result import StageResult
+    return DatabaseRunResult(
+        tile_id=tile_id,
+        run_id=run_id,
+        run_dir=Path("/fake/run"),
+        status=status,
+        semicolab=True,
+        stages={
+            "connectivity": StageResult(name="connectivity", status="PASS"),
+            "simulation": StageResult(name="simulation", status="COMPLETED"),
+            "synthesis": StageResult(name="synthesis", status="PASS"),
+        },
+        sources={},
+        artifacts={},
+        data={
+            "tile_id": tile_id,
+            "run_id": run_id,
+            "status": status,
+            "semicolab": True,
+            "stages": {
+                "connectivity": {"status": "PASS"},
+                "simulation": {"status": "COMPLETED"},
+                "synthesis": {"status": "PASS"},
+            },
+        },
+    )
+
+
+# ── E1. Parser ────────────────────────────────────────────────────────────────
+
+def test_db_list_tiles_parses(tmp_path):
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["db", "list-tiles", "--db", str(tmp_path)])
+    assert args.command == "db"
+    assert args.db_command == "list-tiles"
+    assert args.db == str(tmp_path)
+
+
+def test_db_list_runs_parses(tmp_path):
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(
+        ["db", "list-runs", "--db", str(tmp_path), "--tile", "0001"]
+    )
+    assert args.command == "db"
+    assert args.db_command == "list-runs"
+    assert args.db == str(tmp_path)
+    assert args.tile == "0001"
+
+
+def test_db_show_run_parses(tmp_path):
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(
+        ["db", "show-run", "--db", str(tmp_path), "--tile", "0001", "--run", "run-001"]
+    )
+    assert args.command == "db"
+    assert args.db_command == "show-run"
+    assert args.db == str(tmp_path)
+    assert args.tile == "0001"
+    assert args.run == "run-001"
+
+
+# ── E2. Dispatch ──────────────────────────────────────────────────────────────
+
+def test_db_list_tiles_dispatches(tmp_path):
+    from veriflow.cli import main
+    tile = _make_tile_info()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = [tile]
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "list-tiles", "--db", str(tmp_path)])
+    mock_cls.assert_called_once_with(Path(str(tmp_path)))
+    mock_wf.list_tiles.assert_called_once()
+    assert rc == 0
+
+
+def test_db_list_runs_dispatches(tmp_path):
+    from veriflow.cli import main
+    run = _make_run_info()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_runs.return_value = [run]
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "list-runs", "--db", str(tmp_path), "--tile", "0001"])
+    mock_wf.list_runs.assert_called_once_with(tile_id=None, tile_number="0001")
+    assert rc == 0
+
+
+def test_db_show_run_dispatches(tmp_path):
+    from veriflow.cli import main
+    result = _make_run_result()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.load_run_result.return_value = result
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "show-run", "--db", str(tmp_path), "--tile", "0001", "--run", "run-001"])
+    mock_wf.load_run_result.assert_called_once_with(tile_id=None, tile_number="0001", run_id="run-001")
+    assert rc == 0
+
+
+# ── E3. Human output ──────────────────────────────────────────────────────────
+
+def test_db_list_tiles_output_includes_tile_info(tmp_path, capsys):
+    from veriflow.commands.db_read import cmd_db_list_tiles
+    tile = _make_tile_info(number="0001", tile_id="tile_0001")
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = [tile]
+        mock_cls.return_value = mock_wf
+        cmd_db_list_tiles(tmp_path)
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "0001" in combined
+    assert "tile_0001" in combined
+
+
+def test_db_list_runs_output_includes_run_id_and_status(tmp_path, capsys):
+    from veriflow.commands.db_read import cmd_db_list_runs
+    run = _make_run_info(run_id="run-001", status="PASS")
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_runs.return_value = [run]
+        mock_cls.return_value = mock_wf
+        cmd_db_list_runs(tmp_path, tile="0001")
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "run-001" in combined
+    assert "PASS" in combined
+
+
+def test_db_show_run_output_includes_run_id_status_and_stages(tmp_path, capsys):
+    from veriflow.commands.db_read import cmd_db_show_run
+    result = _make_run_result(run_id="run-001", status="PASS")
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.load_run_result.return_value = result
+        mock_cls.return_value = mock_wf
+        cmd_db_show_run(tmp_path, run_id="run-001", tile="0001")
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "run-001" in combined
+    assert "PASS" in combined
+    assert "connectivity" in combined
+    assert "synthesis" in combined
+
+
+def test_db_list_tiles_empty_prints_message(tmp_path, capsys):
+    from veriflow.commands.db_read import cmd_db_list_tiles
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = []
+        mock_cls.return_value = mock_wf
+        result = cmd_db_list_tiles(tmp_path)
+    assert result == []
+    combined = capsys.readouterr().out + capsys.readouterr().err
+    # no crash; zero tiles is not an error
+
+
+def test_db_list_runs_empty_prints_message(tmp_path, capsys):
+    from veriflow.commands.db_read import cmd_db_list_runs
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_runs.return_value = []
+        mock_cls.return_value = mock_wf
+        result = cmd_db_list_runs(tmp_path, tile="0001")
+    assert result == []
+
+
+# ── E4. JSON output ───────────────────────────────────────────────────────────
+
+def test_db_list_tiles_json_has_tiles_key(tmp_path, capsys):
+    from veriflow.cli import main
+    tile = _make_tile_info()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = [tile]
+        mock_cls.return_value = mock_wf
+        rc = main(["--json", "db", "list-tiles", "--db", str(tmp_path)])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "tiles" in data
+    assert isinstance(data["tiles"], list)
+    assert data["tiles"][0]["tile_number"] == "0001"
+    assert data["tiles"][0]["tile_id"] == "tile_0001"
+    assert rc == 0
+
+
+def test_db_list_runs_json_has_runs_key(tmp_path, capsys):
+    from veriflow.cli import main
+    run = _make_run_info()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_runs.return_value = [run]
+        mock_cls.return_value = mock_wf
+        rc = main(["--json", "db", "list-runs", "--db", str(tmp_path), "--tile", "0001"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "runs" in data
+    assert isinstance(data["runs"], list)
+    assert data["runs"][0]["run_id"] == "run-001"
+    assert data["runs"][0]["status"] == "PASS"
+    assert rc == 0
+
+
+def test_db_show_run_json_has_run_key(tmp_path, capsys):
+    from veriflow.cli import main
+    result = _make_run_result()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.load_run_result.return_value = result
+        mock_cls.return_value = mock_wf
+        rc = main(["--json", "db", "show-run", "--db", str(tmp_path), "--tile", "0001", "--run", "run-001"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "run" in data
+    assert data["run"]["tile_id"] == "tile_0001"
+    assert data["run"]["run_id"] == "run-001"
+    assert rc == 0
+
+
+def test_db_list_tiles_json_empty_returns_empty_list(tmp_path, capsys):
+    from veriflow.cli import main
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = []
+        mock_cls.return_value = mock_wf
+        rc = main(["--json", "db", "list-tiles", "--db", str(tmp_path)])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["tiles"] == []
+    assert rc == 0
+
+
+# ── E5. Error behavior ────────────────────────────────────────────────────────
+
+def test_db_list_runs_missing_tile_exits_via_argparse(tmp_path):
+    """argparse exits 2 when required --tile is absent for list-runs."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "list-runs", "--db", str(tmp_path)])
+    assert exc_info.value.code != 0
+
+
+def test_db_show_run_missing_run_exits_via_argparse(tmp_path):
+    """argparse exits 2 when required --run is absent for show-run."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "show-run", "--db", str(tmp_path), "--tile", "0001"])
+    assert exc_info.value.code != 0
+
+
+def test_db_show_run_missing_tile_exits_via_argparse(tmp_path):
+    """argparse exits 2 when required --tile is absent for show-run."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "show-run", "--db", str(tmp_path), "--run", "run-001"])
+    assert exc_info.value.code != 0
+
+
+def test_db_list_tiles_missing_db_exits_via_argparse():
+    """argparse exits when required --db is absent for list-tiles."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "list-tiles"])
+    assert exc_info.value.code != 0
+
+
+def test_db_list_tiles_veriflow_error_propagates_nonzero(tmp_path):
+    from veriflow.cli import main
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+            mock_wf = MagicMock()
+            mock_wf.list_tiles.side_effect = VeriFlowError("not found", code="VF_TEST", exit_code=1)
+            mock_cls.return_value = mock_wf
+            rc = main(["db", "list-tiles", "--db", str(tmp_path)])
+    assert rc != 0
+    assert "not found" in buf.getvalue()
+
+
+def test_db_list_runs_veriflow_error_propagates_nonzero(tmp_path):
+    from veriflow.cli import main
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+            mock_wf = MagicMock()
+            mock_wf.list_runs.side_effect = VeriFlowError(
+                "tile not found", code="VF_DATABASE_TILE_NOT_FOUND", exit_code=1
+            )
+            mock_cls.return_value = mock_wf
+            rc = main(["db", "list-runs", "--db", str(tmp_path), "--tile", "9999"])
+    assert rc != 0
+
+
+def test_db_show_run_veriflow_error_propagates_nonzero(tmp_path):
+    from veriflow.cli import main
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+            mock_wf = MagicMock()
+            mock_wf.load_run_result.side_effect = VeriFlowError(
+                "run not found", code="VF_DATABASE_RUN_NOT_FOUND", exit_code=1
+            )
+            mock_cls.return_value = mock_wf
+            rc = main(["db", "show-run", "--db", str(tmp_path), "--tile", "0001", "--run", "run-999"])
+    assert rc != 0
+
+
+# ── E6. Read-only guarantee ───────────────────────────────────────────────────
+
+def test_db_list_tiles_does_not_call_run_tile(tmp_path):
+    from veriflow.cli import main
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_tiles.return_value = []
+        mock_wf.run_tile.side_effect = AssertionError("run_tile must not be called by list-tiles")
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "list-tiles", "--db", str(tmp_path)])
+    mock_wf.run_tile.assert_not_called()
+    assert rc == 0
+
+
+def test_db_list_runs_does_not_call_run_tile(tmp_path):
+    from veriflow.cli import main
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.list_runs.return_value = []
+        mock_wf.run_tile.side_effect = AssertionError("run_tile must not be called by list-runs")
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "list-runs", "--db", str(tmp_path), "--tile", "0001"])
+    mock_wf.run_tile.assert_not_called()
+    assert rc == 0
+
+
+def test_db_show_run_does_not_call_run_tile(tmp_path):
+    from veriflow.cli import main
+    result = _make_run_result()
+    with patch("veriflow.commands.db_read.DatabaseWorkflow") as mock_cls:
+        mock_wf = MagicMock()
+        mock_wf.load_run_result.return_value = result
+        mock_wf.run_tile.side_effect = AssertionError("run_tile must not be called by show-run")
+        mock_cls.return_value = mock_wf
+        rc = main(["db", "show-run", "--db", str(tmp_path), "--tile", "0001", "--run", "run-001"])
+    mock_wf.run_tile.assert_not_called()
+    assert rc == 0

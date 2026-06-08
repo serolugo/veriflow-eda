@@ -147,6 +147,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_br.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_db_br.add_argument("--tile", required=True, metavar="XXXX", help="Tile number")
 
+    p_db_lt = db_sub.add_parser("list-tiles", help="List all registered tiles")
+    p_db_lt.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+
+    p_db_lr = db_sub.add_parser("list-runs", help="List runs for a tile")
+    p_db_lr.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_db_lr.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
+
+    p_db_sr = db_sub.add_parser("show-run", help="Show details of a specific run")
+    p_db_sr.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_db_sr.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
+    p_db_sr.add_argument("--run", required=True, metavar="run-NNN", help="Run ID (e.g. run-001)")
+
     return parser
 
 
@@ -212,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 dispatched = False
                 run_result: dict | None = None
+                db_read_result: dict | None = None
 
                 if args.command == "init":
                     dispatched = True
@@ -353,6 +366,24 @@ def main(argv: list[str] | None = None) -> int:
                             from veriflow.commands.bump_revision import cmd_bump_revision
                             cmd_bump_revision(db, tile_number=args.tile)
 
+                        elif db_cmd == "list-tiles":
+                            dispatched = True
+                            from veriflow.commands.db_read import cmd_db_list_tiles, tile_info_to_dict
+                            _tiles = cmd_db_list_tiles(db)
+                            db_read_result = {"tiles": [tile_info_to_dict(t) for t in _tiles]}
+
+                        elif db_cmd == "list-runs":
+                            dispatched = True
+                            from veriflow.commands.db_read import cmd_db_list_runs, run_info_to_dict
+                            _runs = cmd_db_list_runs(db, tile=args.tile)
+                            db_read_result = {"runs": [run_info_to_dict(r) for r in _runs]}
+
+                        elif db_cmd == "show-run":
+                            dispatched = True
+                            from veriflow.commands.db_read import cmd_db_show_run
+                            _show = cmd_db_show_run(db, run_id=args.run, tile=args.tile)
+                            db_read_result = {"run": _show.to_dict()}
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -374,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
                         result_payload = {"status": "SUCCESS", "command": f"db {_db_cmd}"}
                         if _db_cmd == "run" and run_result is not None:
                             result_payload["run_result"] = run_result
+                        elif db_read_result is not None:
+                            result_payload.update(db_read_result)
                     else:
                         result_payload = {"status": "SUCCESS", "command": args.command}
                         if args.command == "run" and run_result is not None:
