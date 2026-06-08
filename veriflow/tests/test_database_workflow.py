@@ -1017,3 +1017,340 @@ def test_cmd_run_result_has_stages():
         assert "synthesis" in result["stages"]
     finally:
         shutil.rmtree(tmp)
+
+
+# ── DatabaseWorkflow.list_tiles ───────────────────────────────────────────────
+
+
+def test_list_tiles_returns_all_registered_tiles():
+    from veriflow.core.csv_store import get_tile_row
+    from veriflow.workflows.database import DatabaseTileInfo, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        tiles = DatabaseWorkflow(db).list_tiles()
+        assert len(tiles) == 1
+        assert isinstance(tiles[0], DatabaseTileInfo)
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        assert tiles[0].tile_number == "0001"
+        assert tiles[0].tile_id == row["tile_id"]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_tiles_empty_returns_empty_list():
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _make_db(tmp)
+        tiles = DatabaseWorkflow(db).list_tiles()
+        assert tiles == []
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_tiles_semicolab_true():
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp, interface_name="semicolab")
+        tiles = DatabaseWorkflow(db).list_tiles()
+        assert len(tiles) == 1
+        assert tiles[0].semicolab is True
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_tiles_semicolab_false():
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp, interface_name=None)
+        tiles = DatabaseWorkflow(db).list_tiles()
+        assert len(tiles) == 1
+        assert tiles[0].semicolab is False
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_tiles_sorted_by_tile_number():
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        _make_tile(db)
+        tiles = DatabaseWorkflow(db).list_tiles()
+        assert len(tiles) == 2
+        assert tiles[0].tile_number < tiles[1].tile_number
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── DatabaseWorkflow.list_runs ────────────────────────────────────────────────
+
+
+def test_list_runs_by_tile_number_returns_sorted_runs():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        wf.run_tile("0001", opts)
+        runs = wf.list_runs(tile_number="0001")
+        assert len(runs) == 2
+        assert runs[0].run_id == "run-001"
+        assert runs[1].run_id == "run-002"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_runs_by_tile_id_returns_same_as_by_tile_number():
+    from veriflow.core.csv_store import get_tile_row
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        wf.run_tile("0001", opts)
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        runs_by_id = wf.list_runs(tile_id=row["tile_id"])
+        runs_by_num = wf.list_runs(tile_number="0001")
+        assert [r.run_id for r in runs_by_id] == [r.run_id for r in runs_by_num]
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_runs_tolerates_missing_results_json():
+    from veriflow.core.csv_store import get_tile_row
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        tile_id = row["tile_id"]
+        run_dir = db / "tiles" / tile_id / "runs" / "run-001"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        runs = DatabaseWorkflow(db).list_runs(tile_number="0001")
+        assert len(runs) == 1
+        assert runs[0].run_id == "run-001"
+        assert runs[0].status is None
+        assert runs[0].results_path is None
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_runs_includes_wave_path_when_wave_exists():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        result = wf.run_tile("0001", opts)
+        wave_file = result.run_dir / "out" / "sim" / "waves" / "waves.vcd"
+        wave_file.write_text("$dumpvars;", encoding="utf-8")
+        runs = wf.list_runs(tile_number="0001")
+        assert len(runs) == 1
+        assert runs[0].wave_path == wave_file
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_runs_wave_path_none_when_no_wave():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        runs = wf.list_runs(tile_number="0001")
+        assert runs[0].wave_path is None
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_list_runs_loads_status_from_results_json():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        runs = wf.list_runs(tile_number="0001")
+        assert runs[0].status == "PARTIAL"
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── DatabaseWorkflow.load_run_result ─────────────────────────────────────────
+
+
+def test_load_run_result_returns_database_run_result():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseRunResult, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        loaded = wf.load_run_result(tile_number="0001", run_id="run-001")
+        assert isinstance(loaded, DatabaseRunResult)
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_run_result_matching_tile_id_run_id_status_semicolab():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp, interface_name="semicolab")
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        executed = wf.run_tile("0001", opts)
+        loaded = wf.load_run_result(tile_number="0001", run_id="run-001")
+        assert loaded.tile_id == executed.tile_id
+        assert loaded.run_id == "run-001"
+        assert loaded.status == executed.status
+        assert loaded.semicolab == executed.semicolab
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_run_result_data_matches_results_json():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        executed = wf.run_tile("0001", opts)
+        loaded = wf.load_run_result(tile_number="0001", run_id="run-001")
+        file_data = json.loads(
+            (executed.run_dir / "results.json").read_text(encoding="utf-8")
+        )
+        assert loaded.data == file_data
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_run_result_stages_are_stage_result_objects():
+    from veriflow.models.stage_result import StageResult
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        loaded = wf.load_run_result(tile_number="0001", run_id="run-001")
+        for name in ("connectivity", "simulation", "synthesis"):
+            assert name in loaded.stages
+            assert isinstance(loaded.stages[name], StageResult)
+            assert loaded.stages[name].status == "SKIPPED"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_run_result_missing_results_json_raises():
+    from veriflow.core import VeriFlowError
+    from veriflow.core.csv_store import get_tile_row
+    from veriflow.workflows.database import DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        row = get_tile_row(db / "tile_index.csv", "0001")
+        run_dir = db / "tiles" / row["tile_id"] / "runs" / "run-001"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        raised = False
+        try:
+            DatabaseWorkflow(db).load_run_result(tile_number="0001", run_id="run-001")
+        except VeriFlowError as e:
+            raised = True
+            assert e.code == "VF_DATABASE_RUN_RESULT_MISSING"
+        assert raised
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_load_run_result_does_not_execute_tools():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        with (
+            patch("veriflow.workflows.database.validate_tools") as mock_validate,
+            patch("veriflow.core.backends.icarus.IcarusConnectivityBackend.run_connectivity") as mock_conn,
+            patch("veriflow.core.backends.icarus.IcarusSimulationBackend.run_simulation") as mock_sim,
+            patch("veriflow.core.backends.yosys.YosysSynthesisBackend.run_synthesis") as mock_synth,
+        ):
+            wf.load_run_result(tile_number="0001", run_id="run-001")
+        mock_validate.assert_not_called()
+        mock_conn.assert_not_called()
+        mock_sim.assert_not_called()
+        mock_synth.assert_not_called()
+    finally:
+        shutil.rmtree(tmp)
+
+
+# ── Read APIs do not modify persisted files ───────────────────────────────────
+
+
+def test_read_apis_do_not_modify_records_csv():
+    from veriflow.core.csv_store import get_tile_row
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        records_before = (db / "records.csv").read_text(encoding="utf-8")
+        wf.list_tiles()
+        wf.list_runs(tile_number="0001")
+        wf.load_run_result(tile_number="0001", run_id="run-001")
+        assert (db / "records.csv").read_text(encoding="utf-8") == records_before
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_read_apis_do_not_modify_tile_index_csv():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        wf.run_tile("0001", opts)
+        tile_index_before = (db / "tile_index.csv").read_text(encoding="utf-8")
+        wf.list_tiles()
+        wf.list_runs(tile_number="0001")
+        wf.load_run_result(tile_number="0001", run_id="run-001")
+        assert (db / "tile_index.csv").read_text(encoding="utf-8") == tile_index_before
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_read_apis_do_not_modify_results_json():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        wf = DatabaseWorkflow(db)
+        result = wf.run_tile("0001", opts)
+        results_before = (result.run_dir / "results.json").read_text(encoding="utf-8")
+        wf.list_tiles()
+        wf.list_runs(tile_number="0001")
+        wf.load_run_result(tile_number="0001", run_id="run-001")
+        assert (result.run_dir / "results.json").read_text(encoding="utf-8") == results_before
+    finally:
+        shutil.rmtree(tmp)
