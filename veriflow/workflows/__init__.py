@@ -5,8 +5,10 @@ from veriflow.workflows.project import (
     build_project_flow,
 )
 from veriflow.workflows.database import (
+    DatabaseRunInfo,
     DatabaseRunOptions,
     DatabaseRunResult,
+    DatabaseTileInfo,
     DatabaseWorkflow,
 )
 
@@ -15,7 +17,9 @@ __all__ = [
     "ProjectWorkflow",
     "ProjectRunResult",
     "build_project_flow",
+    "DatabaseRunInfo",
     "DatabaseRunOptions",
     "DatabaseRunResult",
+    "DatabaseTileInfo",
     "DatabaseWorkflow",
 ]

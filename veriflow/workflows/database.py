@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -8,7 +10,7 @@ import yaml
 
 from veriflow.core import VeriFlowError
 from veriflow.core.copier import copy_flat
-from veriflow.core.csv_store import append_record, get_tile_row
+from veriflow.core.csv_store import append_record, get_tile_row, read_tile_index
 from veriflow.core.pipeline import PipelineRunner
 from veriflow.core.pipeline_builder import build_default_pipeline
 from veriflow.core.run_id import get_next_run_id
@@ -54,6 +56,33 @@ class DatabaseRunResult:
 
     def to_dict(self) -> dict:
         return self.data
+
+
+@dataclass
+class DatabaseTileInfo:
+    tile_number: str
+    tile_id: str
+    tile_name: str
+    tile_author: str
+    version: str | None = None
+    revision: str | None = None
+    semicolab: bool | None = None
+
+
+@dataclass
+class DatabaseRunInfo:
+    tile_id: str
+    run_id: str
+    run_dir: Path
+    status: str | None = None
+    date: str | None = None
+    objective: str | None = None
+    summary: str | None = None
+    results_path: Path | None = None
+    wave_path: Path | None = None
+
+
+_RUN_DIR_PATTERN = re.compile(r"^run-(\d{3})$")
 
 
 class DatabaseWorkflow:
@@ -306,6 +335,126 @@ class DatabaseWorkflow:
             data=data,
         )
 
+    # ── Read-only APIs ────────────────────────────────────────────────────────
+
+    def list_tiles(self) -> list[DatabaseTileInfo]:
+        """Return one DatabaseTileInfo per registered tile, sorted by tile_number."""
+        tile_index_path = self.db_path / "tile_index.csv"
+        if not tile_index_path.exists():
+            return []
+        rows = read_tile_index(tile_index_path)
+        tiles: list[DatabaseTileInfo] = []
+        for row in rows:
+            sc_str = row.get("semicolab", "")
+            semicolab: bool | None = (
+                True if sc_str == "true" else (False if sc_str == "false" else None)
+            )
+            tiles.append(DatabaseTileInfo(
+                tile_number=row["tile_number"],
+                tile_id=row["tile_id"],
+                tile_name=row.get("tile_name", ""),
+                tile_author=row.get("tile_author", ""),
+                version=row.get("version") or None,
+                revision=row.get("revision") or None,
+                semicolab=semicolab,
+            ))
+        tiles.sort(key=lambda t: int(t.tile_number))
+        return tiles
+
+    def list_runs(
+        self,
+        tile_id: str | None = None,
+        tile_number: str | None = None,
+    ) -> list[DatabaseRunInfo]:
+        """Return all runs for a tile, sorted by run number.
+
+        Caller must supply tile_id or tile_number.  If tile_number is given it
+        is resolved through tile_index.csv.  Missing results.json is tolerated;
+        status will be None for those runs.
+        """
+        resolved_id = self._resolve_tile_id(tile_id, tile_number)
+        tile_dir = self.db_path / "tiles" / resolved_id
+        if not tile_dir.exists():
+            raise VeriFlowError(
+                f"Tile directory not found: {tile_dir}",
+                code="VF_DATABASE_TILE_NOT_FOUND",
+                details={"tile_id": resolved_id},
+            )
+        runs_dir = tile_dir / "runs"
+        if not runs_dir.exists():
+            return []
+        run_entries: list[tuple[int, Path]] = []
+        for entry in runs_dir.iterdir():
+            if entry.is_dir():
+                m = _RUN_DIR_PATTERN.match(entry.name)
+                if m:
+                    run_entries.append((int(m.group(1)), entry))
+        run_entries.sort(key=lambda x: x[0])
+        return [_load_run_info(resolved_id, run_dir) for _, run_dir in run_entries]
+
+    def load_run_result(
+        self,
+        *,
+        tile_id: str | None = None,
+        tile_number: str | None = None,
+        run_id: str,
+    ) -> DatabaseRunResult:
+        """Load a persisted DatabaseRunResult from results.json without re-executing tools.
+
+        Raises VF_DATABASE_RUN_RESULT_MISSING when results.json is absent.
+        Stages are reconstructed from the persisted stage dictionary.
+        """
+        resolved_id = self._resolve_tile_id(tile_id, tile_number)
+        tile_dir = self.db_path / "tiles" / resolved_id
+        if not tile_dir.exists():
+            raise VeriFlowError(
+                f"Tile directory not found: {tile_dir}",
+                code="VF_DATABASE_TILE_NOT_FOUND",
+                details={"tile_id": resolved_id},
+            )
+        run_dir = tile_dir / "runs" / run_id
+        if not run_dir.exists():
+            raise VeriFlowError(
+                f"Run directory not found: {run_dir}",
+                code="VF_DATABASE_RUN_NOT_FOUND",
+                details={"tile_id": resolved_id, "run_id": run_id},
+            )
+        results_path = run_dir / "results.json"
+        if not results_path.exists():
+            raise VeriFlowError(
+                f"results.json missing for run {run_id!r} of tile {resolved_id!r}",
+                code="VF_DATABASE_RUN_RESULT_MISSING",
+                details={"tile_id": resolved_id, "run_id": run_id, "path": str(results_path)},
+            )
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        stages = {
+            name: _stage_result_from_dict(name, sd)
+            for name, sd in data.get("stages", {}).items()
+        }
+        return DatabaseRunResult(
+            tile_id=data.get("tile_id", resolved_id),
+            run_id=data.get("run_id", run_id),
+            run_dir=run_dir,
+            status=data.get("status", ""),
+            semicolab=bool(data.get("semicolab", False)),
+            stages=stages,
+            sources=data.get("sources", {}),
+            artifacts=data.get("artifacts", {}),
+            data=data,
+        )
+
+    def _resolve_tile_id(self, tile_id: str | None, tile_number: str | None) -> str:
+        if tile_id is not None:
+            return tile_id
+        if tile_number is not None:
+            tile_number_str = f"{int(tile_number):04d}"
+            row = get_tile_row(self.db_path / "tile_index.csv", tile_number_str)
+            return row["tile_id"]
+        raise VeriFlowError(
+            "Must provide either tile_id or tile_number",
+            code="VF_DATABASE_MISSING_TILE_IDENTIFIER",
+        )
+
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -330,6 +479,58 @@ def _derive_status(
     if conn == "PASS" and sim in ("COMPLETED", "SKIPPED") and synth in ("PASS", "SKIPPED"):
         return "PASS"
     return "FAIL"
+
+
+def _load_run_info(tile_id: str, run_dir: Path) -> DatabaseRunInfo:
+    """Build a DatabaseRunInfo by reading persisted files; never writes."""
+    run_id = run_dir.name
+    results_path = run_dir / "results.json"
+    wave_path = run_dir / "out" / "sim" / "waves" / "waves.vcd"
+
+    status: str | None = None
+    run_date: str | None = None
+    objective: str | None = None
+
+    if results_path.exists():
+        try:
+            rdata = json.loads(results_path.read_text(encoding="utf-8"))
+            status = rdata.get("status")
+            run_date = rdata.get("date")
+        except Exception:
+            pass
+
+    manifest_path = run_dir / "manifest.yaml"
+    if manifest_path.exists():
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            objective = manifest.get("objective")
+        except Exception:
+            pass
+
+    return DatabaseRunInfo(
+        tile_id=tile_id,
+        run_id=run_id,
+        run_dir=run_dir,
+        status=status,
+        date=run_date,
+        objective=objective,
+        summary=None,
+        results_path=results_path if results_path.exists() else None,
+        wave_path=wave_path if wave_path.exists() else None,
+    )
+
+
+def _stage_result_from_dict(name: str, d: dict) -> StageResult:
+    """Reconstruct a StageResult from a persisted stage dictionary."""
+    return StageResult(
+        name=name,
+        status=d.get("status", "SKIPPED"),
+        tool=d.get("tool"),
+        log_paths=d.get("logs"),
+        artifacts=d.get("artifacts"),
+        metrics=d.get("metrics"),
+        error=d.get("error"),
+    )
 
 
 def _finalize_run(
