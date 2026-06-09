@@ -1,4 +1,7 @@
-from veriflow.workflows.project_config import ProjectWorkflowConfig
+from veriflow.workflows.project_config import (
+    ProjectInterfaceConfig,
+    ProjectWorkflowConfig,
+)
 from veriflow.workflows.project import (
     ProjectRunResult,
     ProjectWorkflow,
@@ -13,6 +16,7 @@ from veriflow.workflows.database import (
 )
 
 __all__ = [
+    "ProjectInterfaceConfig",
     "ProjectWorkflowConfig",
     "ProjectWorkflow",
     "ProjectRunResult",

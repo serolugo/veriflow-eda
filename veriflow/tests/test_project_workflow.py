@@ -9,6 +9,7 @@ import pytest
 from veriflow.core import VeriFlowError
 from veriflow.framework import RunRequest, RunResult
 from veriflow.workflows import (
+    ProjectInterfaceConfig,
     ProjectRunResult,
     ProjectWorkflow,
     ProjectWorkflowConfig,
@@ -68,7 +69,7 @@ def test_config_minimal_rtl_only_parses(tmp_path):
     assert cfg.rtl_sources == [tmp_path / "rtl" / "shift_mux.v"]
     assert cfg.tb_sources == []
     assert cfg.tb_top is None
-    assert cfg.interface_name is None
+    assert cfg.interface is None
 
 
 def test_config_rtl_paths_resolved_relative_to_root(tmp_path):
@@ -171,7 +172,18 @@ def test_config_whitespace_tb_top_with_tb_sources_fails(tmp_path):
 
 def test_config_interface_omitted_resolves_to_none(tmp_path):
     cfg = _rtl_only_config(tmp_path)
-    assert cfg.interface_name is None
+    assert cfg.interface is None
+
+
+def test_config_interface_null_section_resolves_to_none(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+            "interface": None,
+        },
+        root=tmp_path,
+    )
+    assert cfg.interface is None
 
 
 def test_config_interface_name_null_resolves_to_none(tmp_path):
@@ -182,7 +194,7 @@ def test_config_interface_name_null_resolves_to_none(tmp_path):
         },
         root=tmp_path,
     )
-    assert cfg.interface_name is None
+    assert cfg.interface is None
 
 
 def test_config_interface_name_semicolab_resolves(tmp_path):
@@ -193,7 +205,8 @@ def test_config_interface_name_semicolab_resolves(tmp_path):
         },
         root=tmp_path,
     )
-    assert cfg.interface_name == "semicolab"
+    assert cfg.interface == ProjectInterfaceConfig(name="semicolab")
+    assert cfg.interface.name == "semicolab"
 
 
 def test_config_unknown_interface_name_raises(tmp_path):
@@ -206,6 +219,126 @@ def test_config_unknown_interface_name_raises(tmp_path):
             root=tmp_path,
         )
     assert exc_info.value.code == "VF_INTERFACE_UNKNOWN"
+
+
+def test_config_interface_missing_name_key_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface": {},
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_NAME_REQUIRED"
+
+
+def test_config_interface_empty_name_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface": {"name": "   "},
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_NAME_REQUIRED"
+
+
+def test_config_interface_non_string_name_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface": {"name": 123},
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_NAME_REQUIRED"
+
+
+def test_config_interface_non_mapping_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface": "semicolab",
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_CONFIG_INVALID"
+
+
+def test_config_interface_unknown_keys_fail(tmp_path):
+    """Custom interface definitions are future work — extra keys are rejected."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface": {"name": "semicolab", "ports": []},
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_CONFIG_INVALID"
+
+
+def test_config_legacy_flat_interface_name_rejected(tmp_path):
+    """Top-level interface_name was never documented for Project Mode and is rejected."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface_name": "semicolab",
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_CONFIG_INVALID"
+
+
+def test_config_both_flat_and_section_interface_rejected(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "interface_name": "semicolab",
+                "interface": {"name": "semicolab"},
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_INTERFACE_CONFIG_INVALID"
+
+
+def test_config_from_file_interface_section_parses(tmp_path):
+    p = _write_yaml(
+        tmp_path,
+        """\
+        design:
+          top_module: shift_mux
+          rtl_sources:
+            - rtl/shift_mux.v
+
+        interface:
+          name: semicolab
+        """,
+    )
+    cfg = ProjectWorkflowConfig.from_file(p)
+    assert cfg.interface == ProjectInterfaceConfig(name="semicolab")
+
+
+def test_config_from_file_interface_null_parses_to_none(tmp_path):
+    p = _write_yaml(
+        tmp_path,
+        """\
+        design:
+          top_module: shift_mux
+          rtl_sources:
+            - rtl/shift_mux.v
+
+        interface: null
+        """,
+    )
+    cfg = ProjectWorkflowConfig.from_file(p)
+    assert cfg.interface is None
 
 
 def test_config_runs_dir_defaults_to_root_runs(tmp_path):
@@ -618,9 +751,24 @@ def test_workflow_project_does_not_pre_create_stage_artifact_dirs(tmp_path):
 def test_public_exports_from_workflows():
     import veriflow.workflows as wf
     assert hasattr(wf, "ProjectWorkflowConfig")
+    assert hasattr(wf, "ProjectInterfaceConfig")
     assert hasattr(wf, "ProjectWorkflow")
     assert hasattr(wf, "ProjectRunResult")
     assert hasattr(wf, "build_project_flow")
+
+
+def test_project_interface_config_is_frozen_dataclass():
+    import dataclasses
+    assert dataclasses.is_dataclass(ProjectInterfaceConfig)
+    iface = ProjectInterfaceConfig(name="semicolab")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        iface.name = "other"
+
+
+def test_project_interface_config_empty_name_raises():
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectInterfaceConfig(name="   ")
+    assert exc_info.value.code == "VF_INTERFACE_NAME_REQUIRED"
 
 
 def test_project_run_result_has_run_dir_and_result(tmp_path):
