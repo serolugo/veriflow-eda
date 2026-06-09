@@ -29,10 +29,10 @@ def build_project_flow(
 
     stages = []
 
-    if config.interface_name is not None:
+    if config.interface is not None:
         stages.append(
             InterfaceStage(
-                interface_profile=get_interface_profile(config.interface_name)
+                interface_profile=get_interface_profile(config.interface.name)
             )
         )
 
