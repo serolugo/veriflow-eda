@@ -402,6 +402,7 @@ TileBench mounts your workspace folder into the container — your files always 
 | Document | Description |
 |---|---|
 | [SPECS.md](docs/SPECS.md) | Full system specification |
+| [PROJECT_CONFIG.md](docs/PROJECT_CONFIG.md) | Project Mode `veriflow.yaml` configuration reference |
 | [DESIGN.md](docs/DESIGN.md) | Detailed technical design |
 | [MANUAL.md](docs/MANUAL.md) | Complete user manual |
 | [QUICKREF.md](docs/QUICKREF.md) | Quick reference card |
