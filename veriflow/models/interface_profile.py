@@ -1,7 +1,17 @@
+"""Interface profile models and registry.
+
+Interface profiles are registered here and can be discovered through the
+registry APIs (``list_interface_profiles``, ``has_interface_profile``, …) so
+frontends such as TileWizard and TileBench can enumerate them. The initial
+built-in profile is "semicolab". Custom YAML-defined interfaces are future
+work. InterfaceStage still writes historical "connectivity" artifacts for
+compatibility.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from veriflow.core import VeriFlowError
 
@@ -30,6 +40,7 @@ class InterfacePort:
 class InterfaceProfile:
     name: str
     ports: tuple[InterfacePort, ...]
+    description: str = ""
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -57,6 +68,7 @@ def semicolab_interface_profile() -> InterfaceProfile:
     """Return the nine-port structural contract required by the Semicolab harness."""
     return InterfaceProfile(
         name="semicolab",
+        description="Nine-port structural contract required by the Semicolab harness.",
         ports=(
             InterfacePort("clk",        "input",  1),
             InterfacePort("arst_n",     "input",  1),
@@ -71,6 +83,43 @@ def semicolab_interface_profile() -> InterfaceProfile:
     )
 
 
+# Built-in interface profile registry. Each entry maps a stable interface
+# name to a factory returning a fresh (frozen) InterfaceProfile, so callers
+# can never mutate registry state through a returned profile. Insertion
+# order defines the deterministic ordering of the list functions.
+_PROFILE_FACTORIES: dict[str, Callable[[], InterfaceProfile]] = {
+    "semicolab": semicolab_interface_profile,
+}
+
+
+def list_interface_profile_names() -> list[str]:
+    """Return the registered interface names in stable registration order."""
+    return list(_PROFILE_FACTORIES)
+
+
+def list_interface_profiles() -> list[InterfaceProfile]:
+    """Return all registered InterfaceProfiles in stable registration order.
+
+    A new list of freshly built profiles is returned on every call.
+    """
+    return [factory() for factory in _PROFILE_FACTORIES.values()]
+
+
+def has_interface_profile(name: str) -> bool:
+    """Return True if *name* is a registered interface profile."""
+    return name in _PROFILE_FACTORIES
+
+
+def default_interface_profile() -> InterfaceProfile | None:
+    """Return the default InterfaceProfile, or None.
+
+    VeriFlow has no default interface: projects must opt in explicitly via
+    interface_name / interface.name, and an omitted or null value means a
+    generic project with no interface checking.
+    """
+    return None
+
+
 def get_interface_profile(name: str | None) -> InterfaceProfile | None:
     """Return the InterfaceProfile for *name*, or None for a generic project.
 
@@ -78,10 +127,12 @@ def get_interface_profile(name: str | None) -> InterfaceProfile | None:
     """
     if name is None:
         return None
-    if name == "semicolab":
-        return semicolab_interface_profile()
+    factory = _PROFILE_FACTORIES.get(name)
+    if factory is not None:
+        return factory()
+    registered = ", ".join(_PROFILE_FACTORIES)
     raise VeriFlowError(
-        f"Unknown interface name {name!r}. Registered interfaces: semicolab\n"
+        f"Unknown interface name {name!r}. Registered interfaces: {registered}\n"
         "  Set interface_name to a registered value in project_config.yaml.",
         code="VF_INTERFACE_UNKNOWN",
         details={"interface_name": name},
