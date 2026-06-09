@@ -9,8 +9,10 @@ import pytest
 from veriflow.core import VeriFlowError
 from veriflow.framework import RunRequest, RunResult
 from veriflow.workflows import (
+    ProjectExecutionConfig,
     ProjectInterfaceConfig,
     ProjectRunResult,
+    ProjectTechnologyConfig,
     ProjectWorkflow,
     ProjectWorkflowConfig,
     build_project_flow,
@@ -499,7 +501,7 @@ def test_workflow_first_automatic_run_creates_run_001(tmp_path):
     cfg.runs_dir = tmp_path / "runs"
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -514,7 +516,7 @@ def test_workflow_second_automatic_run_creates_run_002(tmp_path):
     cfg.runs_dir = tmp_path / "runs"
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -535,7 +537,7 @@ def test_workflow_non_run_nnn_dirs_ignored_during_allocation(tmp_path):
     cfg.runs_dir = runs_dir
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -549,7 +551,7 @@ def test_workflow_explicit_request_work_dir_respected(tmp_path):
     explicit_dir = tmp_path / "my_run"
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -566,7 +568,7 @@ def test_workflow_explicit_request_not_numbered_under_runs_dir(tmp_path):
     explicit_dir = tmp_path / "custom_output"
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -597,7 +599,7 @@ def test_workflow_run_returns_project_run_result(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         wf = ProjectWorkflow(cfg)
@@ -611,7 +613,7 @@ def test_workflow_result_contains_underlying_run_result(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         pr = ProjectWorkflow(cfg).run()
@@ -637,15 +639,15 @@ def test_workflow_full_flow_from_empty_run_dir_succeeds(tmp_path):
 
     with (
         patch(
-            "veriflow.core.stages.connectivity.IcarusConnectivityBackend",
+            "veriflow.workflows.project.get_connectivity_backend",
             return_value=_mock_conn_backend(),
         ),
         patch(
-            "veriflow.core.stages.simulation.IcarusSimulationBackend",
+            "veriflow.workflows.project.get_simulation_backend",
             return_value=_mock_sim_backend(),
         ),
         patch(
-            "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+            "veriflow.workflows.project.get_synthesis_backend",
             return_value=_mock_synth_backend(),
         ),
     ):
@@ -683,15 +685,15 @@ def test_workflow_full_config_result_stage_keys(tmp_path):
 
     with (
         patch(
-            "veriflow.core.stages.connectivity.IcarusConnectivityBackend",
+            "veriflow.workflows.project.get_connectivity_backend",
             return_value=_mock_conn_backend(),
         ),
         patch(
-            "veriflow.core.stages.simulation.IcarusSimulationBackend",
+            "veriflow.workflows.project.get_simulation_backend",
             return_value=_mock_sim_backend(),
         ),
         patch(
-            "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+            "veriflow.workflows.project.get_synthesis_backend",
             return_value=_mock_synth_backend(),
         ),
     ):
@@ -704,7 +706,7 @@ def test_workflow_rtl_only_result_stage_keys(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
     with patch(
-        "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+        "veriflow.workflows.project.get_synthesis_backend",
         return_value=_mock_synth_backend(),
     ):
         pr = ProjectWorkflow(cfg).run()
@@ -732,7 +734,7 @@ def test_workflow_project_does_not_pre_create_stage_artifact_dirs(tmp_path):
 
     with (
         patch(
-            "veriflow.core.stages.synthesis.YosysSynthesisBackend",
+            "veriflow.workflows.project.get_synthesis_backend",
             return_value=_mock_synth_backend(),
         ),
         patch(
@@ -746,15 +748,389 @@ def test_workflow_project_does_not_pre_create_stage_artifact_dirs(tmp_path):
     assert created_before_flow == []
 
 
+# ── E. Execution / technology config parsing ─────────────────────────────────
+
+def _base_design() -> dict:
+    return {"design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]}}
+
+
+def test_config_execution_omitted_uses_defaults(tmp_path):
+    cfg = _rtl_only_config(tmp_path)
+    assert cfg.execution == ProjectExecutionConfig()
+    assert cfg.execution.connectivity_backend == "icarus"
+    assert cfg.execution.simulation_backend == "icarus"
+    assert cfg.execution.synthesis_backend == "yosys"
+
+
+def test_config_technology_omitted_defaults_to_generic(tmp_path):
+    cfg = _rtl_only_config(tmp_path)
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_execution_null_uses_defaults(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "execution": None},
+        root=tmp_path,
+    )
+    assert cfg.execution == ProjectExecutionConfig()
+
+
+def test_config_technology_null_defaults_to_generic(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": None},
+        root=tmp_path,
+    )
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_execution_explicit_backends_load(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            **_base_design(),
+            "execution": {
+                "connectivity_backend": "icarus",
+                "simulation_backend": "icarus",
+                "synthesis_backend": "yosys",
+            },
+        },
+        root=tmp_path,
+    )
+    assert cfg.execution == ProjectExecutionConfig(
+        connectivity_backend="icarus",
+        simulation_backend="icarus",
+        synthesis_backend="yosys",
+    )
+
+
+def test_config_execution_partial_keys_use_defaults(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "execution": {"synthesis_backend": "yosys"}},
+        root=tmp_path,
+    )
+    assert cfg.execution == ProjectExecutionConfig()
+
+
+def test_config_execution_key_null_uses_default(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "execution": {"simulation_backend": None}},
+        root=tmp_path,
+    )
+    assert cfg.execution.simulation_backend == "icarus"
+
+
+def test_config_technology_generic_loads(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": {"name": "generic"}},
+        root=tmp_path,
+    )
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_technology_empty_section_defaults_to_generic(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": {}},
+        root=tmp_path,
+    )
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_technology_name_null_defaults_to_generic(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": {"name": None}},
+        root=tmp_path,
+    )
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_execution_non_mapping_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": "icarus"},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_EXECUTION_CONFIG_INVALID"
+
+
+def test_config_technology_non_mapping_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "technology": "generic"},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
+
+
+def test_config_execution_unknown_keys_fail(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": {"simulation_tool": "vvp"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_EXECUTION_CONFIG_INVALID"
+
+
+def test_config_technology_unknown_keys_fail(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "technology": {"name": "generic", "pdk": "sky130"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
+
+
+def test_config_execution_non_string_backend_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": {"synthesis_backend": 123}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_EXECUTION_CONFIG_INVALID"
+
+
+def test_config_technology_non_string_name_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "technology": {"name": 130}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
+
+
+def test_config_unknown_connectivity_backend_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": {"connectivity_backend": "verilator"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_BACKEND_CONNECTIVITY_UNKNOWN"
+
+
+def test_config_unknown_simulation_backend_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": {"simulation_backend": "verilator"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_BACKEND_SIMULATION_UNKNOWN"
+
+
+def test_config_unknown_synthesis_backend_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "execution": {"synthesis_backend": "librelane"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_BACKEND_SYNTHESIS_UNKNOWN"
+
+
+def test_config_unknown_technology_name_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "technology": {"name": "tsmc7"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_config_from_file_execution_and_technology_parse(tmp_path):
+    p = _write_yaml(
+        tmp_path,
+        """\
+        design:
+          top_module: shift_mux
+          rtl_sources:
+            - rtl/shift_mux.v
+
+        execution:
+          connectivity_backend: icarus
+          simulation_backend: icarus
+          synthesis_backend: yosys
+
+        technology:
+          name: generic
+        """,
+    )
+    cfg = ProjectWorkflowConfig.from_file(p)
+    assert cfg.execution == ProjectExecutionConfig()
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+def test_config_from_file_execution_null_parses_to_defaults(tmp_path):
+    p = _write_yaml(
+        tmp_path,
+        """\
+        design:
+          top_module: shift_mux
+          rtl_sources:
+            - rtl/shift_mux.v
+
+        execution: null
+        technology: null
+        """,
+    )
+    cfg = ProjectWorkflowConfig.from_file(p)
+    assert cfg.execution == ProjectExecutionConfig()
+    assert cfg.technology == ProjectTechnologyConfig(name="generic")
+
+
+# ── F. Execution / technology flow wiring ────────────────────────────────────
+
+def test_flow_passes_configured_connectivity_backend_to_interface_stage(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            **_base_design(),
+            "interface": {"name": "semicolab"},
+            "execution": {"connectivity_backend": "icarus"},
+        },
+        root=tmp_path,
+    )
+    mock_be = _mock_conn_backend()
+    with patch(
+        "veriflow.workflows.project.get_connectivity_backend",
+        return_value=mock_be,
+    ) as getter:
+        _, flow = build_project_flow(cfg)
+
+    getter.assert_called_once_with("icarus")
+    stage = next(s for s in flow.stages if s.name == "connectivity")
+    assert stage._backend is mock_be
+
+
+def test_flow_passes_configured_simulation_backend_to_simulation_stage(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {
+                "top_module": "top",
+                "rtl_sources": ["rtl/top.v"],
+                "tb_sources": ["tb/tb_top.v"],
+            },
+            "simulation": {"tb_top": "tb"},
+            "execution": {"simulation_backend": "icarus"},
+        },
+        root=tmp_path,
+    )
+    mock_be = _mock_sim_backend()
+    with patch(
+        "veriflow.workflows.project.get_simulation_backend",
+        return_value=mock_be,
+    ) as getter:
+        _, flow = build_project_flow(cfg)
+
+    getter.assert_called_once_with("icarus")
+    stage = next(s for s in flow.stages if s.name == "simulation")
+    assert stage._backend is mock_be
+
+
+def test_flow_passes_configured_synthesis_backend_and_technology(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            **_base_design(),
+            "execution": {"synthesis_backend": "yosys"},
+            "technology": {"name": "sky130"},
+        },
+        root=tmp_path,
+    )
+    mock_be = _mock_synth_backend()
+    with patch(
+        "veriflow.workflows.project.get_synthesis_backend",
+        return_value=mock_be,
+    ) as getter:
+        _, flow = build_project_flow(cfg)
+
+    getter.assert_called_once_with("yosys")
+    stage = next(s for s in flow.stages if s.name == "synthesis")
+    assert stage._backend is mock_be
+    assert stage._profile.technology_name == "sky130"
+
+
+def test_flow_default_config_uses_default_backends_and_profile(tmp_path):
+    """With execution/technology omitted, the flow matches the current defaults."""
+    from veriflow.core.backends.icarus import (
+        IcarusConnectivityBackend,
+        IcarusSimulationBackend,
+    )
+    from veriflow.core.backends.yosys import YosysSynthesisBackend
+    from veriflow.models.execution_profile import default_execution_profile
+
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {
+                "top_module": "top",
+                "rtl_sources": ["rtl/top.v"],
+                "tb_sources": ["tb/tb_top.v"],
+            },
+            "interface": {"name": "semicolab"},
+            "simulation": {"tb_top": "tb"},
+        },
+        root=tmp_path,
+    )
+    _, flow = build_project_flow(cfg)
+    by_name = {s.name: s for s in flow.stages}
+
+    assert isinstance(by_name["connectivity"]._backend, IcarusConnectivityBackend)
+    assert isinstance(by_name["simulation"]._backend, IcarusSimulationBackend)
+    assert isinstance(by_name["synthesis"]._backend, YosysSynthesisBackend)
+    for stage in flow.stages:
+        assert stage._profile == default_execution_profile()
+
+
+def test_flow_connectivity_backend_config_allowed_without_interface(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "execution": {"connectivity_backend": "icarus"}},
+        root=tmp_path,
+    )
+    _, flow = build_project_flow(cfg)
+    assert [s.name for s in flow.stages] == ["synthesis"]
+
+
+def test_flow_simulation_backend_config_allowed_without_simulation(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "execution": {"simulation_backend": "icarus"}},
+        root=tmp_path,
+    )
+    _, flow = build_project_flow(cfg)
+    assert [s.name for s in flow.stages] == ["synthesis"]
+
+
 # ── D. Public API surface ─────────────────────────────────────────────────────
 
 def test_public_exports_from_workflows():
     import veriflow.workflows as wf
     assert hasattr(wf, "ProjectWorkflowConfig")
     assert hasattr(wf, "ProjectInterfaceConfig")
+    assert hasattr(wf, "ProjectExecutionConfig")
+    assert hasattr(wf, "ProjectTechnologyConfig")
     assert hasattr(wf, "ProjectWorkflow")
     assert hasattr(wf, "ProjectRunResult")
     assert hasattr(wf, "build_project_flow")
+
+
+def test_project_execution_config_is_frozen_dataclass():
+    import dataclasses
+    assert dataclasses.is_dataclass(ProjectExecutionConfig)
+    cfg = ProjectExecutionConfig()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.synthesis_backend = "other"
+
+
+def test_project_technology_config_is_frozen_dataclass():
+    import dataclasses
+    assert dataclasses.is_dataclass(ProjectTechnologyConfig)
+    cfg = ProjectTechnologyConfig()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.name = "other"
+
+
+def test_project_execution_config_empty_backend_raises():
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectExecutionConfig(simulation_backend="   ")
+    assert exc_info.value.code == "VF_EXECUTION_CONFIG_INVALID"
+
+
+def test_project_technology_config_empty_name_raises():
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectTechnologyConfig(name="   ")
+    assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
 
 
 def test_project_interface_config_is_frozen_dataclass():

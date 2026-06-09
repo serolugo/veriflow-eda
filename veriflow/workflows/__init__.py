@@ -1,5 +1,7 @@
 from veriflow.workflows.project_config import (
+    ProjectExecutionConfig,
     ProjectInterfaceConfig,
+    ProjectTechnologyConfig,
     ProjectWorkflowConfig,
 )
 from veriflow.workflows.project import (
@@ -16,7 +18,9 @@ from veriflow.workflows.database import (
 )
 
 __all__ = [
+    "ProjectExecutionConfig",
     "ProjectInterfaceConfig",
+    "ProjectTechnologyConfig",
     "ProjectWorkflowConfig",
     "ProjectWorkflow",
     "ProjectRunResult",
