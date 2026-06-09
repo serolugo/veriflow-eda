@@ -10,17 +10,43 @@ generic project with no interface/connectivity check. Built-in interface
 names are discoverable through the registry APIs in
 ``veriflow.models.interface_profile``. Custom YAML-defined interface
 definitions are future work.
+
+The optional ``execution`` and ``technology`` sections select execution
+backends and the technology target:
+
+    execution:
+      connectivity_backend: icarus
+      simulation_backend: icarus
+      synthesis_backend: yosys
+
+    technology:
+      name: generic
+
+Both sections are optional. Omitting a section (or setting it to ``null``)
+uses the current defaults shown above. Backend names must already be
+registered in ``veriflow.core.backends.registry`` and technology names in
+``veriflow.models.technology_profile`` — no new backends are introduced
+here, and custom backend plugins are future work.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
 from veriflow.core import VeriFlowError
+from veriflow.core.backends.registry import (
+    get_connectivity_backend,
+    get_simulation_backend,
+    get_synthesis_backend,
+)
+from veriflow.models.execution_profile import default_execution_profile
 from veriflow.models.interface_profile import get_interface_profile
+from veriflow.models.technology_profile import get_technology_profile
+
+_EXECUTION_DEFAULTS = default_execution_profile()
 
 
 @dataclass(frozen=True)
@@ -99,6 +125,149 @@ def _parse_interface_section(data: dict) -> ProjectInterfaceConfig | None:
     return ProjectInterfaceConfig(name=name)
 
 
+@dataclass(frozen=True)
+class ProjectExecutionConfig:
+    """Execution backend selection for Project Mode.
+
+    Backend names refer to entries in ``veriflow.core.backends.registry``.
+    """
+
+    connectivity_backend: str = _EXECUTION_DEFAULTS.connectivity_backend
+    simulation_backend: str = _EXECUTION_DEFAULTS.simulation_backend
+    synthesis_backend: str = _EXECUTION_DEFAULTS.synthesis_backend
+
+    def __post_init__(self) -> None:
+        for key in ("connectivity_backend", "simulation_backend", "synthesis_backend"):
+            value = getattr(self, key)
+            if not isinstance(value, str) or not value.strip():
+                raise VeriFlowError(
+                    f"execution.{key} must be a non-empty string",
+                    code="VF_EXECUTION_CONFIG_INVALID",
+                    details={key: value},
+                )
+
+
+@dataclass(frozen=True)
+class ProjectTechnologyConfig:
+    """Technology target selection for Project Mode.
+
+    ``name`` refers to a profile registered in
+    ``veriflow.models.technology_profile``.
+    """
+
+    name: str = "generic"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise VeriFlowError(
+                "technology.name must be a non-empty string",
+                code="VF_TECHNOLOGY_CONFIG_INVALID",
+                details={"name": self.name},
+            )
+
+
+_EXECUTION_KEYS = frozenset({
+    "connectivity_backend",
+    "simulation_backend",
+    "synthesis_backend",
+})
+
+_BACKEND_VALIDATORS = {
+    "connectivity_backend": get_connectivity_backend,
+    "simulation_backend": get_simulation_backend,
+    "synthesis_backend": get_synthesis_backend,
+}
+
+
+def _parse_execution_section(data: dict) -> ProjectExecutionConfig:
+    section = data.get("execution")
+    if section is None:
+        # omitted or `execution: null` — current default backends
+        return ProjectExecutionConfig()
+
+    if not isinstance(section, dict):
+        raise VeriFlowError(
+            "execution section must be a mapping, e.g.:\n"
+            "    execution:\n"
+            "      connectivity_backend: icarus\n"
+            "      simulation_backend: icarus\n"
+            "      synthesis_backend: yosys",
+            code="VF_EXECUTION_CONFIG_INVALID",
+            details={"execution": section},
+        )
+
+    unknown_keys = sorted(set(section) - _EXECUTION_KEYS)
+    if unknown_keys:
+        raise VeriFlowError(
+            f"Unsupported keys in execution section: {', '.join(unknown_keys)}.\n"
+            f"  Supported keys: {', '.join(sorted(_EXECUTION_KEYS))}.",
+            code="VF_EXECUTION_CONFIG_INVALID",
+            details={"unknown_keys": unknown_keys},
+        )
+
+    defaults = ProjectExecutionConfig()
+    values: dict[str, str] = {}
+    for key, validate in _BACKEND_VALIDATORS.items():
+        raw = section.get(key)
+        if raw is None:
+            # key omitted or `<key>: null` — current default backend
+            values[key] = getattr(defaults, key)
+            continue
+        if not isinstance(raw, str) or not raw.strip():
+            raise VeriFlowError(
+                f"execution.{key} must be a non-empty string or null",
+                code="VF_EXECUTION_CONFIG_INVALID",
+                details={key: raw},
+            )
+        name = raw.strip()
+        # Raises VF_BACKEND_*_UNKNOWN for names not in the registry
+        validate(name)
+        values[key] = name
+
+    return ProjectExecutionConfig(**values)
+
+
+def _parse_technology_section(data: dict) -> ProjectTechnologyConfig:
+    section = data.get("technology")
+    if section is None:
+        # omitted or `technology: null` — generic technology target
+        return ProjectTechnologyConfig()
+
+    if not isinstance(section, dict):
+        raise VeriFlowError(
+            "technology section must be a mapping with a 'name' key, e.g.:\n"
+            "    technology:\n"
+            "      name: generic",
+            code="VF_TECHNOLOGY_CONFIG_INVALID",
+            details={"technology": section},
+        )
+
+    unknown_keys = sorted(set(section) - {"name"})
+    if unknown_keys:
+        raise VeriFlowError(
+            f"Unsupported keys in technology section: {', '.join(unknown_keys)}.\n"
+            "  Only 'name' is supported.",
+            code="VF_TECHNOLOGY_CONFIG_INVALID",
+            details={"unknown_keys": unknown_keys},
+        )
+
+    raw_name = section.get("name")
+    if raw_name is None:
+        # empty section or `name: null` — generic technology target
+        return ProjectTechnologyConfig()
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        raise VeriFlowError(
+            "technology.name must be a non-empty string or null",
+            code="VF_TECHNOLOGY_CONFIG_INVALID",
+            details={"name": raw_name},
+        )
+
+    name = raw_name.strip()
+    # Raises VF_TECHNOLOGY_UNKNOWN for names not in the registry
+    get_technology_profile(name)
+    return ProjectTechnologyConfig(name=name)
+
+
 @dataclass
 class ProjectWorkflowConfig:
     top_module: str
@@ -107,6 +276,8 @@ class ProjectWorkflowConfig:
     tb_top: str | None
     runs_dir: Path
     interface: ProjectInterfaceConfig | None = None
+    execution: ProjectExecutionConfig = field(default_factory=ProjectExecutionConfig)
+    technology: ProjectTechnologyConfig = field(default_factory=ProjectTechnologyConfig)
 
     @classmethod
     def from_dict(
@@ -136,6 +307,8 @@ class ProjectWorkflowConfig:
         tb_sources = [root / p for p in raw_tb]
 
         interface = _parse_interface_section(data)
+        execution = _parse_execution_section(data)
+        technology = _parse_technology_section(data)
 
         # simulation section
         sim_section = data.get("simulation")
@@ -165,6 +338,8 @@ class ProjectWorkflowConfig:
             tb_sources=tb_sources,
             tb_top=tb_top,
             interface=interface,
+            execution=execution,
+            technology=technology,
             runs_dir=runs_dir,
         )
 
