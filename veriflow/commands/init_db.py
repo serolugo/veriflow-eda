@@ -12,13 +12,6 @@ description: |
 
 """
 
-_TILE_INDEX_HEADER = "tile_number,tile_id,tile_name,tile_author,version,revision\n"
-_RECORDS_HEADER = (
-    "Tile_ID,Run_ID,Date,Author,Objective,Status,"
-    "Version,Revision,Connectivity,Simulation,Synthesis,"
-    "Tool_Version,Main_Change,Run_Path,Tags\n"
-)
-
 
 def cmd_init(db: Path, force: bool = False) -> None:
     """Initialize a new VeriFlow database at the given path."""

@@ -140,7 +140,6 @@ class DatabaseWorkflow:
         tile_config = TileConfig.from_dict(
             yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {}
         )
-        run_config = tile_config  # run fields are merged into tile_config
 
         project_cfg_path = self.db_path / "project_config.yaml"
         project_config = ProjectConfig.from_dict(
@@ -265,7 +264,7 @@ class DatabaseWorkflow:
         if not skip_check and conn_result == "FAIL":
             data = _finalize_run(
                 ctx=ctx, today_str=today_str,
-                tile_config=tile_config, run_config=run_config,
+                tile_config=tile_config,
                 id_version=id_version, id_revision=id_revision,
                 rtl_files=rtl_files, tb_files=tb_files,
                 conn_result=conn_result, sim_result=sim_result, synth_result=synth_result,
@@ -307,7 +306,7 @@ class DatabaseWorkflow:
         # ── 14. Finalize ──────────────────────────────────────────────────────
         data = _finalize_run(
             ctx=ctx, today_str=today_str,
-            tile_config=tile_config, run_config=run_config,
+            tile_config=tile_config,
             id_version=id_version, id_revision=id_revision,
             rtl_files=rtl_files, tb_files=tb_files,
             conn_result=conn_result, sim_result=sim_result, synth_result=synth_result,
@@ -531,7 +530,6 @@ def _finalize_run(
     ctx: RunContext,
     today_str: str,
     tile_config: TileConfig,
-    run_config: TileConfig,
     id_version: str,
     id_revision: str,
     rtl_files: list[Path],
@@ -569,8 +567,8 @@ def _finalize_run(
         "tile_id": ctx.tile_id,
         "run_id": ctx.run_id,
         "date": today_str,
-        "author": run_config.run_author,
-        "objective": run_config.objective,
+        "author": tile_config.run_author,
+        "objective": tile_config.objective,
         "status": status,
         "tile": {
             "tile_name": tile_config.tile_name,
@@ -610,7 +608,7 @@ def _finalize_run(
     generate_manifest(manifest_data, ctx.manifest_path)
 
     # ── Generate notes.md ─────────────────────────────────────────────────────
-    generate_notes(ctx.tile_id, tile_config, run_config, ctx.notes_path)
+    generate_notes(ctx.tile_id, tile_config, ctx.notes_path)
 
     # ── Regenerate README.md ──────────────────────────────────────────────────
     generate_readme(ctx.tile_id, tile_config, ctx.tile_dir / "README.md")
@@ -633,8 +631,8 @@ def _finalize_run(
         "Tile_ID": ctx.tile_id,
         "Run_ID": ctx.run_id,
         "Date": today_str,
-        "Author": run_config.run_author,
-        "Objective": run_config.objective,
+        "Author": tile_config.run_author,
+        "Objective": tile_config.objective,
         "Status": status,
         "Version": id_version,
         "Revision": id_revision,
@@ -642,9 +640,9 @@ def _finalize_run(
         "Simulation": sim_result,
         "Synthesis": synth_result,
         "Tool_Version": iverilog_version,
-        "Main_Change": run_config.main_change,
+        "Main_Change": tile_config.main_change,
         "Run_Path": run_path_rel,
-        "Tags": run_config.tags,
+        "Tags": tile_config.tags,
         "Interface": ctx.interface_name or "",
     })
 
