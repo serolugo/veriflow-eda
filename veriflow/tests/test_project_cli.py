@@ -81,38 +81,40 @@ def test_project_run_config_defaults_to_veriflow_yaml():
 def test_db_init_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
-    args = parser.parse_args(["--db", "/foo/db", "init"])
-    assert args.command == "init"
+    args = parser.parse_args(["db", "init", "--db", "/foo/db"])
+    assert args.command == "db"
+    assert args.db_command == "init"
     assert args.db == "/foo/db"
 
 
 def test_db_run_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
-    args = parser.parse_args(["--db", "/foo", "run", "--tile", "0001"])
-    assert args.command == "run"
+    args = parser.parse_args(["db", "run", "--db", "/foo", "--tile", "0001"])
+    assert args.command == "db"
+    assert args.db_command == "run"
     assert args.tile == "0001"
 
 
 def test_db_bump_version_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
-    args = parser.parse_args(["--db", "/foo", "bump-version", "--tile", "0001"])
-    assert args.command == "bump-version"
+    args = parser.parse_args(["db", "bump-version", "--db", "/foo", "--tile", "0001"])
+    assert args.db_command == "bump-version"
 
 
 def test_db_bump_revision_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
-    args = parser.parse_args(["--db", "/foo", "bump-revision", "--tile", "0001"])
-    assert args.command == "bump-revision"
+    args = parser.parse_args(["db", "bump-revision", "--db", "/foo", "--tile", "0001"])
+    assert args.db_command == "bump-revision"
 
 
 def test_db_waves_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
-    args = parser.parse_args(["--db", "/foo", "waves", "--tile", "0001"])
-    assert args.command == "waves"
+    args = parser.parse_args(["db", "waves", "--db", "/foo", "--tile", "0001"])
+    assert args.db_command == "waves"
 
 
 def test_main_dispatches_project_run(tmp_path):
@@ -301,7 +303,8 @@ def test_unexpected_exception_not_silently_converted_to_pass(tmp_path):
 
 
 def test_db_mode_commands_require_db_unchanged(tmp_path):
-    """Existing DB-mode commands still return non-zero when --db is omitted."""
+    """DB-mode commands still fail when --db is omitted (argparse exits 2)."""
     from veriflow.cli import main
-    rc = main(["init"])
-    assert rc != 0
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "init"])
+    assert exc_info.value.code != 0

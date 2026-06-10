@@ -756,7 +756,7 @@ def test_cli_normal_no_json_flag():
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
-        rc = main(["--db", str(db), "run", "--tile", "0001",
+        rc = main(["db", "run", "--db", str(db), "--tile", "0001",
                    "--skip-check", "--skip-sim", "--skip-synth"])
         assert rc == 0
     finally:
@@ -778,13 +778,13 @@ def test_cli_json_run_success():
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = main(["--json", "--db", str(db), "run", "--tile", "0001",
+            rc = main(["--json", "db", "run", "--db", str(db), "--tile", "0001",
                        "--skip-check", "--skip-sim", "--skip-synth"])
 
         assert rc == 0
         data = json.loads(buf.getvalue())
         assert data["status"] == "SUCCESS"
-        assert data["command"] == "run"
+        assert data["command"] == "db run"
         assert "run_result" in data
         assert data["run_result"]["schema_version"] == "1.2"
         assert "stages" in data["run_result"]
@@ -802,7 +802,7 @@ def test_cli_json_veriflow_error():
         db.mkdir()
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = main(["--json", "--db", str(db), "run", "--tile", "0001"])
+            rc = main(["--json", "db", "run", "--db", str(db), "--tile", "0001"])
         assert rc != 0
         data = json.loads(buf.getvalue())
         assert data["status"] == "ERROR"
@@ -825,7 +825,7 @@ def test_cli_json_unhandled_exception():
         with contextlib.redirect_stdout(buf):
             with patch("veriflow.commands.init_db.cmd_init",
                        side_effect=RuntimeError("synthetic failure")):
-                rc = main(["--json", "--db", str(db), "init"])
+                rc = main(["--json", "db", "init", "--db", str(db)])
         assert rc == 1
         data = json.loads(buf.getvalue())
         assert data["status"] == "ERROR"
@@ -1060,8 +1060,8 @@ def test_cli_non_interactive_run_succeeds():
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
         rc = main([
-            "--db", str(db), "--non-interactive",
-            "run", "--tile", "0001",
+            "--non-interactive",
+            "db", "run", "--db", str(db), "--tile", "0001",
             "--skip-check", "--skip-sim", "--skip-synth",
         ])
         assert rc == 0
@@ -1077,7 +1077,7 @@ def test_cli_non_interactive_waves_command_rejected():
     try:
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            rc = main(["--db", str(tmp), "--non-interactive", "waves", "--tile", "0001"])
+            rc = main(["--non-interactive", "db", "waves", "--db", str(tmp), "--tile", "0001"])
         assert rc == 2
         assert "Waveform viewer" in buf.getvalue()
     finally:
@@ -1092,7 +1092,7 @@ def test_cli_non_interactive_run_waves_rejected():
     try:
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            rc = main(["--db", str(tmp), "--non-interactive", "run", "--tile", "0001", "--waves"])
+            rc = main(["--non-interactive", "db", "run", "--db", str(tmp), "--tile", "0001", "--waves"])
         assert rc == 2
         assert "Waveform viewer" in buf.getvalue()
     finally:

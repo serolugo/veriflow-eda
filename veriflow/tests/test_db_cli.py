@@ -4,7 +4,7 @@ Database Mode `veriflow db ...` namespace CLI tests.
 Covers:
   A. Parser / argument parsing for each db subcommand
   B. Dispatch — each subcommand calls the correct handler with correct args
-  C. Legacy compatibility — flat legacy commands and `project run` unaffected
+  C. Flat legacy forms removed — `veriflow --db ... <cmd>` is rejected; `project run` unaffected
   D. Error behavior — missing required args fail clearly
   E. Read-only read commands (list-tiles, list-runs, show-run)
 """
@@ -236,72 +236,74 @@ def test_db_namespace_waves_non_interactive_raises(tmp_path):
     assert rc != 0
 
 
-# ── C. Legacy compatibility ───────────────────────────────────────────────────
+# ── C. Flat legacy forms removed ──────────────────────────────────────────────
 
-def test_legacy_init_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo/db", "init"])
-    assert args.command == "init"
-    assert args.db == "/foo/db"
-
-
-def test_legacy_create_tile_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo", "create-tile", "--top-module", "m"])
-    assert args.command == "create-tile"
-    assert args.top_module == "m"
-
-
-def test_legacy_run_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo", "run", "--tile", "0001"])
-    assert args.command == "run"
-    assert args.tile == "0001"
-
-
-def test_legacy_waves_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo", "waves", "--tile", "0001"])
-    assert args.command == "waves"
-
-
-def test_legacy_bump_version_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo", "bump-version", "--tile", "0001"])
-    assert args.command == "bump-version"
-
-
-def test_legacy_bump_revision_still_parses():
-    from veriflow.cli import build_parser
-    args = build_parser().parse_args(["--db", "/foo", "bump-revision", "--tile", "0001"])
-    assert args.command == "bump-revision"
-
-
-def test_legacy_init_dispatches(tmp_path):
+def test_flat_init_rejected():
+    """`veriflow --db PATH init` no longer parses; argparse exits 2."""
     from veriflow.cli import main
-    with patch("veriflow.commands.init_db.cmd_init") as mock_fn:
-        rc = main(["--db", str(tmp_path), "init"])
-    mock_fn.assert_called_once_with(Path(str(tmp_path)), force=False)
-    assert rc == 0
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo/db", "init"])
+    assert exc_info.value.code == 2
 
 
-def test_legacy_run_dispatches(tmp_path):
+def test_flat_create_tile_rejected():
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "create-tile", "--top-module", "m"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_run_rejected():
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "run", "--tile", "0001"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_waves_rejected():
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "waves", "--tile", "0001"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_bump_version_rejected():
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "bump-version", "--tile", "0001"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_bump_revision_rejected():
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "bump-revision", "--tile", "0001"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_command_without_db_rejected():
+    """`veriflow init` (flat command, no --db) is no longer a known command."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["init"])
+    assert exc_info.value.code == 2
+
+
+def test_root_db_flag_rejected_for_db_namespace():
+    """--db is a subcommand argument, not a global flag."""
+    from veriflow.cli import main
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--db", "/foo", "db", "run", "--tile", "0001"])
+    assert exc_info.value.code == 2
+
+
+def test_flat_dispatch_does_not_reach_handlers(tmp_path):
+    """Rejected flat forms must exit before any command handler is invoked."""
     from veriflow.cli import main
     with patch("veriflow.commands.run.cmd_run") as mock_fn:
-        mock_fn.return_value = {}
-        rc = main(["--db", str(tmp_path), "run", "--tile", "0002"])
-    mock_fn.assert_called_once_with(
-        db=Path(str(tmp_path)),
-        tile_number="0002",
-        skip_check=False,
-        skip_sim=False,
-        skip_synth=False,
-        only_check=False,
-        only_sim=False,
-        only_synth=False,
-        waves=False,
-    )
-    assert rc == 0
+        with pytest.raises(SystemExit):
+            main(["--db", str(tmp_path), "run", "--tile", "0002"])
+    mock_fn.assert_not_called()
 
 
 def test_project_run_still_works(tmp_path):
@@ -361,11 +363,11 @@ def test_db_bump_version_missing_tile_exits_with_error(tmp_path):
     assert exc_info.value.code != 0
 
 
-def test_legacy_db_commands_require_db_unchanged():
-    """Existing flat commands still return non-zero when --db is omitted."""
+def test_db_create_tile_missing_db_exits_with_error():
     from veriflow.cli import main
-    rc = main(["init"])
-    assert rc != 0
+    with pytest.raises(SystemExit) as exc_info:
+        main(["db", "create-tile"])
+    assert exc_info.value.code != 0
 
 
 # ── E. Read-only commands: helpers ────────────────────────────────────────────
