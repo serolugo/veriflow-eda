@@ -384,7 +384,7 @@ def _make_tile_info(
         tile_author=author,
         version="1",
         revision="0",
-        semicolab=True,
+        interface_name="semicolab",
     )
 
 
@@ -417,7 +417,7 @@ def _make_run_result(
         run_id=run_id,
         run_dir=Path("/fake/run"),
         status=status,
-        semicolab=True,
+        interface_name="semicolab",
         stages={
             "connectivity": StageResult(name="connectivity", status="PASS"),
             "simulation": StageResult(name="simulation", status="COMPLETED"),
@@ -429,7 +429,7 @@ def _make_run_result(
             "tile_id": tile_id,
             "run_id": run_id,
             "status": status,
-            "semicolab": True,
+            "interface_name": "semicolab",
             "stages": {
                 "connectivity": {"status": "PASS"},
                 "simulation": {"status": "COMPLETED"},

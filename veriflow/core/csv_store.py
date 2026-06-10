@@ -4,11 +4,11 @@ from typing import Optional
 
 from veriflow.core import VeriFlowError
 
-TILE_INDEX_HEADER = ["tile_number", "tile_id", "tile_name", "tile_author", "version", "revision", "semicolab"]
+TILE_INDEX_HEADER = ["tile_number", "tile_id", "tile_name", "tile_author", "version", "revision", "interface_name"]
 RECORDS_HEADER = [
     "Tile_ID", "Run_ID", "Date", "Author", "Objective", "Status",
     "Version", "Revision", "Connectivity", "Simulation", "Synthesis",
-    "Tool_Version", "Main_Change", "Run_Path", "Tags", "Semicolab",
+    "Tool_Version", "Main_Change", "Run_Path", "Tags", "Interface",
 ]
 
 

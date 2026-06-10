@@ -32,13 +32,13 @@ def cmd_db_list_tiles(db: Path | str) -> list[DatabaseTileInfo]:
     for t in tiles:
         v = f"v{t.version}" if t.version else "v?"
         r = f"r{t.revision}" if t.revision else "r?"
-        sc = f"  semicolab={'true' if t.semicolab else 'false'}" if t.semicolab is not None else ""
+        iface = f"  interface={t.interface_name}" if t.interface_name else ""
         name = t.tile_name or "—"
         author = t.tile_author or "—"
         console.print(
             f"  [id]{t.tile_number}[/id]  [secondary]{t.tile_id}[/secondary]"
             f"  {name}  [secondary]{author}[/secondary]"
-            f"  [secondary]{v} {r}[/secondary]{sc}"
+            f"  [secondary]{v} {r}[/secondary]{iface}"
         )
 
     return tiles
@@ -92,8 +92,7 @@ def cmd_db_show_run(
     print_section(f"Run {result.run_id}")
     console.print(f"  [secondary]Status:   [/secondary] {_status_markup(result.status)}")
     console.print(f"  [secondary]Tile:     [/secondary] [id]{result.tile_id}[/id]")
-    sc_val = "true" if result.semicolab else "false"
-    console.print(f"  [secondary]Semicolab:[/secondary] {sc_val}")
+    console.print(f"  [secondary]Interface:[/secondary] {result.interface_name or '—'}")
     console.print()
     console.print("  [label]Stages:[/label]")
 
@@ -130,7 +129,7 @@ def tile_info_to_dict(t: DatabaseTileInfo) -> dict:
         "tile_author": t.tile_author,
         "version": t.version,
         "revision": t.revision,
-        "semicolab": t.semicolab,
+        "interface_name": t.interface_name,
     }
 
 

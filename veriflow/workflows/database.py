@@ -48,7 +48,7 @@ class DatabaseRunResult:
     run_id: str
     run_dir: Path
     status: str
-    semicolab: bool
+    interface_name: str | None
     stages: dict[str, StageResult]
     sources: dict[str, list[Path]]
     artifacts: dict[str, object]
@@ -66,7 +66,7 @@ class DatabaseTileInfo:
     tile_author: str
     version: str | None = None
     revision: str | None = None
-    semicolab: bool | None = None
+    interface_name: str | None = None
 
 
 @dataclass
@@ -161,8 +161,6 @@ class DatabaseWorkflow:
         if interface_profile is None:
             skip_check = True
 
-        legacy_semicolab = interface_name == "semicolab"
-
         validate_run_inputs(self.db_path, tile_number_str, tile_config)
 
         # ── 3. Look up tile_id and sync tile_name/tile_author ─────────────────
@@ -192,7 +190,7 @@ class DatabaseWorkflow:
             run_id=run_id,
             tile_dir=tile_dir,
             run_dir=runs_dir / run_id,
-            semicolab=legacy_semicolab,
+            interface_name=interface_name,
             skip_connectivity=skip_check,
             skip_sim=skip_sim,
             skip_synth=skip_synth,
@@ -229,7 +227,7 @@ class DatabaseWorkflow:
                 run_id=run_id,
                 tile_dir=tile_dir,
                 run_dir=runs_dir / run_id,
-                semicolab=legacy_semicolab,
+                interface_name=interface_name,
                 skip_connectivity=skip_check,
                 skip_sim=True,
                 skip_synth=skip_synth,
@@ -281,7 +279,7 @@ class DatabaseWorkflow:
                 run_id=run_id,
                 run_dir=run_dir,
                 status=data["status"],
-                semicolab=legacy_semicolab,
+                interface_name=interface_name,
                 stages={
                     "connectivity": _conn_sr,
                     "simulation": StageResult(name="simulation", status="SKIPPED"),
@@ -324,7 +322,7 @@ class DatabaseWorkflow:
             run_id=run_id,
             run_dir=run_dir,
             status=data["status"],
-            semicolab=legacy_semicolab,
+            interface_name=interface_name,
             stages={
                 "connectivity": _conn_sr,
                 "simulation": _sim_sr,
@@ -345,10 +343,6 @@ class DatabaseWorkflow:
         rows = read_tile_index(tile_index_path)
         tiles: list[DatabaseTileInfo] = []
         for row in rows:
-            sc_str = row.get("semicolab", "")
-            semicolab: bool | None = (
-                True if sc_str == "true" else (False if sc_str == "false" else None)
-            )
             tiles.append(DatabaseTileInfo(
                 tile_number=row["tile_number"],
                 tile_id=row["tile_id"],
@@ -356,7 +350,7 @@ class DatabaseWorkflow:
                 tile_author=row.get("tile_author", ""),
                 version=row.get("version") or None,
                 revision=row.get("revision") or None,
-                semicolab=semicolab,
+                interface_name=row.get("interface_name") or None,
             ))
         tiles.sort(key=lambda t: int(t.tile_number))
         return tiles
@@ -436,7 +430,7 @@ class DatabaseWorkflow:
             run_id=data.get("run_id", run_id),
             run_dir=run_dir,
             status=data.get("status", ""),
-            semicolab=bool(data.get("semicolab", False)),
+            interface_name=data.get("interface_name"),
             stages=stages,
             sources=data.get("sources", {}),
             artifacts=data.get("artifacts", {}),
@@ -651,7 +645,7 @@ def _finalize_run(
         "Main_Change": run_config.main_change,
         "Run_Path": run_path_rel,
         "Tags": run_config.tags,
-        "Semicolab": "true" if ctx.semicolab else "false",
+        "Interface": ctx.interface_name or "",
     })
 
     # ── Generate summary.md ───────────────────────────────────────────────────
@@ -687,12 +681,12 @@ def _finalize_run(
     }
 
     run_result: dict = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "tile_id": ctx.tile_id,
         "run_id": ctx.run_id,
         "date": today_str,
         "status": status,
-        "semicolab": ctx.semicolab,
+        "interface_name": ctx.interface_name,
         "stages": {
             "connectivity": StageResult(
                 name="connectivity",
