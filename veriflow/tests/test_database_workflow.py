@@ -171,13 +171,13 @@ def test_options_explicit():
 
 def test_run_result_to_dict_returns_data():
     from veriflow.workflows.database import DatabaseRunResult
-    payload = {"schema_version": "1.1", "status": "PARTIAL"}
+    payload = {"schema_version": "1.2", "status": "PARTIAL"}
     result = DatabaseRunResult(
         tile_id="X",
         run_id="run-001",
         run_dir=Path("/tmp/r"),
         status="PARTIAL",
-        semicolab=False,
+        interface_name=None,
         stages={},
         sources={"rtl": [], "tb": []},
         artifacts={},
@@ -338,7 +338,7 @@ def test_generates_results_json():
         results_path = result.run_dir / "results.json"
         assert results_path.exists()
         data = json.loads(results_path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
     finally:
         shutil.rmtree(tmp)
 
@@ -541,36 +541,38 @@ def test_sim_fail_result_not_pass():
         shutil.rmtree(tmp)
 
 
-# ── Semicolab boolean ─────────────────────────────────────────────────────────
+# ── Interface name ────────────────────────────────────────────────────────────
 
 
-def test_semicolab_true_when_interface_name_semicolab():
+def test_interface_name_when_semicolab_profile_selected():
     from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _setup_db(tmp, interface_name="semicolab")
         opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
         result = DatabaseWorkflow(db).run_tile("0001", opts)
-        assert result.semicolab is True
-        assert result.data["semicolab"] is True
+        assert result.interface_name == "semicolab"
+        assert result.data["interface_name"] == "semicolab"
+        assert "semicolab" not in result.data
     finally:
         shutil.rmtree(tmp)
 
 
-def test_semicolab_false_when_interface_name_null():
+def test_interface_name_none_when_no_interface():
     from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _setup_db(tmp, interface_name=None)
         opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
         result = DatabaseWorkflow(db).run_tile("0001", opts)
-        assert result.semicolab is False
-        assert result.data["semicolab"] is False
+        assert result.interface_name is None
+        assert result.data["interface_name"] is None
+        assert "semicolab" not in result.data
     finally:
         shutil.rmtree(tmp)
 
 
-def test_semicolab_reflected_in_records_csv():
+def test_interface_name_reflected_in_records_csv():
     from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -582,7 +584,7 @@ def test_semicolab_reflected_in_records_csv():
                 (db / "records.csv").read_text(encoding="utf-8").splitlines()
             )
         )
-        assert rows[0]["Semicolab"] == "true"
+        assert rows[0]["Interface"] == "semicolab"
     finally:
         shutil.rmtree(tmp)
 
@@ -626,7 +628,7 @@ def test_only_connectivity_no_profile_raises():
 # ── results.json schema ───────────────────────────────────────────────────────
 
 
-def test_results_json_schema_version_1_1():
+def test_results_json_schema_version_1_2():
     from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -634,7 +636,7 @@ def test_results_json_schema_version_1_1():
         opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
         result = DatabaseWorkflow(db).run_tile("0001", opts)
         data = json.loads((result.run_dir / "results.json").read_text(encoding="utf-8"))
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
     finally:
         shutil.rmtree(tmp)
 
@@ -648,8 +650,9 @@ def test_results_json_has_required_keys():
         result = DatabaseWorkflow(db).run_tile("0001", opts)
         data = json.loads((result.run_dir / "results.json").read_text(encoding="utf-8"))
         for key in ("schema_version", "tile_id", "run_id", "date", "status",
-                    "semicolab", "stages", "sources", "artifacts", "error"):
+                    "interface_name", "stages", "sources", "artifacts", "error"):
             assert key in data, f"Missing key: {key}"
+        assert "semicolab" not in data
     finally:
         shutil.rmtree(tmp)
 
@@ -734,12 +737,12 @@ def test_workflow_does_not_call_ui_output():
 def _make_mock_run_result(run_dir: Path, status: str = "PARTIAL") -> "DatabaseRunResult":
     from veriflow.workflows.database import DatabaseRunResult
     data = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "tile_id": "TST-01-26060700010101",
         "run_id": "run-001",
         "date": "2026-06-07",
         "status": status,
-        "semicolab": False,
+        "interface_name": None,
         "stages": {
             "connectivity": {"status": "SKIPPED"},
             "simulation": {"status": "SKIPPED"},
@@ -760,7 +763,7 @@ def _make_mock_run_result(run_dir: Path, status: str = "PARTIAL") -> "DatabaseRu
         run_id="run-001",
         run_dir=run_dir,
         status=status,
-        semicolab=False,
+        interface_name=None,
         stages={},
         sources={"rtl": [], "tb": []},
         artifacts={},
@@ -849,7 +852,7 @@ def test_cmd_run_returns_to_dict_unchanged():
             )
 
         assert returned is mock_result.data
-        assert returned["schema_version"] == "1.1"
+        assert returned["schema_version"] == "1.2"
     finally:
         shutil.rmtree(tmp)
 
@@ -959,8 +962,8 @@ def test_cmd_run_waves_false_does_not_launch():
 # ── Parity: existing cmd_run behavior unchanged ───────────────────────────────
 
 
-def test_cmd_run_still_returns_schema_version_1_1():
-    """End-to-end: cmd_run returns dict with schema_version 1.1."""
+def test_cmd_run_still_returns_schema_version_1_2():
+    """End-to-end: cmd_run returns dict with schema_version 1.2."""
     from veriflow.commands.run import cmd_run
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -973,7 +976,7 @@ def test_cmd_run_still_returns_schema_version_1_1():
             skip_synth=True,
         )
         assert isinstance(result, dict)
-        assert result["schema_version"] == "1.1"
+        assert result["schema_version"] == "1.2"
     finally:
         shutil.rmtree(tmp)
 
@@ -1049,26 +1052,26 @@ def test_list_tiles_empty_returns_empty_list():
         shutil.rmtree(tmp)
 
 
-def test_list_tiles_semicolab_true():
+def test_list_tiles_interface_name_semicolab():
     from veriflow.workflows.database import DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _setup_db(tmp, interface_name="semicolab")
         tiles = DatabaseWorkflow(db).list_tiles()
         assert len(tiles) == 1
-        assert tiles[0].semicolab is True
+        assert tiles[0].interface_name == "semicolab"
     finally:
         shutil.rmtree(tmp)
 
 
-def test_list_tiles_semicolab_false():
+def test_list_tiles_interface_name_none():
     from veriflow.workflows.database import DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _setup_db(tmp, interface_name=None)
         tiles = DatabaseWorkflow(db).list_tiles()
         assert len(tiles) == 1
-        assert tiles[0].semicolab is False
+        assert tiles[0].interface_name is None
     finally:
         shutil.rmtree(tmp)
 
@@ -1205,7 +1208,7 @@ def test_load_run_result_returns_database_run_result():
         shutil.rmtree(tmp)
 
 
-def test_load_run_result_matching_tile_id_run_id_status_semicolab():
+def test_load_run_result_matching_tile_id_run_id_status_interface_name():
     from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -1217,7 +1220,7 @@ def test_load_run_result_matching_tile_id_run_id_status_semicolab():
         assert loaded.tile_id == executed.tile_id
         assert loaded.run_id == "run-001"
         assert loaded.status == executed.status
-        assert loaded.semicolab == executed.semicolab
+        assert loaded.interface_name == executed.interface_name
     finally:
         shutil.rmtree(tmp)
 

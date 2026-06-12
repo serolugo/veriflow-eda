@@ -2,7 +2,12 @@
 
 ## 1. Introduction
 
-VeriFlow V1 is an RTL verification framework designed for the multi-project ASIC chip design flow. It automates three verification stages — connectivity check, simulation, and synthesis — and generates structured documentation for every run.
+VeriFlow V1 is an RTL verification framework designed for the multi-project ASIC chip design flow. It automates three verification stages — interface/connectivity check, simulation, and synthesis — and generates structured documentation for every run.
+
+VeriFlow has two operating modes:
+
+- **Database Mode** (`veriflow db ...`) — a tile database with indexed run history and generated documentation. This manual focuses on Database Mode.
+- **Project Mode** (`veriflow project run`) — verifies a local project directory described by a single `veriflow.yaml` file. See [PROJECT_CONFIG.md](PROJECT_CONFIG.md).
 
 **Internal components:**
 - **VeriTile** — verification engine (iverilog + Yosys)
@@ -16,7 +21,7 @@ VeriFlow V1 is an RTL verification framework designed for the multi-project ASIC
 - Python 3.10 or higher
 - PyYAML: `pip install pyyaml`
 - Rich: `pip install rich`
-- [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) with `iverilog`, `vvp`, and `yosys` in PATH
+- `iverilog`, `vvp`, and `yosys` in PATH — the [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) is one convenient distribution that provides all three
 - Optional: `pyfiglet` and `terminaltexteffects` for the animated SEMICOLAB banner
 - Optional: `surfer` in PATH for waveform viewing
 
@@ -41,7 +46,7 @@ This registers the `veriflow` command globally. Verify everything works:
 python -m veriflow.tests.runner
 ```
 
-Expected result: `26 passed, 0 failed`.
+Expected result: `193 passed, 0 failed`.
 
 ---
 
@@ -50,7 +55,7 @@ Expected result: `26 passed, 0 failed`.
 ### 4.1 Create the database
 
 ```bash
-veriflow --db ./database init
+veriflow db init --db ./database
 ```
 
 This creates:
@@ -65,7 +70,7 @@ database/
 
 If the folder already exists, use `--force` to overwrite:
 ```bash
-veriflow --db ./database init --force
+veriflow db init --db ./database --force
 ```
 
 ### 4.2 Configure the project
@@ -76,11 +81,19 @@ Edit `database/project_config.yaml`:
 id_prefix: "MST130-01"       # prefix for Tile IDs
 project_name: "My Chip"
 repo: "https://github.com/user/repo"
+interface_name: "semicolab"  # or null for a generic project
 description: |
   Chip project description.
 ```
 
 The `id_prefix` field is required — tiles cannot be created without it.
+
+`interface_name` selects the interface profile for the whole database and must be declared explicitly:
+
+- `interface_name: "semicolab"` — tiles follow the Semicolab nine-port structural contract; the connectivity check verifies it on every run.
+- `interface_name: null` — generic project: any RTL module, no interface contract, no connectivity check.
+
+Semicolab is an interface profile (a named port contract), not a boolean mode. An unknown name fails with `VF_INTERFACE_UNKNOWN`.
 
 ---
 
@@ -89,13 +102,15 @@ The `id_prefix` field is required — tiles cannot be created without it.
 ### 5.1 Create a tile
 
 ```bash
-veriflow --db ./database create-tile
+veriflow db create-tile --db ./database --top-module adder_tile
 ```
+
+`--top-module` is required for Semicolab projects: the name is written into `tile_config.yaml` and substituted into the generated testbench so both share the same DUT name. For generic projects it can be omitted.
 
 Automatically generates:
 - `database/config/tile_0001/tile_config.yaml` — tile + run configuration (single file)
 - `database/config/tile_0001/src/rtl/` — folder for RTL
-- `database/config/tile_0001/src/tb/tb_tile.v` — test template
+- `database/config/tile_0001/src/tb/tb_tile.v` — self-contained testbench scaffold
 - `database/tiles/<tile_id>/` — artifacts directory
 
 ### 5.2 Configure the tile
@@ -105,6 +120,7 @@ Automatically generates:
 tile_name: "Adder Tile"
 tile_author: "Sebastian"
 top_module: "adder_tile"    # exact name of the RTL module
+tb_top_module: "tb"         # testbench top module name (module declared in tb_tile.v)
 description: |
   32-bit adder tile.
 ports: |
@@ -123,6 +139,7 @@ notes: |
 ```
 
 > The `top_module` field must match exactly the name of the `.v` file in `src/rtl/`.
+> `tb_top_module` defaults to `tb` and must match the module declared in your testbench.
 
 ### 5.3 Add the RTL
 
@@ -147,40 +164,38 @@ module adder_tile #(
     output wire                      csr_out_we
 );
 
-    // USER LOGIC STARTS HERE //
     assign data_reg_c = data_reg_a + data_reg_b;
     assign csr_out    = 16'b0;
     assign csr_in_re  = 1'b0;
     assign csr_out_we = 1'b0;
-    // USER LOGIC ENDS HERE //
 
 endmodule
 ```
 
-> All tiles must implement exactly the 9 ports defined by the VeriFlow port convention.
+> Semicolab tiles must expose the 9 ports defined by the Semicolab interface profile. Generic tiles may use any port list.
 
 ### 5.4 Write the testbench
 
-**SemiCoLab mode (`semicolab: true`)**
+Testbenches are **self-contained Verilog modules**: the files in `src/tb/` must form a complete, compilable testbench, including the DUT instantiation. VeriFlow compiles your RTL and testbench files together and selects the testbench top module explicitly (`tb_top_module` in `tile_config.yaml`). There is no marker extraction and no runtime code injection — the whole testbench file is yours to edit.
 
-`tb_tile.v` is created with the full testbench wrapper already in place. Write your stimuli between the markers — do not modify the rest of the file:
+**Semicolab projects**
+
+`create-tile` generates `tb_tile.v` from a scaffold template with everything already in place: signal declarations for the nine-port contract, clock generation, reset sequence, waveform dump (`$dumpfile`/`$dumpvars`), the DUT instantiation (using the `--top-module` name), and helper tasks. Add your stimulus in the marked stimulus block:
 
 ```verilog
-    // USER TEST STARTS HERE //
+    // ── USER STIMULUS BEGIN ──
     write_data_reg_a(32'd10);
     write_data_reg_b(32'd20);
     @(posedge clk);
     $display("result = %0d", data_reg_c);  // expected: 30
-    // USER TEST ENDS HERE //
+    // ── USER STIMULUS END ──
 ```
 
-VeriFlow reads `tb_tile.v`, extracts the code between the markers, and injects it at runtime along with the DUT instantiation. The module wrapper, signals, clock, reset and tasks are all handled automatically.
+The scaffold is a starting point, not a managed file — you may restructure it freely as long as it remains a complete testbench whose top module matches `tb_top_module`.
 
-> If `tb_tile.v` is not present in `src/tb/`, simulation is automatically skipped.
+**Generic projects**
 
-**Universal mode (`semicolab: false`)**
-
-Write a complete testbench. Top module must be named `tb`. VeriFlow injects `$dumpfile`/`$dumpvars` automatically if not present:
+`create-tile` generates a minimal `tb_tile.v` skeleton. Declare your signals, instantiate your DUT, and write your test:
 
 ```verilog
 `timescale 1ns / 1ps
@@ -194,6 +209,11 @@ module tb;
     always #5 clk = ~clk;
 
     initial begin
+        $dumpfile("waves.vcd");
+        $dumpvars(0, tb);
+    end
+
+    initial begin
         clk = 0; rst_n = 0;
         #20 rst_n = 1;
         #100;
@@ -203,7 +223,10 @@ module tb;
 endmodule
 ```
 
-**Available tasks:**
+> Include `$dumpfile("waves.vcd")` / `$dumpvars` in your testbench if you want waveforms — VeriFlow does not insert them for you.
+> If no `.v` files are present in `src/tb/`, simulation is automatically skipped.
+
+**Tasks provided by the Semicolab scaffold:**
 
 | Task | Usage |
 |---|---|
@@ -213,10 +236,7 @@ endmodule
 | `reset_csr_in` | Clears bits [15:12] of csr_in |
 | `read_csr_out(data)` | Captures csr_out into a variable |
 
-**Directly accessible signals:**
-`clk`, `arst_n`, `csr_in`, `data_reg_a`, `data_reg_b`, `data_reg_c`, `csr_out`, `csr_in_re`, `csr_out_we`
-
-> The testbench automatically includes 2 reset cycles at the start before calling your code.
+These tasks are defined inside the generated `tb_tile.v` itself — they are part of your testbench, not a hidden library.
 
 ### 5.5 Update run information
 
@@ -241,36 +261,36 @@ notes: |
 ### 6.1 Full run
 
 ```bash
-veriflow --db ./database run --tile 0001
+veriflow db run --db ./database --tile 0001
 ```
 
 The pipeline executes in order:
 
-1. **Connectivity check** — compiles RTL + TB with iverilog to verify ports connect correctly. If it fails, the pipeline stops.
-2. **Simulation** — compiles and injects the user test, runs with `vvp`, generates `waves.vcd`.
+1. **Connectivity check** — compiles the RTL together with a generated elaboration wrapper derived from the interface profile, verifying that `top_module` exposes the profile's port contract. Runs only when an interface profile is configured; generic projects skip it automatically. If it fails, the pipeline stops.
+2. **Simulation** — compiles RTL + testbench files together with iverilog (`-s <tb_top_module>`), runs with `vvp`, captures `waves.vcd`.
 3. **Synthesis** — runs Yosys with hierarchy check, synth, check, and stat.
-4. **Documentation** — generates manifest, notes, summary, README, updates records.csv.
+4. **Documentation** — generates manifest, results.json, notes, summary, README, updates records.csv.
 
 ### 6.2 Run options
 
 ```bash
 # Show waveforms automatically when done
-veriflow --db ./database run --tile 0001 --waves
+veriflow db run --db ./database --tile 0001 --waves
 
-# Connectivity check only
-veriflow --db ./database run --tile 0001 --only-check
+# Connectivity check only (errors if no interface profile is configured)
+veriflow db run --db ./database --tile 0001 --only-check
 
 # Simulation only
-veriflow --db ./database run --tile 0001 --only-sim
+veriflow db run --db ./database --tile 0001 --only-sim
 
 # Synthesis only
-veriflow --db ./database run --tile 0001 --only-synth
+veriflow db run --db ./database --tile 0001 --only-synth
 
 # Skip synthesis
-veriflow --db ./database run --tile 0001 --skip-synth
+veriflow db run --db ./database --tile 0001 --skip-synth
 
 # Skip simulation
-veriflow --db ./database run --tile 0001 --skip-sim
+veriflow db run --db ./database --tile 0001 --skip-sim
 ```
 
 ### 6.3 Interpreting the result
@@ -292,9 +312,9 @@ veriflow --db ./database run --tile 0001 --skip-sim
 | `SKIPPED` | Stage was not executed |
 
 **Global status:**
-- `PASS` — everything passed
+- `PASS` — every executed stage passed
 - `PARTIAL` — at least one stage was skipped
-- `FAIL` — connectivity or synthesis failed
+- `FAIL` — connectivity, simulation, or synthesis failed
 
 ---
 
@@ -303,13 +323,13 @@ veriflow --db ./database run --tile 0001 --skip-sim
 ### View waveforms of the latest run
 
 ```bash
-veriflow --db ./database waves --tile 0001
+veriflow db waves --db ./database --tile 0001
 ```
 
 ### View waveforms of a specific run
 
 ```bash
-veriflow --db ./database waves --tile 0001 --run run-003
+veriflow db waves --db ./database --tile 0001 --run run-003
 ```
 
 VeriFlow opens waveforms using the following priority:
@@ -334,7 +354,7 @@ VeriFlow opens waveforms using the following priority:
 When you make a significant RTL change and want to mark a new development iteration:
 
 ```bash
-veriflow --db ./database bump-version --tile 0001
+veriflow db bump-version --db ./database --tile 0001
 ```
 
 - Version: `01` → `02`
@@ -347,7 +367,7 @@ veriflow --db ./database bump-version --tile 0001
 When the advisor approves the design:
 
 ```bash
-veriflow --db ./database bump-revision --tile 0001
+veriflow db bump-revision --db ./database --tile 0001
 ```
 
 - Revision: `01` → `02`
@@ -378,8 +398,11 @@ Each run generates in `tiles/<tile_id>/runs/run-NNN/`:
 ### `manifest.yaml`
 Full run metadata: tile ID, run ID, date, author, objective, status, tools, sources, artifacts, and per-stage results.
 
+### `results.json`
+Machine-readable run result (see section 13.4).
+
 ### `notes.md`
-Designer notes for the run, taken from `run_config.yaml`.
+Designer notes for the run, taken from the `notes` field in `tile_config.yaml`.
 
 ### `summary.md`
 Tabular results summary. Also printed to the console when the run completes.
@@ -392,10 +415,10 @@ Tile documentation updated with data from `tile_config.yaml`. Regenerated on eve
 ## 10. CSV Records
 
 ### `tile_index.csv`
-Index of all tiles. Always reflects the most recent tile ID for each tile number.
+Index of all tiles. Always reflects the most recent tile ID for each tile number. Columns: `tile_number`, `tile_id`, `tile_name`, `tile_author`, `version`, `revision`, `interface_name`. The `interface_name` column records the interface profile the tile was created under (empty for generic projects).
 
 ### `records.csv`
-Complete history of all runs across all tiles. Each run appends a row with: Tile_ID, Run_ID, date, author, objective, status, stage results, tool version, run path, and tags.
+Complete history of all runs across all tiles. Each run appends a row with: Tile_ID, Run_ID, date, author, objective, status, stage results, tool version, run path, tags, and `Interface` — the interface profile name active for the run (empty for generic projects).
 
 ---
 
@@ -405,7 +428,7 @@ Complete history of all runs across all tiles. Each run appends a row with: Tile
 python -m veriflow.tests.runner
 ```
 
-Tests use `tempfile.mkdtemp()` for isolated environments and clean up after themselves. No pytest or external tools required (run tests execute without iverilog/yosys).
+Tests use `tempfile.mkdtemp()` for isolated environments and clean up after themselves. The standalone runner needs no pytest or external tools (run tests execute without iverilog/yosys). The suite can also be collected with pytest: `python -m pytest veriflow/tests -q`.
 
 ---
 
@@ -414,11 +437,11 @@ Tests use `tempfile.mkdtemp()` for isolated environments and clean up after them
 ### `ModuleNotFoundError: No module named 'veriflow'`
 `cli.py` includes an automatic path fix. If it persists, use:
 ```bash
-python -m veriflow.cli --db ./database <command>  # or: veriflow --db ./database <command>
+python -m veriflow.cli db <command> --db ./database  # or: veriflow db <command> --db ./database
 ```
 
 ### `Tool not found in PATH: iverilog`
-Activate OSS CAD Suite:
+Activate OSS CAD Suite (or otherwise put iverilog/yosys in PATH):
 ```bat
 C:\Users\<user>\oss-cad-suite\environment.bat
 ```
@@ -468,25 +491,25 @@ Both flags are global and can be combined.
 ### 13.3 Recommended automation command
 
 ```bash
-veriflow --json --non-interactive --db <db> run --tile <tile_id>
+veriflow --json --non-interactive db run --db <db> --tile <tile>
 ```
 
 Exit code is `0` on success, non-zero on any error.
 
 ### 13.4 `results.json` artifact
 
-Every `run` command writes `results.json` to the run directory alongside `manifest.yaml`. This file is always written — it does not require `--json`.
+Every `db run` command writes `results.json` to the run directory alongside `manifest.yaml`. This file is always written — it does not require `--json`.
 
 **Location:** `tiles/<tile_id>/runs/run-NNN/results.json`
 
 | Field | Description |
 |---|---|
-| `schema_version` | Document schema version (`"1.1"`) |
+| `schema_version` | Document schema version (`"1.2"`) |
 | `tile_id` | Full tile identifier |
 | `run_id` | Run identifier (`run-NNN`) |
 | `date` | ISO 8601 date |
 | `status` | Overall status: `PASS`, `PARTIAL`, or `FAIL` |
-| `semicolab` | Boolean — SemiCoLab mode active |
+| `interface_name` | Selected interface profile name (e.g. `"semicolab"`), or `null` when no interface is configured |
 | `stages` | Per-stage results (connectivity, simulation, synthesis) |
 | `sources` | Relative paths to RTL and TB files used |
 | `artifacts` | Relative paths to all generated output files |
@@ -496,12 +519,12 @@ Every `run` command writes `results.json` to the run directory alongside `manife
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "tile_id": "MST130-01-26032500010101",
   "run_id": "run-001",
   "date": "2026-03-25",
   "status": "PASS",
-  "semicolab": true,
+  "interface_name": "semicolab",
   "stages": {
     "connectivity": {
       "tool": "iverilog", "status": "PASS",
@@ -526,6 +549,9 @@ Every `run` command writes `results.json` to the run directory alongside `manife
   "artifacts": {
     "manifest":         ["tiles/MST130-01-26032500010101/runs/run-001/manifest.yaml"],
     "summary":          ["tiles/MST130-01-26032500010101/runs/run-001/summary.md"],
+    "notes":            ["tiles/MST130-01-26032500010101/runs/run-001/notes.md"],
+    "readme":           ["tiles/MST130-01-26032500010101/README.md"],
+    "records":          ["records.csv"],
     "connectivity_log": ["tiles/MST130-01-26032500010101/runs/run-001/out/connectivity/logs/connectivity.log"],
     "sim_log":          ["tiles/MST130-01-26032500010101/runs/run-001/out/sim/logs/sim.log"],
     "synth_log":        ["tiles/MST130-01-26032500010101/runs/run-001/out/synth/logs/synth.log"],
@@ -535,7 +561,9 @@ Every `run` command writes `results.json` to the run directory alongside `manife
 }
 ```
 
-> **`schema_version` and forward compatibility:** `schema_version` will be incremented when the structure of `results.json` changes. Consumers that parse this file programmatically should read `schema_version` first and handle unknown versions gracefully rather than assuming a fixed shape.
+For a generic project (`interface_name: null`), the file contains `"interface_name": null` and the connectivity stage reports `"status": "SKIPPED"`.
+
+> **`schema_version` and forward compatibility:** `schema_version` will be incremented when the structure of `results.json` changes. Version `"1.2"` replaced the legacy `semicolab` boolean field with `interface_name`. Consumers that parse this file programmatically should read `schema_version` first and handle unknown versions gracefully rather than assuming a fixed shape.
 
 ### 13.5 Python API (`veriflow.api`)
 
@@ -555,7 +583,7 @@ try:
         non_interactive=True,     # suppress waveform viewer
     )
     print(result["status"])       # "PASS" | "PARTIAL" | "FAIL"
-    print(result["schema_version"])  # "1.1"
+    print(result["schema_version"])  # "1.2"
 except VeriFlowError as e:
     print(e.code, e.message)
 ```
@@ -583,20 +611,20 @@ run_tile(
 - Raises `VF_NON_INTERACTIVE_VIEWER_DISABLED` if `waves=True` and `non_interactive=True`.
 - This is an **internal** surface — it is not a REST or RPC API.
 
-### 13.5 `--json` CLI output
+### 13.6 `--json` CLI output
 
 When `--json` is active the CLI emits one JSON object to stdout after the command completes. All Rich output goes to stderr or is suppressed.
 
-**Success (`run`):**
+**Success (`db run`):**
 ```json
 {
   "status": "SUCCESS",
-  "command": "run",
-  "run_result": { "schema_version": "1.1", "tile_id": "...", ... }
+  "command": "db run",
+  "run_result": { "schema_version": "1.2", "tile_id": "...", ... }
 }
 ```
 
-`run_result` mirrors the contents of `results.json`. For other subcommands it is omitted.
+`run_result` mirrors the contents of `results.json`. For other subcommands it is omitted (`db list-tiles`, `db list-runs`, and `db show-run` include their read results instead).
 
 **Error:**
 ```json
@@ -616,19 +644,21 @@ When `--json` is active the CLI emits one JSON object to stdout after the comman
 | Code | Condition |
 |---|---|
 | `VF_TILE_CONFIG_MISSING` | `tile_config.yaml` not found |
-| `VF_MISSING_DB` | `--db` argument not provided |
+| `VF_INTERFACE_UNKNOWN` | `interface_name` not a registered interface profile |
+| `VF_PROJECT_INTERFACE_REQUIRED` | `interface_name` missing from `project_config.yaml` |
+| `VF_INTERFACE_CHECK_NO_PROFILE` | `--only-check` used with no interface profile configured |
 | `VF_NON_INTERACTIVE_REQUIRES_COMMAND` | `--non-interactive` used without a subcommand |
 | `VF_NON_INTERACTIVE_VIEWER_DISABLED` | `--waves` or `waves` used with `--non-interactive` |
 | `VF_INTERRUPTED` | Process interrupted (Ctrl+C) |
 | `VF_UNHANDLED_EXCEPTION` | Unexpected internal error |
 | `VF_ERROR` | Generic fallback |
 
-### 13.6 `--non-interactive` constraints
+### 13.7 `--non-interactive` constraints
 
 - Disables the TUI (no-argument launch becomes an error).
 - Disables the waveform viewer (`--waves` and `waves` subcommand are blocked).
 - All other commands work normally.
 
-### 13.7 Portability
+### 13.8 Portability
 
 All paths written to `results.json` and `manifest.yaml` are relative to the database root. No OS-specific absolute paths appear in any persistent artifact. A `results.json` produced on Windows is readable without modification on Linux and vice versa.

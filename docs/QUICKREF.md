@@ -14,29 +14,38 @@ cd C:\path\to\your\project
 # Interactive TUI (no arguments)
 veriflow
 
-# Initialize database
-veriflow --db ./database init
-veriflow --db ./database init --force
+# Project Mode — run a project described by veriflow.yaml
+veriflow project run
+veriflow project run --config veriflow.yaml
 
-# Create tile
-veriflow --db ./database create-tile
+# Initialize database
+veriflow db init --db ./database
+veriflow db init --db ./database --force
+
+# Create tile (--top-module required for Semicolab projects)
+veriflow db create-tile --db ./database --top-module my_module
 
 # Full run
-veriflow --db ./database run --tile 0001
+veriflow db run --db ./database --tile 0001
 
 # Run with options
-veriflow --db ./database run --tile 0001 --waves
-veriflow --db ./database run --tile 0001 --skip-synth
-veriflow --db ./database run --tile 0001 --only-check
-veriflow --db ./database run --tile 0001 --skip-sim
+veriflow db run --db ./database --tile 0001 --waves
+veriflow db run --db ./database --tile 0001 --skip-synth
+veriflow db run --db ./database --tile 0001 --only-check
+veriflow db run --db ./database --tile 0001 --skip-sim
 
 # Open waveforms
-veriflow --db ./database waves --tile 0001
-veriflow --db ./database waves --tile 0001 --run run-003
+veriflow db waves --db ./database --tile 0001
+veriflow db waves --db ./database --tile 0001 --run run-003
 
 # Bump version / revision
-veriflow --db ./database bump-version --tile 0001
-veriflow --db ./database bump-revision --tile 0001
+veriflow db bump-version --db ./database --tile 0001
+veriflow db bump-revision --db ./database --tile 0001
+
+# Read-only queries
+veriflow db list-tiles --db ./database
+veriflow db list-runs  --db ./database --tile 0001
+veriflow db show-run   --db ./database --tile 0001 --run run-001
 
 # Run tests
 python -m veriflow.tests.runner
@@ -48,31 +57,33 @@ python -m veriflow.tests.runner
 
 ```bash
 # Recommended automation command (JSON output, no interactive UI)
-veriflow --json --non-interactive --db ./database run --tile 0001
+veriflow --json --non-interactive db run --db ./database --tile 0001
 
 # JSON output only (Rich output suppressed; stdout = JSON)
-veriflow --json --db ./database run --tile 0001
+veriflow --json db run --db ./database --tile 0001
 
 # Non-interactive only (Rich output shown; no TUI or waveform viewer)
-veriflow --non-interactive --db ./database run --tile 0001
+veriflow --non-interactive db run --db ./database --tile 0001
 ```
 
 `--json` and `--non-interactive` are global flags — place them before the subcommand.
 
 Exit code is `0` on success, non-zero on any error.
 
-Every `run` always writes `tiles/<tile_id>/runs/run-NNN/results.json` regardless of flags.
+Every `db run` always writes `tiles/<tile_id>/runs/run-NNN/results.json` regardless of flags.
 
 ---
 
-## Operating Modes
+## Interface profiles
 
-Set in `database/project_config.yaml`. Applies to the entire database.
+Set via `interface_name` in `database/project_config.yaml`. Applies to the entire database.
 
-| Field | Description |
+| Value | Description |
 |---|---|
-| `semicolab: true` | SemiCoLab mode — fixed port convention, connectivity check enabled |
-| `semicolab: false` | Universal mode — any RTL module, no connectivity check |
+| `interface_name: "semicolab"` | Semicolab interface profile — nine-port contract, connectivity check enabled |
+| `interface_name: null` | Generic project — any RTL module, no connectivity check |
+
+Project Mode uses an `interface:` section in `veriflow.yaml` instead (`name: semicolab`, or omit the section for a generic project).
 
 ---
 
@@ -83,16 +94,16 @@ Set in `database/project_config.yaml`. Applies to the entire database.
 
 ---
 
-## Workflow
+## Workflow (Database Mode)
 
 ```
-init → fill project_config.yaml (set semicolab: true or false)
-     → create-tile
-     → fill tile_config.yaml
-     → add RTL to src/rtl/<top_module>.v
-     → write test in src/tb/tb_tile.v between the markers
-     → update run info in tile_config.yaml
-     → run --tile XXXX --waves
+db init → fill project_config.yaml (set id_prefix and interface_name)
+        → db create-tile (--top-module for Semicolab)
+        → fill tile_config.yaml
+        → add RTL to src/rtl/<top_module>.v
+        → edit the self-contained testbench in src/tb/tb_tile.v
+        → update run info in tile_config.yaml
+        → db run --tile XXXX --waves
 ```
 
 ---
@@ -105,51 +116,49 @@ database/config/tile_0001/
 └── src/
     ├── rtl/<top_module>.v  ← user RTL
     └── tb/
-        ├── tb_tile.v       ← write test here between the markers
-        └── tb_tasks.v      ← task library (do not edit, semicolab only)
+        └── tb_tile.v       ← self-contained testbench (whole file is yours)
 ```
 
-> If no `tb_tile.v` is present, simulation is automatically skipped.
+> If no `.v` file is present in `src/tb/`, simulation is automatically skipped.
 
 ---
 
-## Semicolab testbench (tb_tile.v)
+## Testbenches (self-contained)
 
-`tb_tile.v` contains the full testbench wrapper. Write your stimuli between the markers only:
+Testbenches are complete Verilog modules: you (or the generated scaffold) instantiate the DUT, and VeriFlow compiles RTL + TB files together. The testbench top module is selected by `tb_top_module` in `tile_config.yaml` (default `tb`); Project Mode uses `simulation.tb_top`.
+
+**Semicolab scaffold** — `db create-tile` generates `tb_tile.v` with signals, clock/reset, DUT instantiation, `$dumpfile`/`$dumpvars`, and helper tasks already in place. Add stimulus in the marked block; the whole file is editable:
 
 ```verilog
-    // USER TEST STARTS HERE //
+    // ── USER STIMULUS BEGIN ──
     write_data_reg_a(32'd1);
     write_data_reg_b(32'd1);
     @(posedge clk);
     $display("result = %0d", data_reg_c);
-    // USER TEST ENDS HERE //
+    // ── USER STIMULUS END ──
 ```
 
-VeriFlow extracts the code between the markers and injects it at runtime.
-Do not modify the rest of the file (module wrapper, signals, clock, reset, DUT instantiation).
-
----
-
-## Universal testbench (tb_tile.v)
-
-Write a complete testbench. Top module must be named `tb`:
+**Generic scaffold** — minimal skeleton; declare signals and instantiate your DUT yourself:
 
 ```verilog
 `timescale 1ns / 1ps
 module tb;
   // your signals, DUT instantiation and test here
   initial begin
+    $dumpfile("waves.vcd");
+    $dumpvars(0, tb);
+  end
+  initial begin
     $finish;
   end
 endmodule
 ```
 
-> `$dumpfile` / `$dumpvars` are injected automatically if not present.
+> Include `$dumpfile` / `$dumpvars` yourself if you want waveforms.
 
 ---
 
-## Available tasks (semicolab mode only)
+## Tasks in the Semicolab scaffold
 
 | Task | Description |
 |---|---|
@@ -159,7 +168,9 @@ endmodule
 | `reset_csr_in` | Clear bits [15:12] of csr_in |
 | `read_csr_out(data)` | Read csr_out into variable |
 
-**Directly accessible signals:** `clk`, `arst_n`, `csr_in`, `data_reg_a`, `data_reg_b`, `data_reg_c`, `csr_out`, `csr_in_re`, `csr_out_we`
+Defined inside the generated `tb_tile.v` — part of your testbench, editable.
+
+**Semicolab interface signals:** `clk`, `arst_n`, `csr_in`, `data_reg_a`, `data_reg_b`, `data_reg_c`, `csr_out`, `csr_in_re`, `csr_out_we`
 
 ---
 
@@ -169,7 +180,7 @@ endmodule
 |---|---|
 | `PASS` | All executed stages passed |
 | `PARTIAL` | At least one stage was SKIPPED |
-| `FAIL` | Connectivity FAIL or Synthesis FAIL |
+| `FAIL` | Connectivity FAIL, Simulation FAILED, or Synthesis FAIL |
 
 ---
 

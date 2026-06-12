@@ -78,7 +78,7 @@ def cmd_bump_revision(db: Path, tile_number: str) -> None:
         "tile_id": new_tile_id,
         "tile_name": tile_row["tile_name"],
         "tile_author": tile_row["tile_author"],
-        "semicolab": tile_row.get("semicolab", "true"),
+        "interface_name": tile_row.get("interface_name", ""),
         "version": f"{new_version:02d}",
         "revision": f"{new_revision:02d}",
     }

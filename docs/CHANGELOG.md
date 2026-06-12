@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`results.json` schema 1.2** — the boolean `semicolab` field was replaced by `interface_name`: the selected interface profile name (e.g. `"semicolab"`), or `null` when no interface is configured.
+- **`interface_name` replaces the `semicolab` boolean** — `project_config.yaml` now declares `interface_name: "semicolab"` or `interface_name: null` instead of `semicolab: true/false`. The connectivity check is driven by interface profile selection; a missing key fails with `VF_PROJECT_INTERFACE_REQUIRED` and the deprecated `semicolab` key fails with `VF_PROJECT_INTERFACE_CONFIG_LEGACY`.
+- **CSV headers** — `tile_index.csv` now has an `interface_name` column and `records.csv` an `Interface` column (replacing the former `Semicolab` column); both hold the interface profile name, empty for generic projects.
+- **Self-contained testbenches** — testbenches are complete Verilog modules compiled together with the RTL; the testbench top is selected explicitly (`tb_top_module` in Database Mode, `simulation.tb_top` in Project Mode). The runtime marker-extraction/DUT-injection flow (`// USER TEST ... //`, `/* MODULE_INSTANTIATION */`) and automatic `$dumpfile` insertion were removed; `create-tile` now generates a self-contained scaffold from `tb_semicolab_template.v` or `tb_universal_template.v`. Documentation updated accordingly.
+
+### Removed
+
+- **Flat database CLI aliases** — `veriflow --db <path> <command>` forms were removed; all Database Mode commands live under the `veriflow db <command> --db <path>` namespace.
+- **Unused legacy files** — the `RunConfig` model (`models/run_config.py`; run fields live in `tile_config.yaml` / `TileConfig`) and the `ip_tile.v` RTL template were removed.
+
 ### Added
 
 - **`results.json` artifact** — every `run` command writes a machine-readable JSON file to `tiles/<tile_id>/runs/run-NNN/results.json` alongside `manifest.yaml`. Contains schema version, tile/run identifiers, overall status, per-stage results, source file paths, and artifact paths. All paths are relative to the database root (Windows/Linux portable).

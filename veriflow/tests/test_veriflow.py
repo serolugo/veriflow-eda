@@ -573,8 +573,8 @@ def test_semicolab_false_creates_empty_tb():
         shutil.rmtree(tmp)
 
 
-def test_semicolab_column_in_tile_index():
-    """tile_index.csv should have semicolab column"""
+def test_interface_name_column_in_tile_index():
+    """tile_index.csv should have interface_name column"""
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
@@ -582,14 +582,15 @@ def test_semicolab_column_in_tile_index():
         _make_tile(db)
         from veriflow.core.csv_store import get_tile_row
         row = get_tile_row(db / "tile_index.csv", "0001")
-        assert "semicolab" in row, "semicolab column missing from tile_index"
-        assert row["semicolab"] == "true"
+        assert "interface_name" in row, "interface_name column missing from tile_index"
+        assert "semicolab" not in row
+        assert row["interface_name"] == "semicolab"
     finally:
         shutil.rmtree(tmp)
 
 
-def test_semicolab_column_in_records():
-    """records.csv should have Semicolab column after a run"""
+def test_interface_column_in_records():
+    """records.csv should have Interface column after a run"""
     import csv
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -603,8 +604,9 @@ def test_semicolab_column_in_records():
         cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
         rows = list(csv.DictReader((db / "records.csv").read_text(encoding="utf-8").splitlines()))
         assert len(rows) == 1
-        assert "Semicolab" in rows[0], "Semicolab column missing from records"
-        assert rows[0]["Semicolab"] == "true"
+        assert "Interface" in rows[0], "Interface column missing from records"
+        assert "Semicolab" not in rows[0]
+        assert rows[0]["Interface"] == "semicolab"
     finally:
         shutil.rmtree(tmp)
 
@@ -754,7 +756,7 @@ def test_cli_normal_no_json_flag():
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
-        rc = main(["--db", str(db), "run", "--tile", "0001",
+        rc = main(["db", "run", "--db", str(db), "--tile", "0001",
                    "--skip-check", "--skip-sim", "--skip-synth"])
         assert rc == 0
     finally:
@@ -776,15 +778,15 @@ def test_cli_json_run_success():
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = main(["--json", "--db", str(db), "run", "--tile", "0001",
+            rc = main(["--json", "db", "run", "--db", str(db), "--tile", "0001",
                        "--skip-check", "--skip-sim", "--skip-synth"])
 
         assert rc == 0
         data = json.loads(buf.getvalue())
         assert data["status"] == "SUCCESS"
-        assert data["command"] == "run"
+        assert data["command"] == "db run"
         assert "run_result" in data
-        assert data["run_result"]["schema_version"] == "1.1"
+        assert data["run_result"]["schema_version"] == "1.2"
         assert "stages" in data["run_result"]
     finally:
         shutil.rmtree(tmp)
@@ -800,7 +802,7 @@ def test_cli_json_veriflow_error():
         db.mkdir()
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = main(["--json", "--db", str(db), "run", "--tile", "0001"])
+            rc = main(["--json", "db", "run", "--db", str(db), "--tile", "0001"])
         assert rc != 0
         data = json.loads(buf.getvalue())
         assert data["status"] == "ERROR"
@@ -823,7 +825,7 @@ def test_cli_json_unhandled_exception():
         with contextlib.redirect_stdout(buf):
             with patch("veriflow.commands.init_db.cmd_init",
                        side_effect=RuntimeError("synthetic failure")):
-                rc = main(["--json", "--db", str(db), "init"])
+                rc = main(["--json", "db", "init", "--db", str(db)])
         assert rc == 1
         data = json.loads(buf.getvalue())
         assert data["status"] == "ERROR"
@@ -846,7 +848,7 @@ def test_run_context_property_paths():
         run_id="run-001",
         tile_dir=tile_dir,
         run_dir=run_dir,
-        semicolab=True,
+        interface_name="semicolab",
         skip_connectivity=False,
         skip_sim=False,
         skip_synth=False,
@@ -870,7 +872,7 @@ def test_run_context_uses_pathlib():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
     for prop in (ctx.src_dir, ctx.out_dir, ctx.sim_dir, ctx.synth_dir,
@@ -889,7 +891,7 @@ def test_run_context_no_file_creation():
             db_path=tmp, tile_id="X", run_id="run-001",
             tile_dir=tmp / "tiles" / "X",
             run_dir=run_dir,
-            semicolab=True, skip_connectivity=False,
+            interface_name="semicolab", skip_connectivity=False,
             skip_sim=False, skip_synth=False,
         )
         _ = ctx.src_dir
@@ -979,7 +981,7 @@ def test_api_run_tile_returns_dict():
             skip_connectivity=True, skip_sim=True, skip_synth=True,
         )
         assert isinstance(result, dict), f"Expected dict, got {type(result)}"
-        assert result["schema_version"] == "1.1"
+        assert result["schema_version"] == "1.2"
         assert "stages" in result
     finally:
         shutil.rmtree(tmp)
@@ -1058,8 +1060,8 @@ def test_cli_non_interactive_run_succeeds():
         _fill_tile_config(db, "0001", "my_tile")
         _fill_run_config(db, "0001")
         rc = main([
-            "--db", str(db), "--non-interactive",
-            "run", "--tile", "0001",
+            "--non-interactive",
+            "db", "run", "--db", str(db), "--tile", "0001",
             "--skip-check", "--skip-sim", "--skip-synth",
         ])
         assert rc == 0
@@ -1075,7 +1077,7 @@ def test_cli_non_interactive_waves_command_rejected():
     try:
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            rc = main(["--db", str(tmp), "--non-interactive", "waves", "--tile", "0001"])
+            rc = main(["--non-interactive", "db", "waves", "--db", str(tmp), "--tile", "0001"])
         assert rc == 2
         assert "Waveform viewer" in buf.getvalue()
     finally:
@@ -1090,7 +1092,7 @@ def test_cli_non_interactive_run_waves_rejected():
     try:
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            rc = main(["--db", str(tmp), "--non-interactive", "run", "--tile", "0001", "--waves"])
+            rc = main(["--non-interactive", "db", "run", "--db", str(tmp), "--tile", "0001", "--waves"])
         assert rc == 2
         assert "Waveform viewer" in buf.getvalue()
     finally:
@@ -1198,7 +1200,7 @@ def _make_ctx_conn(skip_connectivity: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=True, skip_connectivity=skip_connectivity,
+        interface_name="semicolab", skip_connectivity=skip_connectivity,
         skip_sim=True, skip_synth=True,
     )
 
@@ -1231,7 +1233,7 @@ def test_connectivity_fail_still_finalizes_run():
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        _fill_project_config(db)  # semicolab=True by default
+        _fill_project_config(db)  # interface_name: "semicolab" by default
         _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
@@ -1244,7 +1246,7 @@ def test_connectivity_fail_still_finalizes_run():
                 skip_check=False, skip_sim=True, skip_synth=True,
             )
 
-        assert result["schema_version"] == "1.1"
+        assert result["schema_version"] == "1.2"
         assert result["stages"]["connectivity"]["status"] == "FAIL"
 
         from veriflow.core.csv_store import get_tile_row
@@ -1254,7 +1256,7 @@ def test_connectivity_fail_still_finalizes_run():
         )
         assert results_path.exists(), "results.json must exist even after connectivity FAIL"
         data = json.loads(results_path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
         assert data["stages"]["connectivity"]["status"] == "FAIL"
     finally:
         shutil.rmtree(tmp)
@@ -1270,7 +1272,7 @@ def _make_ctx(skip_synth: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=True, skip_synth=skip_synth,
     )
 
@@ -1402,7 +1404,7 @@ def _make_ctx_sim(skip_sim: bool = True) -> "RunContext":
     return RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=skip_sim, skip_synth=True,
     )
 
@@ -1438,7 +1440,7 @@ def test_simulation_stage_skipped_no_tb():
 
 
 def test_results_json_schema_version():
-    """results.json schema_version must remain 1.1 and stages structure unchanged."""
+    """results.json schema_version is 1.2 and stages structure unchanged."""
     import json
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -1450,12 +1452,12 @@ def test_results_json_schema_version():
         _fill_run_config(db, "0001")
         from veriflow.commands.run import cmd_run
         result = cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
-        assert result["schema_version"] == "1.1"
+        assert result["schema_version"] == "1.2"
         from veriflow.core.csv_store import get_tile_row
         row = get_tile_row(db / "tile_index.csv", "0001")
         results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
         data = json.loads(results_path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
         assert "stages" in data
         assert "simulation" in data["stages"]
         assert "synthesis" in data["stages"]
@@ -1519,7 +1521,7 @@ def test_build_default_pipeline_uses_profile_tool_labels():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
     results = runner.run(ctx)
@@ -1808,7 +1810,7 @@ def test_build_default_pipeline_uses_registry_backends():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
     results = runner.run(ctx)
@@ -2140,7 +2142,7 @@ def test_simulation_stage_passes_tb_top_to_backend():
         assert call_kwargs.kwargs["tb_top"] == "my_testbench"
         assert "tb_base_path" not in call_kwargs.kwargs
         assert "tb_tasks_path" not in call_kwargs.kwargs
-        assert "semicolab" not in call_kwargs.kwargs
+        assert "interface_name" not in call_kwargs.kwargs
     finally:
         shutil.rmtree(tmp)
 
@@ -2154,7 +2156,7 @@ def test_stage_context_paths_unchanged_after_migration():
     ctx = RunContext(
         db_path=db, tile_id="X", run_id="run-001",
         tile_dir=tile_dir, run_dir=run_dir,
-        semicolab=False, skip_connectivity=True,
+        interface_name=None, skip_connectivity=True,
         skip_sim=True, skip_synth=True,
     )
     log_file = run_dir / "out" / "synth" / "logs" / "synth.log"
@@ -2667,8 +2669,8 @@ def test_simulation_stage_passes_all_rtl_and_tb_sources():
         shutil.rmtree(tmp)
 
 
-def test_simulation_stage_does_not_consult_ctx_semicolab():
-    """SimulationStage must not read ctx.semicolab; it is platform-neutral."""
+def test_simulation_stage_does_not_consult_ctx_interface_name():
+    """SimulationStage must not read ctx.interface_name; it is interface-neutral."""
     from unittest.mock import MagicMock, PropertyMock
     from veriflow.core.stages.simulation import SimulationStage
     from veriflow.core.backends.base import SimulationBackend
@@ -2687,12 +2689,12 @@ def test_simulation_stage_does_not_consult_ctx_semicolab():
         ctx = MagicMock()
         ctx.skip_sim = False
         ctx.sim_dir = tmp / "sim"
-        # Remove semicolab attribute to verify stage doesn't access it
-        del ctx.semicolab
+        # Remove interface_name attribute to verify stage doesn't access it
+        del ctx.interface_name
         stage.run(StageInput(design=design, context=ctx))
-        # If we got here without AttributeError, semicolab was not accessed
+        # If we got here without AttributeError, interface_name was not accessed
         call_kwargs = mock_backend.run_simulation.call_args
-        assert "semicolab" not in call_kwargs.kwargs
+        assert "interface_name" not in call_kwargs.kwargs
     finally:
         shutil.rmtree(tmp)
 
@@ -3040,7 +3042,7 @@ def test_cmd_run_connectivity_still_uses_semicolab_interface_profile():
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        _fill_project_config(db)  # semicolab=True
+        _fill_project_config(db)  # interface_name: "semicolab"
         _make_tile(db)
         _add_rtl(db, "0001", "my_tile")
         _fill_tile_config(db, "0001", "my_tile")
@@ -3084,7 +3086,7 @@ def test_create_tile_semicolab_requires_top_module():
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        _fill_project_config(db)  # semicolab=True by default
+        _fill_project_config(db)  # interface_name: "semicolab" by default
         raised = False
         try:
             cmd_create_tile(db)  # no top_module → must fail for Semicolab
@@ -3103,7 +3105,7 @@ def test_create_tile_semicolab_whitespace_top_module_rejected():
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
-        _fill_project_config(db)  # semicolab=True
+        _fill_project_config(db)  # interface_name: "semicolab"
         raised = False
         try:
             cmd_create_tile(db, top_module="   ")
@@ -3522,8 +3524,8 @@ def test_cmd_create_tile_unknown_interface_raises_before_files():
 
 # F. Artifact compatibility
 
-def test_results_json_semicolab_field_is_boolean():
-    """results.json['semicolab'] must remain a boolean (not a string or missing)."""
+def test_results_json_interface_name_is_profile_name():
+    """results.json['interface_name'] is the selected profile name; no semicolab boolean."""
     import json
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -3535,19 +3537,20 @@ def test_results_json_semicolab_field_is_boolean():
         _fill_run_config(db, "0001")
         from veriflow.commands.run import cmd_run
         result = cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
-        assert isinstance(result["semicolab"], bool), "semicolab in return dict must be bool"
+        assert result["interface_name"] == "semicolab"
+        assert "semicolab" not in result
         from veriflow.core.csv_store import get_tile_row
         row = get_tile_row(db / "tile_index.csv", "0001")
         results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
         data = json.loads(results_path.read_text(encoding="utf-8"))
-        assert isinstance(data["semicolab"], bool), "results.json semicolab must be bool"
-        assert data["semicolab"] is True
+        assert data["interface_name"] == "semicolab"
+        assert "semicolab" not in data
     finally:
         shutil.rmtree(tmp)
 
 
-def test_results_json_schema_version_unchanged_after_refactor():
-    """results.json schema_version must remain '1.1' after the interface_name refactor."""
+def test_results_json_schema_version_is_1_2():
+    """results.json schema_version is '1.2' after the interface_name refactor."""
     import json
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -3563,13 +3566,13 @@ def test_results_json_schema_version_unchanged_after_refactor():
         row = get_tile_row(db / "tile_index.csv", "0001")
         results_path = db / "tiles" / row["tile_id"] / "runs" / "run-001" / "results.json"
         data = json.loads(results_path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "1.1"
+        assert data["schema_version"] == "1.2"
     finally:
         shutil.rmtree(tmp)
 
 
-def test_records_csv_semicolab_field_is_true_false_string():
-    """CSV Semicolab field must be the string 'true' or 'false', not a boolean."""
+def test_records_csv_interface_field_is_profile_name():
+    """CSV Interface field carries the selected interface profile name."""
     import csv, yaml
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -3583,14 +3586,13 @@ def test_records_csv_semicolab_field_is_true_false_string():
         cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
         rows = list(csv.DictReader((db / "records.csv").read_text(encoding="utf-8").splitlines()))
         assert len(rows) == 1
-        assert rows[0]["Semicolab"] in ("true", "false"), "Semicolab CSV field must be 'true' or 'false'"
-        assert rows[0]["Semicolab"] == "true"
+        assert rows[0]["Interface"] == "semicolab"
     finally:
         shutil.rmtree(tmp)
 
 
-def test_records_csv_generic_project_semicolab_is_false_string():
-    """Generic project (interface_name: null) writes Semicolab='false' to CSV."""
+def test_records_csv_generic_project_interface_is_empty():
+    """Generic project (interface_name: null) writes an empty Interface to CSV."""
     import csv, yaml
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -3604,7 +3606,7 @@ def test_records_csv_generic_project_semicolab_is_false_string():
         from veriflow.commands.run import cmd_run
         cmd_run(db=db, tile_number="0001", skip_check=True, skip_sim=True, skip_synth=True)
         rows = list(csv.DictReader((db / "records.csv").read_text(encoding="utf-8").splitlines()))
-        assert rows[0]["Semicolab"] == "false"
+        assert rows[0]["Interface"] == ""
     finally:
         shutil.rmtree(tmp)
 
@@ -3683,8 +3685,8 @@ ALL_TESTS = [
     ("manifest_custom_serializer",      test_manifest_custom_serializer),
     ("semicolab_true_creates_tb_tile_v",  test_semicolab_true_creates_tb_tile_v),
     ("semicolab_false_creates_empty_tb", test_semicolab_false_creates_empty_tb),
-    ("semicolab_column_in_tile_index",   test_semicolab_column_in_tile_index),
-    ("semicolab_column_in_records",      test_semicolab_column_in_records),
+    ("interface_name_column_in_tile_index", test_interface_name_column_in_tile_index),
+    ("interface_column_in_records",      test_interface_column_in_records),
     ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),
     ("launch_waves_local_uses_surfer_native", test_launch_waves_local_uses_surfer_native),
     ("launch_waves_local_without_surfer_prints_hint", test_launch_waves_local_without_surfer_prints_hint),
@@ -3812,7 +3814,7 @@ ALL_TESTS = [
     ("simulation_stage_rejects_whitespace_only_tb_top",     test_simulation_stage_rejects_whitespace_only_tb_top),
     ("simulation_stage_passes_explicit_tb_top_to_backend",  test_simulation_stage_passes_explicit_tb_top_to_backend),
     ("simulation_stage_passes_all_rtl_and_tb_sources",      test_simulation_stage_passes_all_rtl_and_tb_sources),
-    ("simulation_stage_does_not_consult_ctx_semicolab",     test_simulation_stage_does_not_consult_ctx_semicolab),
+    ("simulation_stage_does_not_consult_ctx_interface_name", test_simulation_stage_does_not_consult_ctx_interface_name),
     # B. Simulation runner
     ("run_simulation_command_contains_all_rtl_and_tb_files",test_run_simulation_command_contains_all_rtl_and_tb_files),
     ("run_simulation_command_contains_minus_s_tb_top",      test_run_simulation_command_contains_minus_s_tb_top),
@@ -3869,8 +3871,8 @@ ALL_TESTS = [
     ("cmd_create_tile_unknown_interface_raises_before_files",test_cmd_create_tile_unknown_interface_raises_before_files),
     ("cmd_run_missing_interface_raises_required",            test_cmd_run_missing_interface_raises_required),
     ("cmd_create_tile_missing_interface_raises_required",    test_cmd_create_tile_missing_interface_raises_required),
-    ("results_json_semicolab_field_is_boolean",              test_results_json_semicolab_field_is_boolean),
-    ("results_json_schema_version_unchanged_after_refactor", test_results_json_schema_version_unchanged_after_refactor),
-    ("records_csv_semicolab_field_is_true_false_string",     test_records_csv_semicolab_field_is_true_false_string),
-    ("records_csv_generic_project_semicolab_is_false_string",test_records_csv_generic_project_semicolab_is_false_string),
+    ("results_json_interface_name_is_profile_name",          test_results_json_interface_name_is_profile_name),
+    ("results_json_schema_version_is_1_2",                   test_results_json_schema_version_is_1_2),
+    ("records_csv_interface_field_is_profile_name",          test_records_csv_interface_field_is_profile_name),
+    ("records_csv_generic_project_interface_is_empty",       test_records_csv_generic_project_interface_is_empty),
 ]

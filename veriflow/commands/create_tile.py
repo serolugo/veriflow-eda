@@ -181,7 +181,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
         "tile_author": "",
         "version": f"{id_version:02d}",
         "revision": f"{id_revision:02d}",
-        "semicolab": "true" if is_semicolab else "false",
+        "interface_name": interface_name or "",
     })
     print(f"[create-tile] Appended row to tile_index.csv")
 

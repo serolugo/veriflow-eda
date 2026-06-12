@@ -8,7 +8,7 @@ class RunContext:
     run_id: str
     tile_dir: Path
     run_dir: Path
-    semicolab: bool
+    interface_name: str | None
     skip_connectivity: bool
     skip_sim: bool
     skip_synth: bool

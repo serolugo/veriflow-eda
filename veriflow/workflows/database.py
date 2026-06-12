@@ -48,7 +48,7 @@ class DatabaseRunResult:
     run_id: str
     run_dir: Path
     status: str
-    semicolab: bool
+    interface_name: str | None
     stages: dict[str, StageResult]
     sources: dict[str, list[Path]]
     artifacts: dict[str, object]
@@ -66,7 +66,7 @@ class DatabaseTileInfo:
     tile_author: str
     version: str | None = None
     revision: str | None = None
-    semicolab: bool | None = None
+    interface_name: str | None = None
 
 
 @dataclass
@@ -140,7 +140,6 @@ class DatabaseWorkflow:
         tile_config = TileConfig.from_dict(
             yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {}
         )
-        run_config = tile_config  # run fields are merged into tile_config
 
         project_cfg_path = self.db_path / "project_config.yaml"
         project_config = ProjectConfig.from_dict(
@@ -160,8 +159,6 @@ class DatabaseWorkflow:
         # Projects with no interface profile skip connectivity automatically
         if interface_profile is None:
             skip_check = True
-
-        legacy_semicolab = interface_name == "semicolab"
 
         validate_run_inputs(self.db_path, tile_number_str, tile_config)
 
@@ -192,7 +189,7 @@ class DatabaseWorkflow:
             run_id=run_id,
             tile_dir=tile_dir,
             run_dir=runs_dir / run_id,
-            semicolab=legacy_semicolab,
+            interface_name=interface_name,
             skip_connectivity=skip_check,
             skip_sim=skip_sim,
             skip_synth=skip_synth,
@@ -229,7 +226,7 @@ class DatabaseWorkflow:
                 run_id=run_id,
                 tile_dir=tile_dir,
                 run_dir=runs_dir / run_id,
-                semicolab=legacy_semicolab,
+                interface_name=interface_name,
                 skip_connectivity=skip_check,
                 skip_sim=True,
                 skip_synth=skip_synth,
@@ -267,7 +264,7 @@ class DatabaseWorkflow:
         if not skip_check and conn_result == "FAIL":
             data = _finalize_run(
                 ctx=ctx, today_str=today_str,
-                tile_config=tile_config, run_config=run_config,
+                tile_config=tile_config,
                 id_version=id_version, id_revision=id_revision,
                 rtl_files=rtl_files, tb_files=tb_files,
                 conn_result=conn_result, sim_result=sim_result, synth_result=synth_result,
@@ -281,7 +278,7 @@ class DatabaseWorkflow:
                 run_id=run_id,
                 run_dir=run_dir,
                 status=data["status"],
-                semicolab=legacy_semicolab,
+                interface_name=interface_name,
                 stages={
                     "connectivity": _conn_sr,
                     "simulation": StageResult(name="simulation", status="SKIPPED"),
@@ -309,7 +306,7 @@ class DatabaseWorkflow:
         # ── 14. Finalize ──────────────────────────────────────────────────────
         data = _finalize_run(
             ctx=ctx, today_str=today_str,
-            tile_config=tile_config, run_config=run_config,
+            tile_config=tile_config,
             id_version=id_version, id_revision=id_revision,
             rtl_files=rtl_files, tb_files=tb_files,
             conn_result=conn_result, sim_result=sim_result, synth_result=synth_result,
@@ -324,7 +321,7 @@ class DatabaseWorkflow:
             run_id=run_id,
             run_dir=run_dir,
             status=data["status"],
-            semicolab=legacy_semicolab,
+            interface_name=interface_name,
             stages={
                 "connectivity": _conn_sr,
                 "simulation": _sim_sr,
@@ -345,10 +342,6 @@ class DatabaseWorkflow:
         rows = read_tile_index(tile_index_path)
         tiles: list[DatabaseTileInfo] = []
         for row in rows:
-            sc_str = row.get("semicolab", "")
-            semicolab: bool | None = (
-                True if sc_str == "true" else (False if sc_str == "false" else None)
-            )
             tiles.append(DatabaseTileInfo(
                 tile_number=row["tile_number"],
                 tile_id=row["tile_id"],
@@ -356,7 +349,7 @@ class DatabaseWorkflow:
                 tile_author=row.get("tile_author", ""),
                 version=row.get("version") or None,
                 revision=row.get("revision") or None,
-                semicolab=semicolab,
+                interface_name=row.get("interface_name") or None,
             ))
         tiles.sort(key=lambda t: int(t.tile_number))
         return tiles
@@ -436,7 +429,7 @@ class DatabaseWorkflow:
             run_id=data.get("run_id", run_id),
             run_dir=run_dir,
             status=data.get("status", ""),
-            semicolab=bool(data.get("semicolab", False)),
+            interface_name=data.get("interface_name"),
             stages=stages,
             sources=data.get("sources", {}),
             artifacts=data.get("artifacts", {}),
@@ -537,7 +530,6 @@ def _finalize_run(
     ctx: RunContext,
     today_str: str,
     tile_config: TileConfig,
-    run_config: TileConfig,
     id_version: str,
     id_revision: str,
     rtl_files: list[Path],
@@ -575,8 +567,8 @@ def _finalize_run(
         "tile_id": ctx.tile_id,
         "run_id": ctx.run_id,
         "date": today_str,
-        "author": run_config.run_author,
-        "objective": run_config.objective,
+        "author": tile_config.run_author,
+        "objective": tile_config.objective,
         "status": status,
         "tile": {
             "tile_name": tile_config.tile_name,
@@ -616,7 +608,7 @@ def _finalize_run(
     generate_manifest(manifest_data, ctx.manifest_path)
 
     # ── Generate notes.md ─────────────────────────────────────────────────────
-    generate_notes(ctx.tile_id, tile_config, run_config, ctx.notes_path)
+    generate_notes(ctx.tile_id, tile_config, ctx.notes_path)
 
     # ── Regenerate README.md ──────────────────────────────────────────────────
     generate_readme(ctx.tile_id, tile_config, ctx.tile_dir / "README.md")
@@ -639,8 +631,8 @@ def _finalize_run(
         "Tile_ID": ctx.tile_id,
         "Run_ID": ctx.run_id,
         "Date": today_str,
-        "Author": run_config.run_author,
-        "Objective": run_config.objective,
+        "Author": tile_config.run_author,
+        "Objective": tile_config.objective,
         "Status": status,
         "Version": id_version,
         "Revision": id_revision,
@@ -648,10 +640,10 @@ def _finalize_run(
         "Simulation": sim_result,
         "Synthesis": synth_result,
         "Tool_Version": iverilog_version,
-        "Main_Change": run_config.main_change,
+        "Main_Change": tile_config.main_change,
         "Run_Path": run_path_rel,
-        "Tags": run_config.tags,
-        "Semicolab": "true" if ctx.semicolab else "false",
+        "Tags": tile_config.tags,
+        "Interface": ctx.interface_name or "",
     })
 
     # ── Generate summary.md ───────────────────────────────────────────────────
@@ -687,12 +679,12 @@ def _finalize_run(
     }
 
     run_result: dict = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "tile_id": ctx.tile_id,
         "run_id": ctx.run_id,
         "date": today_str,
         "status": status,
-        "semicolab": ctx.semicolab,
+        "interface_name": ctx.interface_name,
         "stages": {
             "connectivity": StageResult(
                 name="connectivity",

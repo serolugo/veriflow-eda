@@ -2,12 +2,14 @@
 VeriFlow V1 — CLI entry point
 
 Usage:
-    veriflow                           → TUI interactiva
-    veriflow --db ./database init [--force]
-    veriflow --db ./database create-tile
-    veriflow --db ./database run --tile XXXX [options]
-    veriflow --db ./database bump-version --tile XXXX
-    veriflow --db ./database bump-revision --tile XXXX
+    veriflow                                       → TUI interactiva
+    veriflow db init --db ./database [--force]
+    veriflow db create-tile --db ./database
+    veriflow db run --db ./database --tile XXXX [options]
+    veriflow db waves --db ./database --tile XXXX
+    veriflow db bump-version --db ./database --tile XXXX
+    veriflow db bump-revision --db ./database --tile XXXX
+    veriflow project run --config veriflow.yaml
 """
 
 import argparse
@@ -35,12 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="VeriFlow — RTL verification and documentation tool",
     )
     parser.add_argument(
-        "--db",
-        required=False,
-        metavar="PATH",
-        help="Path to the VeriFlow database directory",
-    )
-    parser.add_argument(
         "--json",
         action="store_true",
         default=False,
@@ -56,44 +52,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
 
-    # init
-    p_init = sub.add_parser("init", help="Initialize a new database")
-    p_init.add_argument("--force", action="store_true", help="Overwrite existing database")
-
-    # create-tile
-    p_ct = sub.add_parser("create-tile", help="Create a new tile entry")
-    p_ct.add_argument(
-        "--top-module",
-        default="",
-        metavar="NAME",
-        dest="top_module",
-        help="RTL top module name (required for Semicolab projects)",
-    )
-
-    # run
-    p_run = sub.add_parser("run", help="Run the verification pipeline")
-    p_run.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
-    p_run.add_argument("--skip-check",  action="store_true", help="Skip connectivity check")
-    p_run.add_argument("--skip-sim",    action="store_true", help="Skip simulation")
-    p_run.add_argument("--skip-synth",  action="store_true", help="Skip synthesis")
-    p_run.add_argument("--only-check",  action="store_true", help="Run connectivity check only")
-    p_run.add_argument("--only-sim",    action="store_true", help="Run simulation only")
-    p_run.add_argument("--only-synth",  action="store_true", help="Run synthesis only")
-    p_run.add_argument("--waves",       action="store_true", help="Launch waveform viewer after simulation")
-
-    # bump-version
-    p_bv = sub.add_parser("bump-version", help="Increment tile version")
-    p_bv.add_argument("--tile", required=True, metavar="XXXX", help="Tile number")
-
-    # waves
-    p_waves = sub.add_parser("waves", help="Open waveform viewer for a tile run")
-    p_waves.add_argument("--tile", required=True, metavar="XXXX", help="Tile number")
-    p_waves.add_argument("--run",  default=None,  metavar="run-NNN", help="Run ID (default: latest)")
-
-    # bump-revision
-    p_br = sub.add_parser("bump-revision", help="Increment tile revision")
-    p_br.add_argument("--tile", required=True, metavar="XXXX", help="Tile number")
-
     # project (Project Mode — does not require --db)
     p_project = sub.add_parser("project", help="Project Mode commands")
     project_sub = p_project.add_subparsers(dest="project_command")
@@ -105,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to project config file (default: veriflow.yaml)",
     )
 
-    # db (Database Mode namespace — mirrors legacy flat commands under a clear prefix)
+    # db (Database Mode namespace)
     p_db = sub.add_parser("db", help="Database Mode commands")
     db_sub = p_db.add_subparsers(dest="db_command")
 
@@ -120,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         metavar="NAME",
         dest="top_module",
-        help="RTL top module name (required for Semicolab projects)",
+        help="RTL top module name (required for Semicolab interface scaffolding)",
     )
 
     p_db_run = db_sub.add_parser("run", help="Run the verification pipeline")
@@ -187,19 +145,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[ERROR] {err}", file=sys.stderr)
         return err.exit_code
 
-    _DB_COMMANDS = {"init", "create-tile", "run", "bump-version", "waves", "bump-revision"}
-    if not args.db and args.command in _DB_COMMANDS:
-        if json_mode:
-            _emit_json({
-                "status": "ERROR",
-                "error": {"code": "VF_MISSING_DB", "message": "--db argument is required"},
-            })
-            return 1
-        parser.print_help()
-        return 1
-
-    db: Path | None = Path(args.db) if args.db else None
-
     # In JSON mode:
     #   • console.quiet suppresses Rich output (public API — no private attributes).
     #   • redirect_stdout(stderr) catches any plain print() calls inside commands.
@@ -226,59 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_result: dict | None = None
                 db_read_result: dict | None = None
 
-                if args.command == "init":
-                    dispatched = True
-                    from veriflow.commands.init_db import cmd_init
-                    cmd_init(db, force=args.force)
-
-                elif args.command == "create-tile":
-                    dispatched = True
-                    from veriflow.commands.create_tile import cmd_create_tile
-                    cmd_create_tile(db, top_module=args.top_module)
-
-                elif args.command == "run":
-                    if non_interactive and args.waves:
-                        raise VeriFlowError(
-                            "Waveform viewer cannot be launched in non-interactive mode",
-                            code="VF_NON_INTERACTIVE_VIEWER_DISABLED",
-                            exit_code=2,
-                        )
-                    dispatched = True
-                    from veriflow.commands.run import cmd_run
-                    run_result = cmd_run(
-                        db=db,
-                        tile_number=args.tile,
-                        skip_check=args.skip_check,
-                        skip_sim=args.skip_sim,
-                        skip_synth=args.skip_synth,
-                        only_check=args.only_check,
-                        only_sim=args.only_sim,
-                        only_synth=args.only_synth,
-                        waves=args.waves,
-                    )
-
-                elif args.command == "bump-version":
-                    dispatched = True
-                    from veriflow.commands.bump_version import cmd_bump_version
-                    cmd_bump_version(db, tile_number=args.tile)
-
-                elif args.command == "waves":
-                    if non_interactive:
-                        raise VeriFlowError(
-                            "Waveform viewer cannot be launched in non-interactive mode",
-                            code="VF_NON_INTERACTIVE_VIEWER_DISABLED",
-                            exit_code=2,
-                        )
-                    dispatched = True
-                    from veriflow.commands.waves import cmd_waves
-                    cmd_waves(db, tile_number=args.tile, run_id=args.run)
-
-                elif args.command == "bump-revision":
-                    dispatched = True
-                    from veriflow.commands.bump_revision import cmd_bump_revision
-                    cmd_bump_revision(db, tile_number=args.tile)
-
-                elif args.command == "project":
+                if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
                     if project_cmd == "run":
                         dispatched = True
@@ -407,10 +300,6 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload["run_result"] = run_result
                         elif db_read_result is not None:
                             result_payload.update(db_read_result)
-                    else:
-                        result_payload = {"status": "SUCCESS", "command": args.command}
-                        if args.command == "run" and run_result is not None:
-                            result_payload["run_result"] = run_result
 
             except VeriFlowError as e:
                 if json_mode:

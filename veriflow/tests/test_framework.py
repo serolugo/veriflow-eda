@@ -468,13 +468,13 @@ def test_run_context_satisfies_stage_context_attributes(tmp_path):
         tile_id="T", run_id="run-001",
         tile_dir=tmp_path,
         run_dir=tmp_path / "runs" / "run-001",
-        semicolab=False,
+        interface_name=None,
         skip_connectivity=False,
         skip_sim=False,
         skip_synth=False,
     )
     assert hasattr(ctx, "run_dir")
-    assert hasattr(ctx, "semicolab")
+    assert hasattr(ctx, "interface_name")
     assert hasattr(ctx, "skip_connectivity")
     assert hasattr(ctx, "skip_sim")
     assert hasattr(ctx, "skip_synth")
@@ -490,7 +490,7 @@ def test_run_context_log_rel_without_db_path(tmp_path):
         tile_id="X", run_id="run-001",
         tile_dir=tmp_path,
         run_dir=tmp_path / "runs" / "run-001",
-        semicolab=False,
+        interface_name=None,
         skip_connectivity=False,
         skip_sim=False,
         skip_synth=False,
@@ -507,7 +507,7 @@ def test_run_context_log_rel_with_db_path(tmp_path):
         tile_id="T", run_id="run-001",
         tile_dir=tile_dir,
         run_dir=run_dir,
-        semicolab=False,
+        interface_name=None,
         skip_connectivity=False,
         skip_sim=False,
         skip_synth=False,
