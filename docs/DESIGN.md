@@ -6,13 +6,19 @@ VeriFlow follows a layered architecture:
 
 ```
 CLI (cli.py)
-    └── Commands (commands/)          ← per-command orchestration
-            ├── Core (core/)          ← reusable logic, no UI
+    └── Commands (commands/)          ← per-command orchestration + presentation
+            ├── Workflows (workflows/)   ← DatabaseWorkflow / ProjectWorkflow
+            ├── Core (core/)             ← reusable logic, stages, backends, no UI
             ├── Generators (generators/) ← file generation
-            └── Models (models/)      ← configuration dataclasses
+            └── Models (models/)         ← configuration dataclasses + profiles
 ```
 
-Communication between layers is unidirectional — commands use core and generators, never the reverse. Errors propagate as `VeriFlowError` and are caught at the CLI entry point.
+Communication between layers is unidirectional — commands use workflows, core, and generators, never the reverse. Errors propagate as `VeriFlowError` and are caught at the CLI entry point.
+
+The execution engines live in `workflows/`:
+
+- **`DatabaseWorkflow`** (`workflows/database.py`) — runs the pipeline for a tile in a database, generates all documentation, and updates the CSVs. `commands/run.py` delegates to it and only handles terminal presentation and wave launching.
+- **`ProjectWorkflow`** (`workflows/project.py`) — runs the pipeline for a `veriflow.yaml` project (Project Mode). See [PROJECT_CONFIG.md](PROJECT_CONFIG.md) for the config schema.
 
 ---
 
@@ -20,7 +26,7 @@ Communication between layers is unidirectional — commands use core and generat
 
 **Responsibility:** Entry point. Parses arguments and dispatches to the correct command.
 
-**Implementation:** `argparse` with subcommands. Catches `VeriFlowError` and prints it as `[ERROR]` with exit code 1. In `--json` mode, errors are serialized to stdout as `{ "status": "ERROR", "error": VeriFlowError.to_dict() }`.
+**Implementation:** `argparse` with two nested subcommand namespaces: `db` (Database Mode) and `project` (Project Mode). Catches `VeriFlowError` and prints it as `[ERROR]` with the error's exit code. In `--json` mode, errors are serialized to stdout as `{ "status": "ERROR", "error": VeriFlowError.to_dict() }`.
 
 ### Global flags
 
@@ -38,14 +44,21 @@ if str(_pkg_root) not in sys.path:
 ```
 
 ### Registered subcommands
+
 | Subcommand | Handler |
 |---|---|
-| `init` | `commands.init_db.cmd_init` |
-| `create-tile` | `commands.create_tile.cmd_create_tile` |
-| `run` | `commands.run.cmd_run` |
-| `waves` | `commands.waves.cmd_waves` |
-| `bump-version` | `commands.bump_version.cmd_bump_version` |
-| `bump-revision` | `commands.bump_revision.cmd_bump_revision` |
+| `project run` | `commands.run_project.cmd_run_project` |
+| `db init` | `commands.init_db.cmd_init` |
+| `db create-tile` | `commands.create_tile.cmd_create_tile` |
+| `db run` | `commands.run.cmd_run` |
+| `db waves` | `commands.waves.cmd_waves` |
+| `db bump-version` | `commands.bump_version.cmd_bump_version` |
+| `db bump-revision` | `commands.bump_revision.cmd_bump_revision` |
+| `db list-tiles` | `commands.db_read.cmd_db_list_tiles` |
+| `db list-runs` | `commands.db_read.cmd_db_list_runs` |
+| `db show-run` | `commands.db_read.cmd_db_show_run` |
+
+All `db` subcommands take a required `--db PATH` flag. Invoking `veriflow` with no arguments launches the TUI.
 
 ---
 
@@ -98,10 +111,10 @@ Scans `runs_dir` for folders matching `run-NNN`. Returns the next ID with 3-digi
 
 ### Expected headers
 ```python
-TILE_INDEX_HEADER = ["tile_number", "tile_id", "tile_name", "tile_author", "version", "revision"]
+TILE_INDEX_HEADER = ["tile_number", "tile_id", "tile_name", "tile_author", "version", "revision", "interface_name"]
 RECORDS_HEADER    = ["Tile_ID", "Run_ID", "Date", "Author", "Objective", "Status",
                      "Version", "Revision", "Connectivity", "Simulation", "Synthesis",
-                     "Tool_Version", "Main_Change", "Run_Path", "Tags"]
+                     "Tool_Version", "Main_Change", "Run_Path", "Tags", "Interface"]
 ```
 
 ### Main functions
@@ -154,43 +167,25 @@ Runs `iverilog -V` and parses the version using `log_parser.parse_iverilog_versi
 
 ## 9. Module: `core/sim_runner.py`
 
-**Responsibility:** Testbench injection, connectivity check, and simulation.
+**Responsibility:** Interface/connectivity check, simulation, and waveform viewer launching. Testbenches are self-contained — there is no injection or marker extraction.
 
-### Constants
-```python
-USER_TEST_PLACEHOLDER   = "/* USER_TEST */"
-MODULE_INST_PLACEHOLDER = "/* MODULE_INSTANTIATION */"
-```
+### `_build_interface_check_wrapper(top_module, interface_profile) → str`
+Generates a minimal Verilog elaboration wrapper from an `InterfaceProfile`: one signal per declared port (using the profile's width and direction), plus a named-port instantiation of `top_module`. The wrapper contains no clock behaviour, reset, tasks, stimulus, or user test content.
 
-### `_build_dut_inst(top_module) → str`
-Generates the DUT instantiation string with the fixed ports from the VeriFlow port convention.
+Diagnostic limitation: elaboration backends report port-not-found errors when a declared port is absent from the DUT, but do not flag DUT ports missing from the profile — the profile is a declared set of connections, not a complete enumeration of the DUT's interface.
 
-### `_read_user_test(tb_files) → str`
-Reads the `src/tb/` files and extracts content between `// USER TEST STARTS HERE //` and `// USER TEST ENDS HERE //` markers. If markers are not present, uses the full file content stripping `timescale`, `module`, and `endmodule`.
+### `run_connectivity_check(rtl_files, interface_profile, top_module, log_path) → str`
+Compiles only the RTL sources plus the generated wrapper with iverilog (output discarded to `/dev/null` or `NUL`). Does not read or compile user testbench files. Returns `"PASS"` or `"FAIL"`.
 
-### `_inject_tb(tb_base_path, top_module, tb_files) → Path`
-1. Reads `tb_tile.v` (the user-facing copy of `tb_base.v`)
-2. Replaces `MODULE_INST_PLACEHOLDER` with the generated DUT
-3. Extracts user test code from `tb_tile.v` itself (between `// USER TEST STARTS HERE //` markers)
-4. Replaces `USER_TEST_PLACEHOLDER` with the extracted code
-5. Writes to a temporary file (`tempfile.NamedTemporaryFile`)
-6. Returns the temporary file path
+### `run_simulation(rtl_files, tb_files, tb_top, sim_log_path, wave_path) → tuple[str, dict]`
+1. Compiles all `rtl_files` and `tb_files` together with `iverilog -s <tb_top>` — the testbench top module is selected explicitly; no temp TB sources, no hidden helpers
+2. Compiles into a temp directory without spaces (`tempfile.mkdtemp()`) to avoid Windows path issues
+3. Runs `vvp` from `wave_path.parent` so `$dumpfile("waves.vcd")` lands in the correct location
+4. Returns `("COMPLETED"|"FAILED", {sim_time, seed})`
 
-### `_prepare_universal_tb(tb_files) → Path`
-Universal mode variant: reads `tb_tile.v`, calls `_ensure_dumpfile` to inject `$dumpfile`/`$dumpvars` if absent, writes to a temp file.
-
-### `run_connectivity_check(...) → str`
-Compiles with iverilog using no output file (`/dev/null` or `NUL`). Uses `_inject_tb` without TB files (only verifies DUT connectivity). Returns `"PASS"` or `"FAIL"`.
+VeriFlow does not insert `$dumpfile`/`$dumpvars` — the testbench (or the generated scaffold) must contain them for waveforms to be captured.
 
 **Windows fix:** Uses `.as_posix()` on all paths for subprocess calls.
-
-### `run_simulation(...) → tuple[str, dict]`
-Branches on `semicolab` flag:
-- **SemiCoLab**: calls `_inject_tb`; excludes `tb_tasks.v` and `tb_tile.v` from `tb_files` (already handled by the wrapper)
-- **Universal**: calls `_prepare_universal_tb`
-1. Compiles into a temp directory without spaces (`tempfile.mkdtemp()`) to avoid Windows path issues
-2. Runs `vvp` from `wave_path.parent` so `$dumpfile("waves.vcd")` lands in the correct location
-3. Returns `("COMPLETED"|"FAILED", {sim_time, seed})`
 
 ### `open_surfer(wave_path)`
 Docker mode only. Constructs `http://localhost:7681/?load_url=<vcd_url>` where `<vcd_url>` is the VCD resolved relative to `/workspace`. Prints the URL and calls `webbrowser.open()` as best-effort. Handles VCDs outside `/workspace` gracefully (opens Surfer without preloading).
@@ -243,9 +238,9 @@ Searches for `"Icarus Verilog version X.Y"` in `iverilog -V` output.
 
 ## 12. Module: `models/`
 
-Three dataclasses with a `from_dict` classmethod that uses `.get()` with default `""` for all fields. All `None` values are normalized to `""`.
+Configuration dataclasses with `from_dict` classmethods.
 
-### `ProjectConfig`
+### `ProjectConfig` (Database Mode `project_config.yaml`)
 ```python
 @dataclass
 class ProjectConfig:
@@ -253,11 +248,13 @@ class ProjectConfig:
     project_name: str
     repo: str
     description: str
-    semicolab: bool = True   # false → Universal mode; parsed with string normalization
+    interface_name: str | None = None   # None → generic project, no connectivity check
 ```
 
+`from_dict` requires the `interface_name` key to be present (`VF_PROJECT_INTERFACE_REQUIRED` if missing) and rejects the deprecated `semicolab` key (`VF_PROJECT_INTERFACE_CONFIG_LEGACY`). An empty or whitespace string normalizes to `None`.
+
 ### `TileConfig`
-Merged model — contains both tile fields (permanent) and run fields (updated each run):
+Merged model — contains both tile fields (permanent) and run fields (updated each run). This is the only per-tile config model; there is no separate run-config model:
 ```python
 @dataclass
 class TileConfig:
@@ -265,6 +262,7 @@ class TileConfig:
     tile_name: str
     tile_author: str
     top_module: str
+    tb_top_module: str    # testbench top module name, defaults to "tb"
     description: str
     ports: str
     usage_guide: str
@@ -277,6 +275,39 @@ class TileConfig:
     notes: str
 ```
 
+### `InterfaceProfile` / interface registry (`models/interface_profile.py`)
+`InterfaceProfile` is a frozen dataclass: `name`, `description`, and a tuple of `InterfacePort(name, direction, width)`. The registry exposes:
+
+| Function | Description |
+|---|---|
+| `get_interface_profile(name)` | Profile for `name`; `None` for `name=None` (generic); `VF_INTERFACE_UNKNOWN` for unregistered names |
+| `list_interface_profile_names()` | Registered names in stable order |
+| `list_interface_profiles()` | Fresh profile instances |
+| `has_interface_profile(name)` | Membership check |
+| `default_interface_profile()` | Always `None` — projects must opt in explicitly |
+
+The built-in profile is `semicolab` — the nine-port structural contract required by the Semicolab harness (see section 19).
+
+### `RunContext` (`models/run_context.py`)
+Per-run execution context passed to pipeline stages:
+```python
+@dataclass
+class RunContext:
+    tile_id: str
+    run_id: str
+    tile_dir: Path
+    run_dir: Path
+    interface_name: str | None
+    skip_connectivity: bool
+    skip_sim: bool
+    skip_synth: bool
+    db_path: Path | None = None
+```
+Provides derived path properties (`src_dir`, `out_dir`, `sim_dir`, `synth_dir`, `impl_dir`, `manifest_path`, `summary_path`, `notes_path`, `results_path`) and `log_rel()` for database-relative log paths.
+
+### `StageResult` (`models/stage_result.py`)
+Uniform per-stage result: `name`, `status`, `tool`, `log_paths`, `artifacts`, `metrics`, `error`. `to_dict()` produces the stage dictionaries persisted in `results.json`.
+
 ---
 
 ## 13. Module: `generators/readme.py`
@@ -288,8 +319,8 @@ Generates `README.md` with fields from `tile_config`. Called in `create-tile` (w
 
 ## 14. Module: `generators/notes.py`
 
-### `generate_notes(tile_id, tile_config, run_config, output_path)`
-Generates `notes.md` with the `notes` field from `run_config`. Generated once per run.
+### `generate_notes(tile_id, tile_config, output_path)`
+Generates `notes.md` with the `notes` field from `tile_config`. Generated once per run.
 
 ---
 
@@ -332,22 +363,30 @@ Table format:
 ## 17. Commands
 
 ### `cmd_init(db, force)`
-Creates the full database structure. With `--force` overwrites if it already exists. Creates `.gitkeep` in `tiles/`.
+Creates the full database structure. With `--force` overwrites if it already exists. Writes the `project_config.yaml` template (including `interface_name: "semicolab"` as the starting value). Creates `.gitkeep` in `tiles/`.
 
-### `cmd_create_tile(db)`
-1. Reads `id_prefix` from `project_config.yaml`
-2. Calculates next `tile_number`
-3. Generates `tile_id` with version=01, revision=01
-4. Creates `config/tile_XXXX/` with `tile_config.yaml` (merged template with comments)
-5. Creates `src/rtl/` and `src/tb/` (with `tb_tile.v` + `tb_tasks.v`)
+### `cmd_create_tile(db, *, top_module="")`
+1. Reads and validates `project_config.yaml` (including `interface_name`)
+2. For Semicolab projects, requires a valid `top_module` (`VF_TILE_TOP_MODULE_REQUIRED` / `VF_TILE_TOP_MODULE_INVALID`)
+3. Calculates next `tile_number` and generates `tile_id` with version=01, revision=01
+4. Creates `config/tile_XXXX/` with `tile_config.yaml` (merged template with comments; `top_module` substituted when provided)
+5. Creates `src/rtl/` and `src/tb/`; generates the self-contained testbench scaffold `tb_tile.v` from the matching template (Semicolab: DUT pre-instantiated; generic: minimal skeleton)
 6. Creates `tiles/<tile_id>/` with README, works/, runs/
-7. Appends to `tile_index.csv`
+7. Appends to `tile_index.csv` (including the `interface_name` column)
 
 ### `cmd_run(db, tile_number, skip_*, only_*, waves)`
-Main pipeline. `--only-*` flags are internally translated to `skip_*` combinations. `validate_tools()` is only called if at least one tool stage will run. See Pipeline section in SPECS.md.
+Thin presentation wrapper: builds `DatabaseRunOptions`, delegates execution to `DatabaseWorkflow.run_tile()`, prints the Rich result summary, and launches the waveform viewer if `--waves` was passed and `waves.vcd` exists. Returns the `run_result` dict (same shape as `results.json`).
+
+`DatabaseWorkflow.run_tile()` (in `workflows/database.py`) performs the actual pipeline: validation, config loading, interface profile resolution (no profile → connectivity skipped automatically; `--only-check` without a profile → `VF_INTERFACE_CHECK_NO_PROFILE`), source copying, stage execution via `PipelineRunner`, and finalization (documentation generation + CSV update).
+
+### `cmd_run_project(config_path) → int`
+Project Mode entry: loads `veriflow.yaml` via `ProjectWorkflowConfig.from_file()`, runs `ProjectWorkflow`, prints the result, and returns the exit code (0 on overall PASS).
 
 ### `cmd_waves(db, tile_number, run_id)`
 Resolves run ID (latest if not specified), verifies `waves.vcd` exists, then calls `launch_waves()`.
+
+### `cmd_db_list_tiles(db)` / `cmd_db_list_runs(db, tile)` / `cmd_db_show_run(db, run_id, tile)`
+Read-only queries over `tile_index.csv` and persisted `results.json` files, backed by `DatabaseWorkflow.list_tiles()`, `list_runs()`, and `load_run_result()`.
 
 ### `cmd_bump_version(db, tile_number)`
 - Increments version, revision unchanged
@@ -363,25 +402,19 @@ Resolves run ID (latest if not specified), verifies `waves.vcd` exists, then cal
 
 ## 18. Verilog Templates
 
-### `ip_tile.v`
-Base RTL template for the user. Defines VeriFlow's fixed port convention. The user implements logic between `// USER LOGIC STARTS HERE //` and `// USER LOGIC ENDS HERE //`.
+Templates are scaffold-time only: `create-tile` copies/instantiates them once into `src/tb/tb_tile.v`, and from then on the file belongs entirely to the user. Nothing is injected at run time.
 
-### `tb_base.v`
-Base testbench. **Owned by VeriFlow — the user never edits it.** Contains two runtime-injected placeholders:
-- `/* MODULE_INSTANTIATION */` — replaced with DUT instantiation
-- `/* USER_TEST */` — replaced with user test code
+### `tb_semicolab_template.v`
+Self-contained testbench scaffold for Semicolab projects. Contains the nine-port signal declarations, clock generation, reset sequence, `$dumpfile`/`$dumpvars`, helper tasks (`write_data_reg_a`, `write_data_reg_b`, `write_csr_in`, `reset_csr_in`, `read_csr_out`), a `/* DUT_MODULE */` placeholder replaced with `--top-module` at scaffold time, and a marked user-stimulus block.
 
-### `tb_tasks.v`
-Task library included inside the `tb` module via `` `include "tb_tasks.v" `` (after signal declarations). Provides: `write_data_reg_a`, `write_data_reg_b`, `write_csr_in`, `reset_csr_in`, `read_csr_out`.
-
-### `tb_base.v` (user-facing copy)
-`tb_base.v` is copied to `config/tile_XXXX/src/tb/tb_tile.v` on `create-tile`. The user writes tests between the `// USER TEST STARTS HERE //` and `// USER TEST ENDS HERE //` markers. The rest of the file is managed by VeriFlow.
+### `tb_universal_template.v`
+Minimal self-contained scaffold for generic projects: an empty `module tb` with `$dumpfile`/`$dumpvars` and an empty stimulus block. The user declares signals and instantiates the DUT.
 
 ---
 
-## 19. Fixed Port Convention
+## 19. Semicolab Interface Profile
 
-All VeriFlow tiles implement exactly these ports:
+Tiles in a Semicolab project (`interface_name: "semicolab"`) implement exactly these ports:
 
 | Port | Direction | Width | Description |
 |---|---|---|---|
@@ -394,6 +427,8 @@ All VeriFlow tiles implement exactly these ports:
 | `csr_out` | output | 16 | Control/Status Register output |
 | `csr_in_re` | output | 1 | CSR input read enable |
 | `csr_out_we` | output | 1 | CSR output write enable |
+
+This contract is defined as the `semicolab` `InterfaceProfile` in `models/interface_profile.py` and enforced by the connectivity check. Generic projects have no port contract.
 
 ---
 
@@ -416,7 +451,6 @@ Styled output helpers using a `rich.console.Console` instance with `VERIFLOW_THE
 | `print_fail_detail(message, log_path)` | Indented failure detail + log path |
 | `print_wave_url(url)` | Styled browser link |
 | `print_ports_table(ports)` | Rich table of port definitions |
-| `print_file_tree(files, root)` | Generated files list |
 
 Status rendering: `PASS` → green bold; `FAIL` → red bold; `RUN` → `···` (secondary); others → secondary color.
 
@@ -455,18 +489,15 @@ class ExecutionProfile:
     simulation_tool: str = "iverilog/vvp"
     synthesis_tool: str = "yosys"
     doc_profile: str = "default"
+    # Internal backend IDs
+    connectivity_backend: str = "icarus"
+    simulation_backend: str = "icarus"
+    synthesis_backend: str = "yosys"
 
 def default_execution_profile() -> ExecutionProfile:
     return ExecutionProfile()
 ```
 
-`build_default_pipeline` accepts an optional `profile` kwarg (defaults to `default_execution_profile()`) and passes it to each stage.  Stages read `profile.connectivity_tool` / `simulation_tool` / `synthesis_tool` for the `tool` field in `StageResult`.  The actual subprocess invocations in `sim_runner.py` and `synth_runner.py` are not affected.
+`build_default_pipeline` accepts an optional `profile` kwarg (defaults to `default_execution_profile()`) and passes it to each stage. Stages read `profile.connectivity_tool` / `simulation_tool` / `synthesis_tool` for the `tool` field in `StageResult`. The `*_backend` IDs select backend instances from the backend registry.
 
-Because the default profile values exactly match the strings previously hardcoded in the stage constructors, this change is fully non-breaking: `StageResult.tool`, `results.json`, and all existing tests are unaffected.
-
-**Design constraints:**
-
-- No YAML config reading.  The profile is constructed in code only.
-- No user-facing profile selection.  There is one profile and it is always the default.
-- No plugin registry or dynamic backend dispatch.
-- Configurable backend selection and alternate tool profiles are explicitly deferred to future work.
+In Database Mode there is one fixed profile. In Project Mode the `execution` section of `veriflow.yaml` may select backend names (today only the defaults are registered). There is no plugin registry or dynamic backend dispatch; alternate backends are future work.

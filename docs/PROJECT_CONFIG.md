@@ -146,9 +146,9 @@ simulation:
 |---|---|
 | `tb_top` | Module name of the testbench top. Required (non-empty) whenever `design.tb_sources` is non-empty. |
 
-Project Mode testbenches are **self-contained**: the files in `tb_sources` must form a complete,
-compilable testbench (including the DUT instantiation). There is no DUT injection and no
-`USER TEST` marker protocol in Project Mode — those are Database Mode (SemiCoLab) features.
+Testbenches are **self-contained** in both modes: the files in `tb_sources` must form a complete,
+compilable testbench (including the DUT instantiation). VeriFlow compiles RTL and TB files
+together and selects the testbench top explicitly — there is no DUT injection or marker protocol.
 
 ### `output` (optional)
 
