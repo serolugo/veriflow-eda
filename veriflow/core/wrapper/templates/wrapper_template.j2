@@ -1,0 +1,12 @@
+// Wrapper:   {{ wrapper_name }}
+// IP:        {{ metadata_name }}
+// Interface: {{ interface_name }}
+// Generated: {{ date }} by veriflow wrap
+module {{ wrapper_name }} (
+{{ port_decls_joined }}
+);
+
+    {{ top_module }} u_{{ top_module }} (
+{{ connections_joined }}
+    );
+{{ assign_block }}endmodule

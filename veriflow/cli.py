@@ -10,6 +10,9 @@ Usage:
     veriflow db bump-version --db ./database --tile XXXX
     veriflow db bump-revision --db ./database --tile XXXX
     veriflow project run --config veriflow.yaml
+    veriflow wrap init --interface <name> --top <module> <rtl_files...>
+    veriflow wrap generate --config wrapper_config.yaml
+    veriflow wrap wizard
 """
 
 import argparse
@@ -117,6 +120,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_sr.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
     p_db_sr.add_argument("--run", required=True, metavar="run-NNN", help="Run ID (e.g. run-001)")
 
+    # wrap (wrapper generation namespace)
+    p_wrap = sub.add_parser("wrap", help="Wrapper generation commands")
+    wrap_sub = p_wrap.add_subparsers(dest="wrap_command")
+
+    p_wrap_init = wrap_sub.add_parser("init", help="Scaffold a wrapper_config.yaml from RTL and interface profile")
+    p_wrap_init.add_argument("--interface", required=True, metavar="NAME", dest="interface", help="Interface profile name")
+    p_wrap_init.add_argument("--top", required=True, metavar="MODULE", dest="top", help="RTL top module name")
+    p_wrap_init.add_argument("rtl_files", nargs="+", metavar="RTL_FILE", help="RTL source files")
+    p_wrap_init.add_argument("--config", default="wrapper_config.yaml", metavar="PATH", help="Output config file path (default: wrapper_config.yaml)")
+    p_wrap_init.add_argument("--wrapper-name", default=None, metavar="NAME", dest="wrapper_name", help="Wrapper module name (default: <top_module>_wrapper)")
+    p_wrap_init.add_argument("--author", default=None, metavar="NAME", help="Metadata author")
+    p_wrap_init.add_argument("--description", default=None, metavar="TEXT", help="Metadata description")
+    p_wrap_init.add_argument("--version", default=None, metavar="VER", dest="version", help="Metadata version")
+    p_wrap_init.add_argument("--force", action="store_true", help="Overwrite config file if it already exists")
+
+    p_wrap_gen = wrap_sub.add_parser("generate", help="Generate wrapper from wrapper_config.yaml")
+    p_wrap_gen.add_argument("--config", default="wrapper_config.yaml", metavar="PATH", help="Path to wrapper_config.yaml (default: wrapper_config.yaml)")
+    p_wrap_gen.add_argument("--out", default=None, metavar="PATH", help="Output directory (default: same directory as config file)")
+
+    p_wrap_wizard = wrap_sub.add_parser("wizard", help="Interactive wrapper configuration wizard")
+    p_wrap_wizard.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite config file if it already exists",
+    )
+
     return parser
 
 
@@ -170,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
                 dispatched = False
                 run_result: dict | None = None
                 db_read_result: dict | None = None
+                wrap_gen_result: dict | None = None
 
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
@@ -277,6 +307,33 @@ def main(argv: list[str] | None = None) -> int:
                             _show = cmd_db_show_run(db, run_id=args.run, tile=args.tile)
                             db_read_result = {"run": _show.to_dict()}
 
+                elif args.command == "wrap":
+                    wrap_cmd = getattr(args, "wrap_command", None)
+                    if wrap_cmd is None:
+                        if json_mode:
+                            error_payload = {
+                                "status": "ERROR",
+                                "error": {
+                                    "code": "VF_UNKNOWN_COMMAND",
+                                    "message": "No wrap subcommand specified",
+                                },
+                            }
+                        else:
+                            parser.print_help()
+                        exit_code = 1
+                    elif wrap_cmd == "init":
+                        dispatched = True
+                        from veriflow.commands.wrap_init import cmd_wrap_init
+                        exit_code = cmd_wrap_init(args)
+                    elif wrap_cmd == "generate":
+                        dispatched = True
+                        from veriflow.commands.wrap_generate import cmd_wrap_generate
+                        exit_code, wrap_gen_result = cmd_wrap_generate(args)
+                    elif wrap_cmd == "wizard":
+                        dispatched = True
+                        from veriflow.commands.wrap_wizard import cmd_wrap_wizard
+                        exit_code = cmd_wrap_wizard(args)
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -300,6 +357,12 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload["run_result"] = run_result
                         elif db_read_result is not None:
                             result_payload.update(db_read_result)
+                    elif args.command == "wrap":
+                        _wrap_cmd = getattr(args, "wrap_command", None)
+                        if _wrap_cmd == "generate" and wrap_gen_result is not None:
+                            result_payload = wrap_gen_result
+                        else:
+                            result_payload = {"status": "SUCCESS", "command": f"wrap {_wrap_cmd}"}
 
             except VeriFlowError as e:
                 if json_mode:

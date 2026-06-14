@@ -12,3 +12,5 @@ build/
 *.swp
 
 /database/
+
+docs/WRAPPERWIZARD_DESIGN.md

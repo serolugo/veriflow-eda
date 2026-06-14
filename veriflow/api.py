@@ -14,6 +14,7 @@ veriflow.core if they need to catch it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from veriflow.core import VeriFlowError
 
@@ -75,4 +76,95 @@ def run_tile(
         only_sim=only_sim,
         only_synth=only_synth,
         waves=waves,
+    )
+
+
+def wrap_init(
+    interface_name: str,
+    top_module: str,
+    rtl_sources: list[str],
+    *,
+    wrapper_name: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> dict:
+    """Scaffold a wrapper config dict from RTL and interface.
+
+    Searches *rtl_sources* for *top_module* file-by-file (same strategy as
+    WrapWorkflow.generate, N11), extracts IP ports (3-tuples name/direction/width,
+    N10), and returns a dict matching the wrapper_config.yaml schema.
+    Does NOT write any files.
+
+    The returned dict also contains a private ``"_ip_ports"`` key (list of
+    3-tuples) that cmd_wrap_init uses to render the commented YAML scaffold.
+    Callers that only need the config dict can ignore it.
+
+    VeriFlowError propagates for VF_INTERFACE_UNKNOWN and
+    VF_WRAP_E_TOP_MODULE_NOT_FOUND.
+    """
+    import re
+    from veriflow.core.wrapper.port_parser import extract_ports
+    from veriflow.models.interface_profile import get_interface_profile
+
+    # Validate interface_name early — raises VF_INTERFACE_UNKNOWN if not registered
+    get_interface_profile(interface_name)
+
+    # N11: search file-by-file in listed order
+    module_re = re.compile(
+        r"\bmodule\s+" + re.escape(top_module) + r"\b",
+        re.IGNORECASE,
+    )
+    source_content: Optional[str] = None
+    for src in rtl_sources:
+        text = Path(src).read_text(encoding="utf-8")
+        if module_re.search(text):
+            source_content = text
+            break
+
+    if source_content is None:
+        raise VeriFlowError(
+            f"Top module {top_module!r} not found in any rtl_source.",
+            code="VF_WRAP_E_TOP_MODULE_NOT_FOUND",
+            details={
+                "top_module": top_module,
+                "rtl_sources": list(rtl_sources),
+            },
+        )
+
+    ip_ports = extract_ports(source_content, top_module)
+    meta = dict(metadata) if metadata else {}
+
+    return {
+        "interface_name": interface_name,
+        "metadata": {
+            "name": meta.get("name", top_module),
+            "author": meta.get("author", ""),
+            "description": meta.get("description", ""),
+            "version": meta.get("version", "1.0.0"),
+        },
+        "design": {
+            "top_module": top_module,
+            "rtl_sources": list(rtl_sources),
+        },
+        "wrapper_name": wrapper_name or f"{top_module}_wrapper",
+        "ports": {name: None for name, _, _ in ip_ports},
+        "_ip_ports": ip_ports,  # private — for cmd_wrap_init; not a YAML schema key
+    }
+
+
+def wrap_generate(
+    config_path: str | Path,
+    out_dir: Optional[str | Path] = None,
+) -> dict:
+    """Run veriflow wrap generate for *config_path*.
+
+    Returns the full output dict (schema_version, status, ports, …).
+    VeriFlowError propagates unchanged for config-level errors (missing
+    interface_name, top_module not found in RTL, etc.).
+    Validation FAIL is returned as a dict with status="FAIL" — not raised.
+    """
+    from veriflow.workflows.wrap import WrapWorkflow
+
+    return WrapWorkflow().generate(
+        config_path=Path(config_path),
+        out_dir=Path(out_dir) if out_dir is not None else None,
     )
