@@ -27,7 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-THEME_FILE = Path.home() / ".semicolab_theme"
+THEME_FILE = Path.home() / ".veriflow_theme"
+_THEME_FILE_OLD = Path.home() / ".semicolab_theme"
 DEFAULT_THEME = "tokyo-night"
 
 
@@ -474,4 +475,11 @@ def load_theme() -> str:
         name = THEME_FILE.read_text(encoding="utf-8").strip()
         return name if name in THEMES else DEFAULT_THEME
     except FileNotFoundError:
+        try:
+            name = _THEME_FILE_OLD.read_text(encoding="utf-8").strip()
+            if name in THEMES:
+                save_theme(name)
+                return name
+        except FileNotFoundError:
+            pass
         return DEFAULT_THEME

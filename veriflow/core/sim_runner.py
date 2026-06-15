@@ -165,7 +165,8 @@ def launch_waves(wave_path: Path) -> None:
     import platform
 
     # Docker — always use Surfer WASM
-    if os.environ.get("SEMICOLAB_DOCKER"):
+    # SEMICOLAB_DOCKER is deprecated; VERIFLOW_DOCKER is the current name
+    if os.environ.get("VERIFLOW_DOCKER") or os.environ.get("SEMICOLAB_DOCKER"):
         open_surfer(wave_path)
         return
 

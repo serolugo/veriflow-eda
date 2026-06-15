@@ -17,6 +17,14 @@ class ConnectivityBackend(abc.ABC):
     ) -> str:
         """Returns 'PASS' or 'FAIL'."""
 
+    @abc.abstractmethod
+    def check_availability(self) -> list[dict]:
+        """Returns one dict per required tool.
+
+        Each dict: {"tool": str, "available": bool, "version": str|None,
+                    "path": str|None, "error": str|None}
+        """
+
 
 class SimulationBackend(abc.ABC):
     """Abstract backend for HDL simulation."""
@@ -32,6 +40,14 @@ class SimulationBackend(abc.ABC):
     ) -> tuple[str, dict]:
         """Returns ('COMPLETED'|'FAILED', parsed_dict)."""
 
+    @abc.abstractmethod
+    def check_availability(self) -> list[dict]:
+        """Returns one dict per required tool.
+
+        Each dict: {"tool": str, "available": bool, "version": str|None,
+                    "path": str|None, "error": str|None}
+        """
+
 
 class SynthesisBackend(abc.ABC):
     """Abstract backend for RTL synthesis."""
@@ -44,3 +60,11 @@ class SynthesisBackend(abc.ABC):
         synth_log_path: Path,
     ) -> tuple[str, dict]:
         """Returns ('PASS'|'FAIL', parsed_dict)."""
+
+    @abc.abstractmethod
+    def check_availability(self) -> list[dict]:
+        """Returns one dict per required tool.
+
+        Each dict: {"tool": str, "available": bool, "version": str|None,
+                    "path": str|None, "error": str|None}
+        """

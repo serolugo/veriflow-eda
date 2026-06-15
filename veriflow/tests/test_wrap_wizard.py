@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -92,20 +93,7 @@ def _run_wizard(responses: list[str], args=None) -> int:
 
 # ── iverilog guard ────────────────────────────────────────────────────────────
 
-def _iverilog_functional() -> bool:
-    try:
-        r = subprocess.run(
-            ["iverilog", "-o", "/dev/null", "-"],
-            input=b"module _probe; endmodule\n",
-            capture_output=True,
-            timeout=10,
-        )
-        return r.returncode == 0
-    except Exception:
-        return False
-
-
-_IVERILOG_OK = _iverilog_functional()
+_IVERILOG_OK = shutil.which("iverilog") is not None
 
 
 # ── full flow (mocked generate) ───────────────────────────────────────────────

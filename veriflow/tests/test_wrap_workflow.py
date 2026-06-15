@@ -47,6 +47,9 @@ class _FakeBackend(ConnectivityBackend):
         log_path.write_text(f"fake connectivity: {self._status}", encoding="utf-8")
         return self._status
 
+    def check_availability(self) -> list[dict]:
+        return []
+
 
 def _write_config(
     directory: Path,

@@ -89,7 +89,7 @@ Project Mode uses an `interface:` section in `veriflow.yaml` instead (`name: sem
 
 ## Waveform viewer priority
 
-1. Docker (`SEMICOLAB_DOCKER`) → Surfer WASM at `http://localhost:7681`
+1. Docker (`VERIFLOW_DOCKER`; `SEMICOLAB_DOCKER` deprecated) → Surfer WASM at `http://localhost:7681`
 2. `surfer` in PATH → Surfer native
 
 ---

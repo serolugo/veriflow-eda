@@ -409,23 +409,10 @@ If no `.v` testbench sources are present, simulation is skipped automatically.
 
 ---
 
-## Run with TileBench (optional companion)
+## Companion environments
 
-[**SemiCoLab TileBench**](https://github.com/serolugo/semicolab-tilebench) is an optional, in-progress companion Docker environment with VeriFlow pre-installed alongside TileWizard and a browser-based waveform viewer — no local tool installation required beyond Docker.
-
-```bash
-# Pull and launch
-docker pull serolugo/tilebench:latest
-.\tilebench.bat my_workspace   # Windows
-./tilebench.sh  my_workspace   # Linux / macOS
-
-# Then use VeriFlow normally inside the container
-veriflow db init --db ./veriflow/my_db
-veriflow db create-tile --db ./veriflow/my_db --top-module my_module
-veriflow db run --db ./veriflow/my_db --tile 0001
-```
-
-TileBench mounts your workspace folder into the container — your files always stay on your machine.
+See [docs/TILEBENCH.md](docs/TILEBENCH.md) for the optional TileBench Docker environment
+(VeriFlow pre-installed, browser-based waveform viewer, no local EDA tools required).
 
 ---
 
@@ -446,7 +433,7 @@ TileBench mounts your workspace folder into the container — your files always 
 
 ```bash
 python -m veriflow.tests.runner
-# Expected current result: 193 passed, 0 failed
+# Expected current result: 720 passed, 0 failed
 
 # Or with pytest (collects the full suite):
 python -m pytest veriflow/tests -q

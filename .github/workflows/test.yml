@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── Linux ────────────────────────────────────────────────────────────────
+      - name: Install iverilog + yosys (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iverilog yosys
+
+      # ── macOS ────────────────────────────────────────────────────────────────
+      - name: Install iverilog + yosys (macOS)
+        if: runner.os == 'macOS'
+        run: brew install icarus-verilog yosys
+
+      # ── Windows — iverilog via winget ─────────────────────────────────────
+      - name: Install iverilog (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget install --id Icarus.Verilog --exact `
+            --accept-source-agreements --accept-package-agreements --silent
+          # winget updates the registry but not the current process PATH;
+          # find the installed bin dir and add it to GITHUB_PATH.
+          $iverDir = (Get-ChildItem "C:\Program Files\iverilog\bin" -ErrorAction SilentlyContinue) `
+                     | Select-Object -First 1 -ExpandProperty DirectoryName
+          if (-not $iverDir) {
+            # fallback: search common install location
+            $iverDir = "C:\Program Files\iverilog\bin"
+          }
+          Add-Content $env:GITHUB_PATH $iverDir
+
+      # ── Windows — yosys via MSYS2 / MINGW64 ─────────────────────────────
+      # MSYS2 is not installed on the local dev machine (Windows); this step
+      # is verified only in CI. If yosys installation or PATH propagation
+      # fails here, the Windows job can be retried or temporarily set to
+      # continue-on-error while the setup is validated.
+      - name: Set up MSYS2 + install yosys (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-yosys
+          # path-type: inherit makes MINGW64 bins available to non-MSYS2 shells
+          path-type: inherit
+
+      # ── Shared ───────────────────────────────────────────────────────────────
+      - name: Install veriflow (editable)
+        run: pip install -e .
+
+      - name: Verify tools (veriflow doctor)
+        run: python -m veriflow.cli doctor
+
+      - name: Run pytest
+        run: pytest veriflow/tests/ -q --tb=short

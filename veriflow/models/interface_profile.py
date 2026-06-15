@@ -2,10 +2,9 @@
 
 Interface profiles are registered here and can be discovered through the
 registry APIs (``list_interface_profiles``, ``has_interface_profile``, …) so
-frontends such as TileWizard and TileBench can enumerate them. The initial
-built-in profile is "semicolab". Custom YAML-defined interfaces are future
-work. InterfaceStage still writes historical "connectivity" artifacts for
-compatibility.
+any frontend or tool can enumerate them. The initial built-in profile is
+"semicolab". Custom YAML-defined interfaces are future work. InterfaceStage
+still writes historical "connectivity" artifacts for compatibility.
 """
 
 from __future__ import annotations
@@ -41,6 +40,8 @@ class InterfaceProfile:
     name: str
     ports: tuple[InterfacePort, ...]
     description: str = ""
+    requires_top_module: bool = False
+    tb_template: str | None = None  # filename in template dir; None → tb_universal_template.v
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -69,6 +70,8 @@ def semicolab_interface_profile() -> InterfaceProfile:
     return InterfaceProfile(
         name="semicolab",
         description="Nine-port structural contract required by the Semicolab harness.",
+        requires_top_module=True,
+        tb_template="tb_semicolab_template.v",
         ports=(
             InterfacePort("clk",        "input",  1),
             InterfacePort("arst_n",     "input",  1),

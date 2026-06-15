@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from veriflow.core.backends._tools import _check_tool
 from veriflow.core.backends.base import ConnectivityBackend, SimulationBackend
 from veriflow.core.sim_runner import run_connectivity_check, run_simulation
 
@@ -22,6 +23,9 @@ class IcarusConnectivityBackend(ConnectivityBackend):
             log_path=log_path,
         )
 
+    def check_availability(self) -> list[dict]:
+        return [_check_tool("iverilog")]
+
 
 class IcarusSimulationBackend(SimulationBackend):
 
@@ -40,3 +44,6 @@ class IcarusSimulationBackend(SimulationBackend):
             sim_log_path=sim_log_path,
             wave_path=wave_path,
         )
+
+    def check_availability(self) -> list[dict]:
+        return [_check_tool("iverilog"), _check_tool("vvp")]

@@ -29,10 +29,12 @@ class ProjectConfig:
             )
 
         if not has_interface:
+            from veriflow.models.interface_profile import list_interface_profile_names
+            profiles = ", ".join(repr(p) for p in list_interface_profile_names())
             raise VeriFlowError(
                 "Project configuration must explicitly declare 'interface_name'.\n"
                 "  Use:\n"
-                "    interface_name: \"semicolab\"  for Semicolab projects\n"
+                f"    interface_name: {profiles}  (or another registered profile)\n"
                 "    interface_name: null          for generic projects",
                 code="VF_PROJECT_INTERFACE_REQUIRED",
             )

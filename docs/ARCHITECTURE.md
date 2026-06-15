@@ -6,7 +6,7 @@
 
 ```
 veriflow (no args)
-    └── ui/tui.py → tilebench.tui.selector.run_veriflow()
+    └── cli.py main() → parser.print_help()
 
 veriflow project run [--config veriflow.yaml]
     └── cli.py main()
@@ -46,7 +46,7 @@ Errors propagate as `VeriFlowError` (defined in `core/__init__.py`) and are caug
 
 Parses arguments with `argparse` and dispatches to command handlers. Subcommands are grouped into two namespaces: `db` (Database Mode, all subcommands take `--db PATH`) and `project` (Project Mode). Two additional behaviors:
 
-- **No arguments** → calls `ui/tui.py:run_tui()`, which launches the TileBench TUI in VeriFlow mode
+- **No arguments** → `parser.print_help()` (exit 0)
 - **`--json` / `--non-interactive`** → global flags placed before the subcommand
 
 All imports of command modules are deferred (inside the `if` branches) to avoid loading unused code on every invocation.
@@ -367,7 +367,7 @@ Testbenches are self-contained — there is no injection, marker extraction, or 
 **Waveform viewer:**
 
 - `open_surfer(wave_path)` — Docker mode only; constructs `http://localhost:7681/?load_url=<vcd>` URL and prints it; calls `webbrowser.open()` as best-effort
-- `launch_waves(wave_path)` — priority: (1) `SEMICOLAB_DOCKER` → `open_surfer`; (2) `surfer` in PATH → native Surfer; (3) prints Surfer install hint
+- `launch_waves(wave_path)` — priority: (1) `VERIFLOW_DOCKER` (or deprecated `SEMICOLAB_DOCKER`) → `open_surfer`; (2) `surfer` in PATH → native Surfer; (3) prints Surfer install hint
 
 ---
 
@@ -530,6 +530,4 @@ Used only at `create-tile` time to generate the initial `src/tb/tb_tile.v`. Afte
 |---|---|
 | `ui/theme.py` | Central Rich color palette and `VERIFLOW_THEME`; all UI modules import from here |
 | `ui/output.py` | Styled output helpers used by all commands: `print_status`, `print_section`, `print_run_header`, `print_done`, `print_fail_detail`, `print_wave_url`, `print_ports_table` |
-| `ui/banner.py` | SEMICOLAB ASCII banner; `pyfiglet` for figlet rendering + `TerminalTextEffects` MiddleOut animation (both optional, falls back gracefully); orange accent for VeriFlow, green for TileWizard; Mifral link shown once (`~/.semicolab_seen`) |
-| `ui/themes.py` | 16 Textual-compatible color palettes; `Palette` dataclass with semantic keys (`bg`, `accent`, `green`, `red`, …); `~/.semicolab_theme` persists the selection; provides `build_css()` and `palette_to_vars()` for Textual CSS injection |
-| `ui/tui.py` | Redirect stub: delegates to `tilebench.tui.selector.run_veriflow(workspace=None)` (requires `tilebench` installed) |
+| `ui/themes.py` | 16 Textual-compatible color palettes; `Palette` dataclass with semantic keys (`bg`, `accent`, `green`, `red`, …); `~/.veriflow_theme` persists the selection (migrates from `~/.semicolab_theme`); provides `build_css()` and `palette_to_vars()` for Textual CSS injection |

@@ -192,7 +192,7 @@ Docker mode only. Constructs `http://localhost:7681/?load_url=<vcd_url>` where `
 
 ### `launch_waves(wave_path)`
 Priority chain (non-blocking `subprocess.Popen`):
-1. `SEMICOLAB_DOCKER` env var → delegates to `open_surfer()`
+1. `VERIFLOW_DOCKER` env var (or deprecated `SEMICOLAB_DOCKER`) → delegates to `open_surfer()`
 2. `surfer` found in PATH → Surfer native binary
 3. Not found → prints Surfer install hint
 
@@ -454,14 +454,8 @@ Styled output helpers using a `rich.console.Console` instance with `VERIFLOW_THE
 
 Status rendering: `PASS` → green bold; `FAIL` → red bold; `RUN` → `···` (secondary); others → secondary color.
 
-### `ui/banner.py`
-`show_banner(subtitle, tool)` — prints the SEMICOLAB figlet banner with a MiddleOut animation. `pyfiglet` renders the ASCII art; `TerminalTextEffects` animates it. Both are optional — falls back to plain Rich print if not installed. Orange accent for `tool="veriflow"`, green for `tool="tilewizard"`. Mifral URL printed on first-ever run only (`~/.semicolab_seen`).
-
 ### `ui/themes.py`
-`Palette` frozen dataclass with 15 semantic color keys. `THEMES` dict maps 16 theme names to `Palette` instances. `get_palette(name)` resolves the active theme from `~/.semicolab_theme` with fallback to `"tokyo-night"`. `build_css(palette)` generates hardcoded-hex Textual CSS; `palette_to_vars(palette)` returns a `dict[str, str]` for `App.get_css_variables()` (live theming).
-
-### `ui/tui.py`
-`run_tui(workspace)` — single-function stub that imports and calls `tilebench.tui.selector.run_veriflow(workspace=None)`. The `None` workspace triggers TileBench's own Docker-aware workspace detection. Requires `tilebench` to be installed separately.
+`Palette` frozen dataclass with 15 semantic color keys. `THEMES` dict maps 16 theme names to `Palette` instances. `get_palette(name)` resolves the active theme from `~/.veriflow_theme` (migrates silently from `~/.semicolab_theme`) with fallback to `"tokyo-night"`. `build_css(palette)` generates hardcoded-hex Textual CSS; `palette_to_vars(palette)` returns a `dict[str, str]` for `App.get_css_variables()` (live theming). Shared palette library for `tilebench`; not called directly from VeriFlow CLI.
 
 ---
 

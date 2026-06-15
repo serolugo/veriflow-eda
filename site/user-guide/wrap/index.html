@@ -1,0 +1,1742 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Lightweight RTL verification and documentation framework">
+      
+      
+      
+      
+        <link rel="prev" href="../../PROJECT_CONFIG/">
+      
+      
+        <link rel="next" href="../doctor/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Wrap (init/generate/wizard) - VeriFlow</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#veriflow-wrap-interface-wrapper-generator" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="VeriFlow" class="md-header__button md-logo" aria-label="VeriFlow" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            VeriFlow
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Wrap (init/generate/wizard)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../INSTALL/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../MANUAL/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/commands/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../TILEBENCH/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  TileBench
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../CHANGELOG/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="VeriFlow" class="md-nav__button md-logo" aria-label="VeriFlow" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    VeriFlow
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../INSTALL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../MANUAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../PROJECT_CONFIG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wrap (init/generate/wizard)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wrap (init/generate/wizard)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#veriflow-wrap-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        veriflow wrap init
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wrapper_configyaml-complete-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wrapper_config.yaml — complete schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="wrapper_config.yaml — complete schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unmapped-ports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unmapped ports
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#veriflow-wrap-generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        veriflow wrap generate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="veriflow wrap generate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-validates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it validates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-generates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it generates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#connectivity-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connectivity check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#behavior-on-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behavior on failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#json-output-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON output schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#veriflow-wrap-wizard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        veriflow wrap wizard
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="veriflow wrap wizard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wizard-vs-init-generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wizard vs init + generate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#end-to-end-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end example
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="End-to-end example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-the-rtl-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The RTL module
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-scaffold-the-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Scaffold the config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-fill-in-the-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Fill in the mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-generate-the-wrapper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Generate the wrapper
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-inspect-the-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Inspect the result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../doctor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../QUICKREF/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../TILEBENCH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TileBench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CHANGELOG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="veriflow-wrap-interface-wrapper-generator"><code>veriflow wrap</code> — Interface Wrapper Generator</h1>
+<p><code>veriflow wrap</code> generates a Verilog adapter wrapper that connects a generic RTL module to
+a named interface profile — the same profiles used by the connectivity check. Use it when
+you have existing RTL with its own port names and widths and need to plug it into a
+Semicolab (or other profile) harness without modifying the original source.</p>
+<p>The workflow produces a <code>wrapper.v</code> file that instantiates your module internally and
+presents the interface profile's port signature to the outside world. After generation,
+VeriFlow automatically runs the connectivity check on the wrapper to confirm it elaborates
+correctly against the profile.</p>
+<p>The three commands in this namespace are:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wrap init</code></td>
+<td>Reads your RTL, lists ports from both sides, scaffolds <code>wrapper_config.yaml</code></td>
+</tr>
+<tr>
+<td><code>wrap generate</code></td>
+<td>Reads the completed config, validates the mapping, generates the wrapper</td>
+</tr>
+<tr>
+<td><code>wrap wizard</code></td>
+<td>Interactive session that does both steps in one guided flow</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="veriflow-wrap-init"><code>veriflow wrap init</code></h2>
+<pre><code class="language-bash">veriflow wrap init --interface &lt;name&gt; --top &lt;top_module&gt; &lt;rtl_files...&gt; \
+    [--config PATH] [--wrapper-name NAME] \
+    [--author AUTHOR] [--description DESC] [--version VER] \
+    [--force]
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--interface NAME</code></td>
+<td>yes</td>
+<td>Interface profile to target (e.g. <code>semicolab</code>). Run <code>veriflow doctor</code> to see registered profiles.</td>
+</tr>
+<tr>
+<td><code>--top MODULE</code></td>
+<td>yes</td>
+<td>Name of the RTL top module. Must appear in at least one of the listed source files.</td>
+</tr>
+<tr>
+<td><code>&lt;rtl_files...&gt;</code></td>
+<td>yes</td>
+<td>One or more Verilog source files (space-separated). List the file containing <code>--top</code> first; if the module is not found there, VeriFlow searches the remaining files in order.</td>
+</tr>
+<tr>
+<td><code>--config PATH</code></td>
+<td>no</td>
+<td>Where to write <code>wrapper_config.yaml</code>. Default: <code>wrapper_config.yaml</code> in the current directory.</td>
+</tr>
+<tr>
+<td><code>--wrapper-name NAME</code></td>
+<td>no</td>
+<td>Name for the generated wrapper module. Default: <code>&lt;top_module&gt;_wrapper</code>.</td>
+</tr>
+<tr>
+<td><code>--author</code></td>
+<td>no</td>
+<td>Written to <code>metadata.author</code> in the config.</td>
+</tr>
+<tr>
+<td><code>--description</code></td>
+<td>no</td>
+<td>Written to <code>metadata.description</code> in the config.</td>
+</tr>
+<tr>
+<td><code>--version</code></td>
+<td>no</td>
+<td>Written to <code>metadata.version</code> in the config. Default: <code>"1.0.0"</code>.</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td>no</td>
+<td>Overwrite an existing <code>wrapper_config.yaml</code> without prompting.</td>
+</tr>
+</tbody>
+</table>
+<p><code>wrap init</code> does not generate the wrapper — it produces a <code>wrapper_config.yaml</code> with the
+port mapping section pre-populated with the IP ports it extracted and the interface profile
+ports listed as comments for reference. Open the file, fill in the mapping, then run
+<code>wrap generate</code>.</p>
+<blockquote>
+<p>If <code>--top</code> is not found in the first file, VeriFlow searches each subsequent file
+in the order listed. If the module is not found in any file, the command exits with an
+error (<code>VF_WRAP_E_TOP_MODULE_NOT_FOUND</code>) — check the module name and file list.</p>
+</blockquote>
+<hr />
+<h2 id="wrapper_configyaml-complete-schema"><code>wrapper_config.yaml</code> — complete schema</h2>
+<pre><code class="language-yaml"># Which interface profile to target. Must match a registered profile name.
+interface_name: semicolab
+
+metadata:
+  name: my_ip              # Short identifier for this IP / wrapper (used in outputs)
+  author: &quot;&quot;               # Optional — recorded in the JSON output
+  description: &quot;&quot;          # Optional — recorded in the JSON output
+  version: &quot;1.0.0&quot;         # Optional — recorded in the JSON output
+
+design:
+  top_module: my_ip        # Must match the module declaration in the source files exactly
+  rtl_sources:             # List of Verilog source files for your IP (at least one)
+    - src/my_ip.v
+    - src/my_ip_defs.v     # Additional files (helpers, packages) can follow
+
+# Name of the generated wrapper module (optional).
+# Default: &quot;&lt;top_module&gt;_wrapper&quot;  →  my_ip_wrapper
+wrapper_name: my_ip_wrapper
+
+# Port mapping: &lt;ip_port&gt;: &lt;interface_port&gt;  or  &lt;ip_port&gt;: &lt;interface_port&gt;[hi:lo]
+#
+# Rules:
+#   - Every key on the left must be a port that exists in the extracted RTL.
+#   - Every value on the right must be a port (or a bit slice of a port) that exists
+#     in the interface profile.
+#   - Slices use [hi:lo] notation (e.g. csr_in[3:0] maps bits 3 down to 0).
+#   - You do not need to map every IP port or every interface port — unmapped
+#     ports are handled automatically (see Unmapped ports below).
+#   - Two IP ports cannot map to overlapping bits of the same interface port.
+ports:
+  ip_clk:       clk              # full port — ip_clk connects to clk (both 1-bit)
+  ip_rst_n:     arst_n           # full port
+  ip_data_in:   data_reg_a       # full port — widths should match
+  ip_ctrl:      csr_in[3:0]      # slice — ip_ctrl connects to bits 3:0 of csr_in
+  ip_data_out:  data_reg_c       # full port
+  ip_status:    csr_out[7:0]     # slice — ip_status connects to bits 7:0 of csr_out
+</code></pre>
+<p>All paths in <code>rtl_sources</code> are relative to the directory that contains <code>wrapper_config.yaml</code>
+(same convention as <code>veriflow.yaml</code> in Project Mode).</p>
+<h3 id="unmapped-ports">Unmapped ports</h3>
+<p>You are not required to map every port on both sides.</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What the wrapper does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Interface <strong>output</strong> port has unmapped bits</td>
+<td>Assigns those bits to <code>0</code> (no floating nets)</td>
+</tr>
+<tr>
+<td>Interface <strong>input</strong> port has bits not consumed by any IP port</td>
+<td>Interface signal is present but unused inside the wrapper — this is fine</td>
+</tr>
+<tr>
+<td>IP <strong>input</strong> port is not mapped</td>
+<td>Port is tied to <code>1'b0</code> inside the wrapper instantiation</td>
+</tr>
+<tr>
+<td>IP <strong>output</strong> port is not mapped</td>
+<td>Port is left unconnected (<code>.port()</code>) inside the wrapper</td>
+</tr>
+</tbody>
+</table>
+<p>All of these situations are reported as informational messages (<code>VF_WRAP_I_*</code>) in the JSON
+output — they do not cause the build to fail.</p>
+<hr />
+<h2 id="veriflow-wrap-generate"><code>veriflow wrap generate</code></h2>
+<pre><code class="language-bash">veriflow wrap generate --config wrapper_config.yaml [--out DIR]
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config PATH</code></td>
+<td>yes</td>
+<td>Path to the completed <code>wrapper_config.yaml</code>.</td>
+</tr>
+<tr>
+<td><code>--out DIR</code></td>
+<td>no</td>
+<td>Output directory. Default: the directory containing the config file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-it-validates">What it validates</h3>
+<p>Before generating anything, <code>wrap generate</code> validates the port mapping. If any of the
+following structural errors are found, the command exits with an error, no wrapper is
+written, and a JSON file with the error details is the only output:</p>
+<table>
+<thead>
+<tr>
+<th>What you will see</th>
+<th>Error code (in JSON/logs)</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>invalid mapping syntax</code></td>
+<td><code>VF_WRAP_E_MAPPING_SYNTAX</code></td>
+<td>A value in <code>ports:</code> is not a valid port name or <code>port[hi:lo]</code> slice</td>
+</tr>
+<tr>
+<td><code>interface port not found</code></td>
+<td><code>VF_WRAP_E_INTERFACE_PORT_UNKNOWN</code></td>
+<td>The right-hand side names a port that does not exist in the chosen interface profile</td>
+</tr>
+<tr>
+<td><code>IP port not found</code></td>
+<td><code>VF_WRAP_E_IP_PORT_UNKNOWN</code></td>
+<td>The left-hand side names a port that was not extracted from your RTL</td>
+</tr>
+<tr>
+<td><code>slice out of range</code></td>
+<td><code>VF_WRAP_E_SLICE_OUT_OF_RANGE</code></td>
+<td><code>[hi:lo]</code> references bits beyond the interface port width, or <code>hi &lt; lo</code></td>
+</tr>
+<tr>
+<td><code>bit conflict</code></td>
+<td><code>VF_WRAP_E_BIT_CONFLICT</code></td>
+<td>Two IP ports are mapped to overlapping bits of the same interface port</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-it-generates">What it generates</h3>
+<p>On validation success, <code>wrap generate</code> writes the following files to <code>--out</code> (or the
+directory containing the config):</p>
+<pre><code>&lt;out_dir&gt;/
+  &lt;wrapper_name&gt;.json        # result report (always written, even on failure)
+  &lt;wrapper_name&gt;.v           # the generated wrapper (validation PASS only)
+  rtl/
+    &lt;basename&gt;.v             # copy of each file listed in rtl_sources (validation PASS only)
+  logs/
+    connectivity.log         # iverilog elaboration log (validation PASS only)
+</code></pre>
+<h3 id="connectivity-check">Connectivity check</h3>
+<p>After generating the wrapper, VeriFlow compiles it against the interface profile using the
+same elaboration check as <code>veriflow db run</code>. A <strong>PASS</strong> means the wrapper's port signature
+matches the profile contract exactly. A <strong>FAIL</strong> means something in the generated wrapper
+did not elaborate correctly — the wrapper file and the log are still written so you can
+inspect the issue.</p>
+<h3 id="behavior-on-failure">Behavior on failure</h3>
+<table>
+<thead>
+<tr>
+<th>Failure point</th>
+<th>Wrapper written?</th>
+<th>RTL copied?</th>
+<th>JSON written?</th>
+<th>Exit code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Validation error (<code>VF_WRAP_E_*</code>)</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>Non-zero</td>
+</tr>
+<tr>
+<td>Connectivity check FAIL</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Non-zero</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="json-output-schema">JSON output schema</h2>
+<pre><code class="language-json">{
+  &quot;schema_version&quot;: &quot;1.0&quot;,
+  &quot;status&quot;: &quot;PASS&quot;,
+  &quot;command&quot;: &quot;wrap generate&quot;,
+  &quot;interface_name&quot;: &quot;semicolab&quot;,
+  &quot;wrapper&quot;: {
+    &quot;name&quot;: &quot;my_ip_wrapper&quot;,
+    &quot;top_module&quot;: &quot;my_ip&quot;,
+    &quot;file&quot;: &quot;my_ip_wrapper.v&quot;
+  },
+  &quot;rtl_sources&quot;: [&quot;rtl/my_ip.v&quot;, &quot;rtl/my_ip_defs.v&quot;],
+  &quot;ports&quot;: {
+    &quot;mapped&quot;: [
+      {&quot;ip_port&quot;: &quot;ip_clk&quot;,     &quot;interface_port&quot;: &quot;clk&quot;,       &quot;slice&quot;: null},
+      {&quot;ip_port&quot;: &quot;ip_ctrl&quot;,    &quot;interface_port&quot;: &quot;csr_in&quot;,    &quot;slice&quot;: &quot;3:0&quot;}
+    ],
+    &quot;unmapped_ip_ports&quot;: [&quot;ip_extra_out&quot;],
+    &quot;unmapped_interface_ports&quot;: [
+      {&quot;port&quot;: &quot;data_reg_b&quot;, &quot;direction&quot;: &quot;input&quot;, &quot;bits&quot;: &quot;31:0&quot;}
+    ]
+  },
+  &quot;messages&quot;: [
+    {&quot;code&quot;: &quot;VF_WRAP_I_IP_OUTPUT_UNMAPPED&quot;,
+     &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;ip_extra_out is not mapped; left unconnected in wrapper&quot;}
+  ],
+  &quot;validation&quot;: {&quot;status&quot;: &quot;PASS&quot;},
+  &quot;connectivity_check&quot;: {&quot;status&quot;: &quot;PASS&quot;, &quot;log&quot;: &quot;logs/connectivity.log&quot;}
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>Overall result: <code>"PASS"</code> only if both <code>validation.status</code> and <code>connectivity_check.status</code> are <code>"PASS"</code></td>
+</tr>
+<tr>
+<td><code>wrapper.file</code></td>
+<td>Relative path (from <code>out_dir</code>) to the generated wrapper</td>
+</tr>
+<tr>
+<td><code>rtl_sources</code></td>
+<td>Relative paths to the RTL copies in <code>out_dir/rtl/</code></td>
+</tr>
+<tr>
+<td><code>ports.mapped</code></td>
+<td>Every mapping that was applied; <code>"slice"</code> is <code>null</code> for a full-port connection, <code>"hi:lo"</code> for a bit range</td>
+</tr>
+<tr>
+<td><code>ports.unmapped_ip_ports</code></td>
+<td>IP ports in the config that were not mapped to any interface port</td>
+</tr>
+<tr>
+<td><code>ports.unmapped_interface_ports</code></td>
+<td>Interface profile bits with no IP port assigned; <code>"bits"</code> shows the unassigned range</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td>Informational notes (<code>VF_WRAP_I_*</code>) — never indicate failure, just what was auto-handled</td>
+</tr>
+<tr>
+<td><code>validation</code></td>
+<td>Result of the structural mapping check; FAIL here means no wrapper was written</td>
+</tr>
+<tr>
+<td><code>connectivity_check</code></td>
+<td>Result of the iverilog elaboration check on the wrapper; <code>null</code> if validation failed</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="veriflow-wrap-wizard"><code>veriflow wrap wizard</code></h2>
+<pre><code class="language-bash">veriflow wrap wizard [--force]
+</code></pre>
+<p>The wizard runs an interactive session that guides you through the complete workflow — from
+choosing the interface profile to mapping ports one by one — and writes the
+<code>wrapper_config.yaml</code> and runs <code>generate</code> automatically at the end.</p>
+<p><strong>Session flow:</strong></p>
+<ol>
+<li>Choose an interface profile from the list of registered profiles.</li>
+<li>Enter the path(s) to your RTL source files. If the top module is not found, the wizard
+   asks you to try different files (the session does not restart from the beginning).</li>
+<li>Enter the top module name.</li>
+<li>Map each extracted IP port interactively. For each port the wizard shows its direction
+   and width alongside the available interface profile ports. Invalid input (wrong name,
+   bad slice, conflicts) is rejected immediately with a short error message and you are
+   asked to re-enter that port — the rest of your work is preserved.</li>
+<li>After all ports are mapped (or skipped), the wizard asks where to save the config.
+   If a file already exists at that path, it loops back to ask for a new path (unless
+   <code>--force</code> was passed, in which case it overwrites without prompting).</li>
+<li>Writes <code>wrapper_config.yaml</code> and runs <code>wrap generate</code> automatically.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--force</code></td>
+<td>Overwrite an existing config file at the chosen path without prompting</td>
+</tr>
+</tbody>
+</table>
+<h3 id="wizard-vs-init-generate">Wizard vs <code>init</code> + <code>generate</code></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>wrap wizard</code></th>
+<th><code>wrap init</code> + <code>wrap generate</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Best for</strong></td>
+<td>First-time use, exploratory mapping, quick prototyping</td>
+<td>Reproducible workflows, CI, scripting, config in version control</td>
+</tr>
+<tr>
+<td><strong>Port feedback</strong></td>
+<td>Immediate — errors are caught and retried in the session</td>
+<td>After running <code>generate</code></td>
+</tr>
+<tr>
+<td><strong>Config file</strong></td>
+<td>Written at the end of the session</td>
+<td>Written by <code>init</code>, edited manually, then run through <code>generate</code></td>
+</tr>
+<tr>
+<td><strong>Automation</strong></td>
+<td>Not suitable (requires interactive input)</td>
+<td>Suitable — <code>generate</code> is scriptable</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="end-to-end-example">End-to-end example</h2>
+<p>This example wraps an 8-bit counter into the Semicolab interface profile.</p>
+<h3 id="1-the-rtl-module">1. The RTL module</h3>
+<pre><code class="language-verilog">// counter8.v
+`timescale 1ns / 1ps
+module counter8 (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire       enable,
+    output wire [7:0] count_out
+);
+    reg [7:0] count;
+    assign count_out = count;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            count &lt;= 8'd0;
+        else if (enable)
+            count &lt;= count + 8'd1;
+    end
+endmodule
+</code></pre>
+<h3 id="2-scaffold-the-config">2. Scaffold the config</h3>
+<pre><code class="language-bash">veriflow wrap init --interface semicolab --top counter8 counter8.v \
+    --wrapper-name counter8_wrapper
+</code></pre>
+<p>This creates <code>wrapper_config.yaml</code> with the IP ports extracted and the interface profile
+ports listed as comments. The <code>ports:</code> section is empty — each key is the IP port name and
+the value needs to be filled in:</p>
+<pre><code class="language-yaml">interface_name: semicolab
+
+metadata:
+  name: counter8
+  author: &quot;&quot;
+  description: &quot;&quot;
+  version: &quot;1.0.0&quot;
+
+design:
+  top_module: counter8
+  rtl_sources:
+    - counter8.v
+
+wrapper_name: counter8_wrapper
+
+ports:
+  # Interface profile: semicolab
+  # Syntax: &lt;ip_port&gt;: &lt;interface_port&gt;  or  &lt;ip_port&gt;: &lt;interface_port&gt;[hi:lo]
+  #
+  # IP ports (counter8):
+  #   clk         input   1
+  #   rst_n       input   1
+  #   enable      input   1
+  #   count_out   output  8
+  #
+  # Interface ports (semicolab):
+  #   clk         input   1
+  #   arst_n      input   1
+  #   csr_in      input   16
+  #   data_reg_a  input   32
+  #   data_reg_b  input   32
+  #   data_reg_c  output  32
+  #   csr_out     output  16
+  #   csr_in_re   output  1
+  #   csr_out_we  output  1
+  clk:          # input, 1
+  rst_n:        # input, 1
+  enable:       # input, 1
+  count_out:    # output, 8
+</code></pre>
+<h3 id="3-fill-in-the-mapping">3. Fill in the mapping</h3>
+<p>Edit <code>wrapper_config.yaml</code> and complete the <code>ports:</code> section:</p>
+<pre><code class="language-yaml">ports:
+  clk:        clk             # counter clk → semicolab clk (1-bit, direct)
+  rst_n:      arst_n          # counter rst_n → semicolab arst_n
+  enable:     csr_in[0]       # enable driven by bit 0 of csr_in
+  count_out:  data_reg_c[7:0] # 8-bit count into lower byte of data_reg_c
+</code></pre>
+<p>Unmapped interface ports (<code>data_reg_a</code>, <code>data_reg_b</code>, <code>csr_in[15:1]</code>, <code>data_reg_c[31:8]</code>,
+<code>csr_out</code>, <code>csr_in_re</code>, <code>csr_out_we</code>) are handled automatically: output bits are driven
+to <code>0</code>, input bits are left unused inside the wrapper.</p>
+<h3 id="4-generate-the-wrapper">4. Generate the wrapper</h3>
+<pre><code class="language-bash">veriflow wrap generate --config wrapper_config.yaml
+</code></pre>
+<p>Output written to the same directory as the config:</p>
+<pre><code>counter8_wrapper.json
+counter8_wrapper.v
+rtl/
+  counter8.v
+logs/
+  connectivity.log
+</code></pre>
+<h3 id="5-inspect-the-result">5. Inspect the result</h3>
+<pre><code class="language-json">{
+  &quot;schema_version&quot;: &quot;1.0&quot;,
+  &quot;status&quot;: &quot;PASS&quot;,
+  &quot;command&quot;: &quot;wrap generate&quot;,
+  &quot;interface_name&quot;: &quot;semicolab&quot;,
+  &quot;wrapper&quot;: {
+    &quot;name&quot;: &quot;counter8_wrapper&quot;,
+    &quot;top_module&quot;: &quot;counter8&quot;,
+    &quot;file&quot;: &quot;counter8_wrapper.v&quot;
+  },
+  &quot;rtl_sources&quot;: [&quot;rtl/counter8.v&quot;],
+  &quot;ports&quot;: {
+    &quot;mapped&quot;: [
+      {&quot;ip_port&quot;: &quot;clk&quot;,       &quot;interface_port&quot;: &quot;clk&quot;,        &quot;slice&quot;: null},
+      {&quot;ip_port&quot;: &quot;rst_n&quot;,     &quot;interface_port&quot;: &quot;arst_n&quot;,     &quot;slice&quot;: null},
+      {&quot;ip_port&quot;: &quot;enable&quot;,    &quot;interface_port&quot;: &quot;csr_in&quot;,     &quot;slice&quot;: &quot;0:0&quot;},
+      {&quot;ip_port&quot;: &quot;count_out&quot;, &quot;interface_port&quot;: &quot;data_reg_c&quot;, &quot;slice&quot;: &quot;7:0&quot;}
+    ],
+    &quot;unmapped_ip_ports&quot;: [],
+    &quot;unmapped_interface_ports&quot;: [
+      {&quot;port&quot;: &quot;csr_in&quot;,    &quot;direction&quot;: &quot;input&quot;,  &quot;bits&quot;: &quot;15:1&quot;},
+      {&quot;port&quot;: &quot;data_reg_a&quot;,&quot;direction&quot;: &quot;input&quot;,  &quot;bits&quot;: &quot;31:0&quot;},
+      {&quot;port&quot;: &quot;data_reg_b&quot;,&quot;direction&quot;: &quot;input&quot;,  &quot;bits&quot;: &quot;31:0&quot;},
+      {&quot;port&quot;: &quot;data_reg_c&quot;,&quot;direction&quot;: &quot;output&quot;, &quot;bits&quot;: &quot;31:8&quot;},
+      {&quot;port&quot;: &quot;csr_out&quot;,   &quot;direction&quot;: &quot;output&quot;, &quot;bits&quot;: &quot;15:0&quot;},
+      {&quot;port&quot;: &quot;csr_in_re&quot;, &quot;direction&quot;: &quot;output&quot;, &quot;bits&quot;: &quot;0:0&quot;},
+      {&quot;port&quot;: &quot;csr_out_we&quot;,&quot;direction&quot;: &quot;output&quot;, &quot;bits&quot;: &quot;0:0&quot;}
+    ]
+  },
+  &quot;messages&quot;: [
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_INPUT_UNUSED&quot;,    &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;csr_in[15:1] not consumed by any IP port&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_INPUT_UNUSED&quot;,    &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;data_reg_a not consumed by any IP port&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_INPUT_UNUSED&quot;,    &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;data_reg_b not consumed by any IP port&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_OUTPUT_UNMAPPED&quot;, &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;data_reg_c[31:8] has no IP port mapped; assigned to 0&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_OUTPUT_UNMAPPED&quot;, &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;csr_out not mapped; assigned to 0&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_OUTPUT_UNMAPPED&quot;, &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;csr_in_re not mapped; assigned to 0&quot;},
+    {&quot;code&quot;: &quot;VF_WRAP_I_INTERFACE_OUTPUT_UNMAPPED&quot;, &quot;severity&quot;: &quot;info&quot;,
+     &quot;message&quot;: &quot;csr_out_we not mapped; assigned to 0&quot;}
+  ],
+  &quot;validation&quot;: {&quot;status&quot;: &quot;PASS&quot;},
+  &quot;connectivity_check&quot;: {&quot;status&quot;: &quot;PASS&quot;, &quot;log&quot;: &quot;logs/connectivity.log&quot;}
+}
+</code></pre>
+<p>All four counter ports are mapped (<code>unmapped_ip_ports</code> is empty). The seven informational
+messages report the interface ports that were auto-handled — none of them indicate a
+problem. <code>status: "PASS"</code> confirms the wrapper elaborates correctly.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

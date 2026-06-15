@@ -334,7 +334,7 @@ veriflow db waves --db ./database --tile 0001 --run run-003
 
 VeriFlow opens waveforms using the following priority:
 
-1. **Docker** (`SEMICOLAB_DOCKER` env var) — opens Surfer WASM at `http://localhost:7681` with the VCD preloaded via `?load_url=`. A direct URL is printed to the terminal if `webbrowser.open` cannot open it on the host.
+1. **Docker** (`VERIFLOW_DOCKER` env var; `SEMICOLAB_DOCKER` is a deprecated alias) — opens Surfer WASM at `http://localhost:7681` with the VCD preloaded via `?load_url=`. A direct URL is printed to the terminal if `webbrowser.open` cannot open it on the host.
 2. **Surfer native** — if `surfer` is found in PATH, launches it with the VCD path.
 3. If Surfer is not found, a hint with the Surfer install URL is printed.
 

@@ -103,3 +103,35 @@ def test_mutating_returned_list_does_not_affect_registry():
     profiles.append("garbage")  # type: ignore[arg-type]
     assert has_interface_profile("semicolab") is True
     assert all(isinstance(p, InterfaceProfile) for p in list_interface_profiles())
+
+
+# ── scaffold metadata fields ──────────────────────────────────────────────────
+
+def test_interface_profile_default_scaffold_fields():
+    """A profile created without scaffold args defaults to no top_module requirement and no template."""
+    from veriflow.models.interface_profile import InterfacePort
+    profile = InterfaceProfile(
+        name="test_profile",
+        ports=(InterfacePort("clk", "input", 1),),
+    )
+    assert profile.requires_top_module is False
+    assert profile.tb_template is None
+
+
+def test_semicolab_requires_top_module():
+    profile = get_interface_profile("semicolab")
+    assert profile is not None
+    assert profile.requires_top_module is True
+
+
+def test_semicolab_tb_template():
+    profile = get_interface_profile("semicolab")
+    assert profile is not None
+    assert profile.tb_template == "tb_semicolab_template.v"
+
+
+def test_profile_scaffold_fields_are_frozen():
+    profile = get_interface_profile("semicolab")
+    assert profile is not None
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        profile.requires_top_module = False  # type: ignore[misc]

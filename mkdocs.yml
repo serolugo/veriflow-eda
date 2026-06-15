@@ -1,0 +1,37 @@
+site_name: VeriFlow
+site_description: Lightweight RTL verification and documentation framework
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - search.suggest
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - admonition
+  - pymdownx.highlight
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: INSTALL.md
+  - User Guide:
+    - Database Mode: MANUAL.md
+    - Project Mode: PROJECT_CONFIG.md
+    - Wrap (init/generate/wizard): user-guide/wrap.md
+    - Doctor: user-guide/doctor.md
+    - Quick Reference: QUICKREF.md
+  - Reference:
+    - All Commands: reference/commands.md
+    - Architecture: ARCHITECTURE.md
+  - TileBench: TILEBENCH.md
+  - Changelog: CHANGELOG.md

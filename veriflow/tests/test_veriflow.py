@@ -543,8 +543,8 @@ def test_manifest_custom_serializer():
     assert "results:" in rendered
 
 
-def test_semicolab_true_creates_tb_tile_v():
-    """semicolab: true should create tb_tile.v (self-contained, no tb_tasks.v)"""
+def test_semicolab_profile_creates_tb_tile_v():
+    """interface_name="semicolab" should create tb_tile.v (self-contained, no tb_tasks.v)"""
     tmp = Path(tempfile.mkdtemp())
     try:
         db = _make_db(tmp)
@@ -557,8 +557,8 @@ def test_semicolab_true_creates_tb_tile_v():
         shutil.rmtree(tmp)
 
 
-def test_semicolab_false_creates_empty_tb():
-    """interface_name: null should copy empty tb_tile.v, no tb_tasks.v"""
+def test_null_profile_creates_empty_tb():
+    """interface_name=None should copy empty tb_tile.v, no tb_tasks.v"""
     import yaml
     tmp = Path(tempfile.mkdtemp())
     try:
@@ -1100,25 +1100,31 @@ def test_cli_non_interactive_run_waves_rejected():
 
 
 def test_launch_waves_docker_uses_surfer_wasm():
-    """Docker mode should delegate to Surfer WASM."""
+    """VERIFLOW_DOCKER env var should delegate to Surfer WASM."""
     import os
     from veriflow.core import sim_runner
 
-    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_vd = os.environ.get("VERIFLOW_DOCKER")
+    old_sd = os.environ.get("SEMICOLAB_DOCKER")
     old_open_surfer = sim_runner.open_surfer
     calls = []
 
     try:
-        os.environ["SEMICOLAB_DOCKER"] = "1"
+        os.environ["VERIFLOW_DOCKER"] = "1"
+        os.environ.pop("SEMICOLAB_DOCKER", None)
         sim_runner.open_surfer = lambda wave_path: calls.append(wave_path)
         wave_path = Path("waves.vcd")
         sim_runner.launch_waves(wave_path)
         assert calls == [wave_path]
     finally:
-        if old_env is None:
+        if old_vd is None:
+            os.environ.pop("VERIFLOW_DOCKER", None)
+        else:
+            os.environ["VERIFLOW_DOCKER"] = old_vd
+        if old_sd is None:
             os.environ.pop("SEMICOLAB_DOCKER", None)
         else:
-            os.environ["SEMICOLAB_DOCKER"] = old_env
+            os.environ["SEMICOLAB_DOCKER"] = old_sd
         sim_runner.open_surfer = old_open_surfer
 
 
@@ -1129,7 +1135,8 @@ def test_launch_waves_local_uses_surfer_native():
     import shutil as real_shutil
     from veriflow.core import sim_runner
 
-    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_vd = os.environ.get("VERIFLOW_DOCKER")
+    old_sd = os.environ.get("SEMICOLAB_DOCKER")
     old_system = real_platform.system
     old_which = real_shutil.which
     old_popen = sim_runner.subprocess.Popen
@@ -1139,6 +1146,7 @@ def test_launch_waves_local_uses_surfer_native():
         calls.append((cmd, kwargs))
 
     try:
+        os.environ.pop("VERIFLOW_DOCKER", None)
         os.environ.pop("SEMICOLAB_DOCKER", None)
         real_platform.system = lambda: "Linux"
         real_shutil.which = lambda tool: "C:/tools/surfer.exe" if tool == "surfer" else None
@@ -1150,10 +1158,14 @@ def test_launch_waves_local_uses_surfer_native():
         assert calls, "Expected Surfer process launch"
         assert calls[0][0] == ["C:/tools/surfer.exe", str(wave_path)]
     finally:
-        if old_env is None:
+        if old_vd is None:
+            os.environ.pop("VERIFLOW_DOCKER", None)
+        else:
+            os.environ["VERIFLOW_DOCKER"] = old_vd
+        if old_sd is None:
             os.environ.pop("SEMICOLAB_DOCKER", None)
         else:
-            os.environ["SEMICOLAB_DOCKER"] = old_env
+            os.environ["SEMICOLAB_DOCKER"] = old_sd
         real_platform.system = old_system
         real_shutil.which = old_which
         sim_runner.subprocess.Popen = old_popen
@@ -1167,10 +1179,12 @@ def test_launch_waves_local_without_surfer_prints_hint():
     import shutil as real_shutil
     from veriflow.core import sim_runner
 
-    old_env = os.environ.get("SEMICOLAB_DOCKER")
+    old_vd = os.environ.get("VERIFLOW_DOCKER")
+    old_sd = os.environ.get("SEMICOLAB_DOCKER")
     old_which = real_shutil.which
 
     try:
+        os.environ.pop("VERIFLOW_DOCKER", None)
         os.environ.pop("SEMICOLAB_DOCKER", None)
         real_shutil.which = lambda tool: None
 
@@ -1183,10 +1197,14 @@ def test_launch_waves_local_without_surfer_prints_hint():
         assert ("GTK" + "Wave") not in output
         assert ("gtk" + "wave") not in output
     finally:
-        if old_env is None:
+        if old_vd is None:
+            os.environ.pop("VERIFLOW_DOCKER", None)
+        else:
+            os.environ["VERIFLOW_DOCKER"] = old_vd
+        if old_sd is None:
             os.environ.pop("SEMICOLAB_DOCKER", None)
         else:
-            os.environ["SEMICOLAB_DOCKER"] = old_env
+            os.environ["SEMICOLAB_DOCKER"] = old_sd
         real_shutil.which = old_which
 
 
@@ -3683,8 +3701,8 @@ ALL_TESTS = [
     ("run_copies_rtl",                  test_run_copies_rtl),
     ("run_multiple_runs",               test_run_multiple_runs),
     ("manifest_custom_serializer",      test_manifest_custom_serializer),
-    ("semicolab_true_creates_tb_tile_v",  test_semicolab_true_creates_tb_tile_v),
-    ("semicolab_false_creates_empty_tb", test_semicolab_false_creates_empty_tb),
+    ("semicolab_profile_creates_tb_tile_v",  test_semicolab_profile_creates_tb_tile_v),
+    ("null_profile_creates_empty_tb",        test_null_profile_creates_empty_tb),
     ("interface_name_column_in_tile_index", test_interface_name_column_in_tile_index),
     ("interface_column_in_records",      test_interface_column_in_records),
     ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),

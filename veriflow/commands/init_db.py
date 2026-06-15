@@ -7,7 +7,7 @@ _PROJECT_CONFIG_TEMPLATE = """\
 id_prefix: ""
 project_name: ""
 repo: ""
-interface_name: "semicolab"
+interface_name: null  # set to a registered profile name (e.g. "semicolab") to enable connectivity checking
 description: |
 
 """

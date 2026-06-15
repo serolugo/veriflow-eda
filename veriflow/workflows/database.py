@@ -25,7 +25,7 @@ from veriflow.generators.notes import generate_notes
 from veriflow.generators.readme import generate_readme
 from veriflow.generators.results import generate_results_json
 from veriflow.generators.summary import generate_summary
-from veriflow.models.interface_profile import get_interface_profile
+from veriflow.models.interface_profile import get_interface_profile, list_interface_profile_names
 from veriflow.models.project_config import ProjectConfig
 from veriflow.models.run_context import RunContext
 from veriflow.models.stage_result import StageResult
@@ -149,10 +149,11 @@ class DatabaseWorkflow:
         interface_profile = get_interface_profile(interface_name)
 
         if options.only_connectivity and interface_profile is None:
+            profiles = ", ".join(repr(p) for p in list_interface_profile_names())
             raise VeriFlowError(
                 "Cannot run connectivity check (--only-check): no interface profile is configured.\n"
                 "  Set 'interface_name' in project_config.yaml to enable interface checking.\n"
-                "  Example: interface_name: \"semicolab\"",
+                f"  Registered profiles: {profiles}",
                 code="VF_INTERFACE_CHECK_NO_PROFILE",
             )
 

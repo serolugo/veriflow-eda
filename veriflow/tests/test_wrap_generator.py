@@ -225,22 +225,7 @@ def test_header_contains_interface_name():
 
 # ── iverilog smoke test ───────────────────────────────────────────────────────
 
-def _iverilog_functional() -> bool:
-    """Return True only if iverilog can actually compile (not just print -V)."""
-    if shutil.which("iverilog") is None:
-        return False
-    with tempfile.TemporaryDirectory() as td:
-        f = Path(td) / "t.v"
-        o = Path(td) / "t.vvp"
-        f.write_text("module m; endmodule", encoding="utf-8")
-        r = subprocess.run(
-            ["iverilog", "-o", o.as_posix(), f.as_posix()],
-            capture_output=True,
-        )
-        return r.returncode == 0
-
-
-_IVERILOG_OK = _iverilog_functional()
+_IVERILOG_OK = shutil.which("iverilog") is not None
 
 
 def _iverilog_compile(src: str, extra_v: str) -> subprocess.CompletedProcess:

@@ -2,7 +2,7 @@
 VeriFlow V1 — CLI entry point
 
 Usage:
-    veriflow                                       → TUI interactiva
+    veriflow                                       → shows help
     veriflow db init --db ./database [--force]
     veriflow db create-tile --db ./database
     veriflow db run --db ./database --tile XXXX [options]
@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         metavar="NAME",
         dest="top_module",
-        help="RTL top module name (required for Semicolab interface scaffolding)",
+        help="RTL top module name (required when the interface profile needs testbench scaffolding)",
     )
 
     p_db_run = db_sub.add_parser("run", help="Run the verification pipeline")
@@ -120,6 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_sr.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
     p_db_sr.add_argument("--run", required=True, metavar="run-NNN", help="Run ID (e.g. run-001)")
 
+    # doctor (tool availability check)
+    sub.add_parser("doctor", help="Check EDA tool availability for all backends")
+
     # wrap (wrapper generation namespace)
     p_wrap = sub.add_parser("wrap", help="Wrapper generation commands")
     wrap_sub = p_wrap.add_subparsers(dest="wrap_command")
@@ -150,13 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # No arguments → TUI interactiva
-    if not (argv if argv is not None else sys.argv[1:]):
-        from veriflow.ui.tui import run_tui
-        run_tui()
-        return 0
-
     parser = build_parser()
+
+    if not (argv if argv is not None else sys.argv[1:]):
+        parser.print_help()
+        return 0
     args = parser.parse_args(argv)
     json_mode: bool = args.json
     non_interactive: bool = args.non_interactive
@@ -200,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_result: dict | None = None
                 db_read_result: dict | None = None
                 wrap_gen_result: dict | None = None
+                doctor_result: dict | None = None
 
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
@@ -334,6 +336,11 @@ def main(argv: list[str] | None = None) -> int:
                         from veriflow.commands.wrap_wizard import cmd_wrap_wizard
                         exit_code = cmd_wrap_wizard(args)
 
+                elif args.command == "doctor":
+                    dispatched = True
+                    from veriflow.commands.doctor import cmd_doctor
+                    exit_code, doctor_result = cmd_doctor(args)
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -363,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload = wrap_gen_result
                         else:
                             result_payload = {"status": "SUCCESS", "command": f"wrap {_wrap_cmd}"}
+                    elif args.command == "doctor":
+                        result_payload = doctor_result
 
             except VeriFlowError as e:
                 if json_mode:

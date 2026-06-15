@@ -9,10 +9,22 @@ from veriflow.core.csv_store import append_tile_index, get_next_tile_number
 from veriflow.core.tile_id import generate_tile_id
 from veriflow.core.validator import validate_database, validate_project_config
 from veriflow.generators.readme import generate_readme
+from veriflow.models.interface_profile import InterfaceProfile, get_interface_profile
 from veriflow.models.project_config import ProjectConfig
 from veriflow.models.tile_config import TileConfig
 
 _VERILOG_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
+
+def _ports_comment(profile: InterfaceProfile | None) -> str:
+    """Generate the ports: comment block for tile_config.yaml from a profile."""
+    if profile is None:
+        return "  # Document how your tile interfaces with your design (no interface profile selected)"
+    lines = [f"  # Interface profile: {profile.name}"]
+    for port in profile.ports:
+        name_w = f"{port.name}[{port.width - 1}:0]" if port.width > 1 else port.name
+        lines.append(f"  #   {name_w:<20}  {port.direction}")
+    return "\n".join(lines)
 
 
 _TILE_CONFIG_TEMPLATE = """\
@@ -29,12 +41,7 @@ description: |
   # What does this tile do?
 
 ports: |
-  # Describe how your tile uses the SemiCoLab port convention:
-  #   clk / arst_n     - clock and reset
-  #   csr_in[15:0]     - control inputs
-  #   data_reg_a / b   - input data (32-bit)
-  #   data_reg_c       - output data (32-bit)
-  #   csr_out[15:0]    - status outputs
+__PORTS_COMMENT__
 
 usage_guide: |
   # How should this tile be used?
@@ -61,10 +68,11 @@ notes: |
 def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     """Create a new tile entry in the database.
 
-    top_module: RTL top module name.  Required for Semicolab projects (raises
-    VF_TILE_TOP_MODULE_REQUIRED when missing).  When provided, it is written
-    into tile_config.yaml AND substituted into src/tb/tb_tile.v so that both
-    artifacts share the same declared DUT name as a single source of truth.
+    top_module: RTL top module name.  Required when the selected interface
+    profile has requires_top_module=True (raises VF_TILE_TOP_MODULE_REQUIRED
+    when missing).  When provided, it is written into tile_config.yaml AND
+    substituted into src/tb/tb_tile.v so that both artifacts share the same
+    declared DUT name as a single source of truth.
     """
 
     validate_database(db)
@@ -76,15 +84,14 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     validate_project_config(project_config)
 
     # 2. Resolve interface and validate top_module early — before any filesystem writes
-    from veriflow.models.interface_profile import get_interface_profile
     interface_name = project_config.interface_name
-    get_interface_profile(interface_name)  # raises VF_INTERFACE_UNKNOWN for unregistered names
-    is_semicolab = interface_name == "semicolab"
+    profile = get_interface_profile(interface_name)  # raises VF_INTERFACE_UNKNOWN for unregistered names
 
-    if is_semicolab:
+    if profile and profile.requires_top_module:
         if not top_module or not top_module.strip():
             raise VeriFlowError(
-                "top_module is required when creating a Semicolab tile. "
+                f"top_module is required when creating a tile with interface profile "
+                f"'{interface_name}'. "
                 "Pass the RTL top module name so the testbench can be generated correctly.",
                 code="VF_TILE_TOP_MODULE_REQUIRED",
             )
@@ -123,7 +130,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     print(f"[create-tile] Created {config_tile_dir.relative_to(db)}")
 
     # 7. Write single tile_config.yaml (tile + run fields merged)
-    config_text = _TILE_CONFIG_TEMPLATE
+    config_text = _TILE_CONFIG_TEMPLATE.replace("__PORTS_COMMENT__", _ports_comment(profile))
     if top_module:
         config_text = config_text.replace('top_module: ""', f'top_module: "{top_module}"')
     (config_tile_dir / "tile_config.yaml").write_text(config_text, encoding="utf-8")
@@ -138,18 +145,15 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
         (d / ".gitkeep").touch()
 
     tb_dir = config_tile_dir / "src" / "tb"
-    if is_semicolab:
-        tb_semicolab = template_dir / "tb_semicolab_template.v"
-        if tb_semicolab.exists():
-            content = tb_semicolab.read_text(encoding="utf-8")
+    tb_template_name = profile.tb_template if profile and profile.tb_template else "tb_universal_template.v"
+    tb_template_path = template_dir / tb_template_name
+    if tb_template_path.exists():
+        content = tb_template_path.read_text(encoding="utf-8")
+        if top_module:
             content = content.replace("/* DUT_MODULE */", top_module)
-            (tb_dir / "tb_tile.v").write_text(content, encoding="utf-8")
-        print(f"[create-tile] Created src/rtl/ and src/tb/ (semicolab: tb_tile.v)")
-    else:
-        tb_universal = template_dir / "tb_universal_template.v"
-        if tb_universal.exists():
-            shutil.copy2(tb_universal, tb_dir / "tb_tile.v")
-        print(f"[create-tile] Created src/rtl/ and src/tb/ (universal: empty tb_tile.v)")
+        (tb_dir / "tb_tile.v").write_text(content, encoding="utf-8")
+    profile_label = interface_name or "universal"
+    print(f"[create-tile] Created src/rtl/ and src/tb/ ({profile_label}: tb_tile.v)")
 
     # 9. Create tiles/<tile_id>/
     tile_dir = db / "tiles" / tile_id
