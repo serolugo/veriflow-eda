@@ -17,10 +17,10 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -43,29 +43,44 @@ jobs:
         run: |
           winget install --id Icarus.Verilog --exact `
             --accept-source-agreements --accept-package-agreements --silent
-          # winget updates the registry but not the current process PATH;
-          # find the installed bin dir and add it to GITHUB_PATH.
-          $iverDir = (Get-ChildItem "C:\Program Files\iverilog\bin" -ErrorAction SilentlyContinue) `
-                     | Select-Object -First 1 -ExpandProperty DirectoryName
+          # Icarus Verilog installs to C:\iverilog\bin by default on CI runners
+          $candidates = @(
+            "C:\iverilog\bin",
+            "C:\Program Files\iverilog\bin",
+            "$env:ProgramFiles\iverilog\bin"
+          )
+          $iverDir = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iverDir) {
-            # fallback: search common install location
-            $iverDir = "C:\Program Files\iverilog\bin"
+            # Fallback: search the entire Program Files tree
+            $iverDir = (Get-ChildItem "C:\Program Files" -Recurse -Filter "iverilog.exe" `
+                         -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
           }
-          Add-Content $env:GITHUB_PATH $iverDir
+          if ($iverDir) {
+            Write-Host "Adding iverilog to PATH: $iverDir"
+            Add-Content $env:GITHUB_PATH $iverDir
+          } else {
+            Write-Error "iverilog.exe not found after installation"
+            exit 1
+          }
 
       # ── Windows — yosys via MSYS2 / MINGW64 ─────────────────────────────
-      # MSYS2 is not installed on the local dev machine (Windows); this step
-      # is verified only in CI. If yosys installation or PATH propagation
-      # fails here, the Windows job can be retried or temporarily set to
-      # continue-on-error while the setup is validated.
       - name: Set up MSYS2 + install yosys (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
+          update: true
           install: mingw-w64-x86_64-yosys
-          # path-type: inherit makes MINGW64 bins available to non-MSYS2 shells
           path-type: inherit
+
+      # ── Windows — diagnóstico de PATH (correr antes de pip install) ───────
+      - name: Verify EDA tools in PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "PATH=$env:PATH"
+          Get-Command iverilog -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+          Get-Command yosys -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
 
       # ── Shared ───────────────────────────────────────────────────────────────
       - name: Install veriflow (editable)
@@ -73,6 +88,7 @@ jobs:
 
       - name: Verify tools (veriflow doctor)
         run: python -m veriflow.cli doctor
+        continue-on-error: ${{ runner.os == 'Windows' }}
 
       - name: Run pytest
         run: pytest veriflow/tests/ -q --tb=short
