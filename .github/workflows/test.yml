@@ -36,41 +36,14 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install icarus-verilog yosys
 
-      # ── Windows — iverilog via winget ─────────────────────────────────────
-      - name: Install iverilog (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          winget install --id Icarus.Verilog --exact `
-            --accept-source-agreements --accept-package-agreements --silent
-          # Icarus Verilog installs to C:\iverilog\bin by default on CI runners
-          $candidates = @(
-            "C:\iverilog\bin",
-            "C:\Program Files\iverilog\bin",
-            "$env:ProgramFiles\iverilog\bin"
-          )
-          $iverDir = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $iverDir) {
-            # Fallback: search the entire Program Files tree
-            $iverDir = (Get-ChildItem "C:\Program Files" -Recurse -Filter "iverilog.exe" `
-                         -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
-          }
-          if ($iverDir) {
-            Write-Host "Adding iverilog to PATH: $iverDir"
-            Add-Content $env:GITHUB_PATH $iverDir
-          } else {
-            Write-Error "iverilog.exe not found after installation"
-            exit 1
-          }
-
-      # ── Windows — yosys via MSYS2 / MINGW64 ─────────────────────────────
-      - name: Set up MSYS2 + install yosys (Windows)
+      # ── Windows — iverilog + yosys via MSYS2 / MINGW64 ─────────────────
+      - name: Set up MSYS2 + install EDA tools (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-yosys
+          install: mingw-w64-x86_64-iverilog mingw-w64-x86_64-yosys
           path-type: inherit
 
       # ── Windows — diagnóstico de PATH (correr antes de pip install) ───────
