@@ -1258,7 +1258,8 @@ def test_connectivity_fail_still_finalizes_run():
         _fill_run_config(db, "0001")
 
         from veriflow.commands.run import cmd_run
-        with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="FAIL"):
+        with patch("veriflow.core.validator.validate_tools"), \
+             patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="FAIL"):
             result = cmd_run(
                 db=db, tile_number="0001",
                 skip_check=False, skip_sim=True, skip_synth=True,
@@ -3067,7 +3068,8 @@ def test_cmd_run_connectivity_still_uses_semicolab_interface_profile():
         _fill_run_config(db, "0001")
 
         from veriflow.commands.run import cmd_run
-        with patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="PASS"):
+        with patch("veriflow.core.validator.validate_tools"), \
+             patch("veriflow.core.backends.icarus.run_connectivity_check", return_value="PASS"):
             result = cmd_run(
                 db=db, tile_number="0001",
                 skip_check=False, skip_sim=True, skip_synth=True,
