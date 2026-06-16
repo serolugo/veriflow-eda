@@ -27,7 +27,8 @@ setup(
         "rich",
     ],
     extras_require={
-        "docs": ["mkdocs>=1.6", "mkdocs-material>=9.5"],
+    "docs": ["mkdocs>=1.6", "mkdocs-material>=9.5"],
+    "dev": ["pytest"],
     },
     entry_points={
         "console_scripts": [
