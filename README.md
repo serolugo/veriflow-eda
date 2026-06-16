@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/serolugo/veriflow/actions/workflows/test.yml"><img src="https://github.com/serolugo/veriflow/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
-  <a href="https://pypi.org/project/veriflow/"><img src="https://img.shields.io/pypi/v/veriflow.svg" alt="PyPI"></a>
+  <a href="https://pypi.org/project/veriflow-eda/"><img src="https://img.shields.io/pypi/v/veriflow-eda.svg" alt="PyPI"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://github.com/serolugo/veriflow/blob/main/LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
@@ -35,7 +35,7 @@ Lightweight RTL verification and documentation framework for multi-project ASIC 
 ## Installation
 
 ```bash
-pip install -e .
+pip install veriflow-eda
 ```
 
 After installation, the `veriflow` command is available directly in the terminal.
