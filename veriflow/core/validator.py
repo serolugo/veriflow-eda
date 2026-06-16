@@ -26,9 +26,21 @@ def validate_database(db: Path) -> None:
             )
 
 
-def validate_tools() -> None:
-    """Validate that iverilog and yosys are available in PATH."""
-    for tool in ("iverilog", "yosys"):
+def validate_tools(
+    need_iverilog: bool = True,
+    need_yosys: bool = True,
+) -> None:
+    """Validate that required EDA tools are available in PATH.
+
+    Pass need_iverilog=False to skip the iverilog check (e.g. synth-only runs),
+    or need_yosys=False to skip the yosys check (e.g. connectivity/sim-only runs).
+    """
+    tools = []
+    if need_iverilog:
+        tools.append("iverilog")
+    if need_yosys:
+        tools.append("yosys")
+    for tool in tools:
         if shutil.which(tool) is None:
             raise VeriFlowError(
                 f"Tool not found in PATH: {tool}\n"

@@ -116,11 +116,8 @@ class DatabaseWorkflow:
             skip_check = True
             skip_sim = True
 
-        # ── 1. Validate database and tools ────────────────────────────────────
+        # ── 1. Validate database ──────────────────────────────────────────────
         validate_database(self.db_path)
-        any_tool_stage = not (skip_check and skip_sim and skip_synth)
-        if any_tool_stage:
-            validate_tools()
 
         tile_number_str = f"{int(tile_number):04d}"
 
@@ -160,6 +157,13 @@ class DatabaseWorkflow:
         # Projects with no interface profile skip connectivity automatically
         if interface_profile is None:
             skip_check = True
+
+        # Validate only the tools needed by the stages that will actually run.
+        # iverilog: connectivity + simulation; yosys: synthesis only.
+        need_iverilog = not (skip_check and skip_sim)
+        need_yosys = not skip_synth
+        if need_iverilog or need_yosys:
+            validate_tools(need_iverilog=need_iverilog, need_yosys=need_yosys)
 
         validate_run_inputs(self.db_path, tile_number_str, tile_config)
 
