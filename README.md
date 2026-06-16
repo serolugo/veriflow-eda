@@ -1,10 +1,10 @@
 # VeriFlow
 
 <p align="center">
-  <a href="LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://github.com/serolugo/veriflow/actions/workflows/test.yml"><img src="https://github.com/serolugo/veriflow/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://pypi.org/project/veriflow/"><img src="https://img.shields.io/pypi/v/veriflow.svg" alt="PyPI"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
-  <a href="http://iverilog.icarus.com/"><img src="https://img.shields.io/badge/icarus%20verilog-required-purple" alt="Icarus Verilog"></a>
-  <a href="https://yosyshq.net/yosys/"><img src="https://img.shields.io/badge/yosys-required-orange" alt="Yosys"></a>
+  <a href="https://github.com/serolugo/veriflow/blob/main/LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
 Lightweight RTL verification and documentation framework for multi-project ASIC chip design. Automates interface/connectivity checking, simulation, and synthesis using open-source tooling, and generates structured run records per execution.
@@ -89,7 +89,7 @@ veriflow project run
 veriflow project run --config veriflow.yaml
 ```
 
-See [docs/PROJECT_CONFIG.md](docs/PROJECT_CONFIG.md) for the full `veriflow.yaml` schema.
+See [docs/PROJECT_CONFIG.md](https://github.com/serolugo/veriflow/blob/main/docs/PROJECT_CONFIG.md) for the full `veriflow.yaml` schema.
 
 ---
 
@@ -411,7 +411,7 @@ If no `.v` testbench sources are present, simulation is skipped automatically.
 
 ## Companion environments
 
-See [docs/TILEBENCH.md](docs/TILEBENCH.md) for the optional TileBench Docker environment
+See [docs/TILEBENCH.md](https://github.com/serolugo/veriflow/blob/main/docs/TILEBENCH.md) for the optional TileBench Docker environment
 (VeriFlow pre-installed, browser-based waveform viewer, no local EDA tools required).
 
 ---
@@ -420,12 +420,12 @@ See [docs/TILEBENCH.md](docs/TILEBENCH.md) for the optional TileBench Docker env
 
 | Document | Description |
 |---|---|
-| [SPECS.md](docs/SPECS.md) | Full system specification |
-| [PROJECT_CONFIG.md](docs/PROJECT_CONFIG.md) | Project Mode `veriflow.yaml` configuration reference |
-| [DESIGN.md](docs/DESIGN.md) | Detailed technical design |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture reference |
-| [MANUAL.md](docs/MANUAL.md) | Complete user manual |
-| [QUICKREF.md](docs/QUICKREF.md) | Quick reference card |
+| [SPECS.md](https://github.com/serolugo/veriflow/blob/main/docs/SPECS.md) | Full system specification |
+| [PROJECT_CONFIG.md](https://github.com/serolugo/veriflow/blob/main/docs/PROJECT_CONFIG.md) | Project Mode `veriflow.yaml` configuration reference |
+| [DESIGN.md](https://github.com/serolugo/veriflow/blob/main/docs/DESIGN.md) | Detailed technical design |
+| [ARCHITECTURE.md](https://github.com/serolugo/veriflow/blob/main/docs/ARCHITECTURE.md) | Architecture reference |
+| [MANUAL.md](https://github.com/serolugo/veriflow/blob/main/docs/MANUAL.md) | Complete user manual |
+| [QUICKREF.md](https://github.com/serolugo/veriflow/blob/main/docs/QUICKREF.md) | Quick reference card |
 
 ---
 
@@ -453,4 +453,4 @@ python -m pytest veriflow/tests -q
 
 MIT License — Copyright (c) 2026 Roman Lugo
 
-See [`LICENCE`](LICENCE) for the full license text.
+See [`LICENCE`](https://github.com/serolugo/veriflow/blob/main/LICENCE) for the full license text.

@@ -1,9 +1,9 @@
-# Instalación de herramientas EDA
+# EDA Tools Installation
 
-VeriFlow requiere **iverilog** (Icarus Verilog) y **yosys**, instalados de forma
-independiente. No se usa ni requiere oss-cad-suite.
+VeriFlow requires **iverilog** (Icarus Verilog) and **yosys**, installed
+independently. oss-cad-suite is not used or required.
 
-Verifica la instalación con:
+Verify the installation with:
 
 ```sh
 veriflow doctor
@@ -18,15 +18,15 @@ sudo apt-get update
 sudo apt-get install -y iverilog yosys
 ```
 
-**Versiones mínimas en repositorios recientes:**
+**Minimum versions in recent repositories:**
 
-| Distribución    | iverilog | yosys   |
-|-----------------|----------|---------|
-| Ubuntu 22.04 LTS | 11.0    | 0.9     |
-| Ubuntu 24.04 LTS | 12.0    | 0.27    |
+| Distribution     | iverilog | yosys |
+|------------------|----------|-------|
+| Ubuntu 22.04 LTS | 11.0     | 0.9   |
+| Ubuntu 24.04 LTS | 12.0     | 0.27  |
 
-Ambas versiones son suficientes para VeriFlow. Las versiones de ubuntu 22.04
-están verificadas en CI (ver `.github/workflows/test.yml`).
+Both versions are sufficient for VeriFlow. The Ubuntu 22.04 versions are
+verified in CI (see `.github/workflows/test.yml`).
 
 ---
 
@@ -36,8 +36,8 @@ están verificadas en CI (ver `.github/workflows/test.yml`).
 brew install icarus-verilog yosys
 ```
 
-Homebrew instala la versión más reciente de ambas herramientas (iverilog 12+,
-yosys 0.38+). Verificado en CI en `macos-latest`.
+Homebrew installs the latest version of both tools (iverilog 12+,
+yosys 0.38+). Verified in CI on `macos-latest`.
 
 ---
 
@@ -45,17 +45,17 @@ yosys 0.38+). Verificado en CI en `macos-latest`.
 
 ### iverilog
 
-Opción recomendada — **winget** (instalador oficial standalone):
+Recommended option — **winget** (official standalone installer):
 
 ```powershell
 winget install --id Icarus.Verilog --exact --accept-source-agreements --accept-package-agreements
 ```
 
-Esto instala el instalador NSIS de Icarus Verilog desde
-[bleyer.org/icarus](https://bleyer.org/icarus/) y añade iverilog y vvp al
-PATH del sistema. Paquete disponible en winget: versión 12.2022.06.11.
+This installs the Icarus Verilog NSIS installer from
+[bleyer.org/icarus](https://bleyer.org/icarus/) and adds iverilog and vvp to
+the system PATH. Package available in winget: version 12.2022.06.11.
 
-Alternativa (Chocolatey):
+Alternative (Chocolatey):
 
 ```powershell
 choco install iverilog -y
@@ -63,48 +63,47 @@ choco install iverilog -y
 
 ### yosys
 
-La opción más limpia en Windows es **MSYS2** con el paquete precompilado de
-mingw64:
+The cleanest option on Windows is **MSYS2** with the prebuilt mingw64 package:
 
-**Paso 1 — Instalar MSYS2** (si no está ya instalado):
+**Step 1 — Install MSYS2** (if not already installed):
 
 ```powershell
 winget install --id MSYS2.MSYS2 --exact --accept-source-agreements --accept-package-agreements
 ```
 
-O descarga el instalador desde [msys2.org](https://www.msys2.org/).
+Or download the installer from [msys2.org](https://www.msys2.org/).
 
-**Paso 2 — Instalar yosys desde la terminal MSYS2 (MINGW64):**
+**Step 2 — Install yosys from the MSYS2 terminal (MINGW64):**
 
 ```bash
 pacman -S mingw-w64-x86_64-yosys
 ```
 
-**Paso 3 — Añadir el directorio de MINGW64 al PATH del sistema:**
+**Step 3 — Add the MINGW64 directory to the system PATH:**
 
-Añade `C:\msys64\mingw64\bin` a la variable de entorno PATH (Panel de
-control → Sistema → Variables de entorno). Después de esto, `yosys.exe`
-estará disponible en cmd/PowerShell y para pytest.
+Add `C:\msys64\mingw64\bin` to the PATH environment variable (Control
+Panel → System → Environment Variables). After this, `yosys.exe` will be
+available in cmd/PowerShell and for pytest.
 
-**Versión instalada con este método:** yosys 0.40+ (paquete
-`mingw-w64-x86_64-yosys` en el repo `mingw64` de MSYS2).
+**Version installed with this method:** yosys 0.40+ (package
+`mingw-w64-x86_64-yosys` from the `mingw64` MSYS2 repository).
 
-### Estado actual de esta máquina de desarrollo
+### Current state of the development machine
 
-Esta máquina Windows tiene iverilog 14.0 y yosys 0.63 disponibles a través
-de oss-cad-suite (`C:\Users\Roman\oss-cad-suite\bin\`). MSYS2 no está
-instalado localmente; el método winget+MSYS2 está verificado en CI
-(`windows-latest` en GitHub Actions).
+This Windows machine has iverilog 14.0 and yosys 0.63 available through
+oss-cad-suite (`C:\Users\Roman\oss-cad-suite\bin\`). MSYS2 is not installed
+locally; the winget+MSYS2 method is verified in CI
+(`windows-latest` on GitHub Actions).
 
 ---
 
-## Verificación post-instalación
+## Post-installation verification
 
 ```sh
 veriflow doctor
 ```
 
-Salida esperada con ambas herramientas disponibles:
+Expected output with both tools available:
 
 ```
 [CONNECTIVITY]
@@ -121,4 +120,4 @@ Salida esperada con ambas herramientas disponibles:
     yosys         [OK]    Yosys 0.9 (git sha1 ...)
 ```
 
-Exit code 0 indica que todas las herramientas están disponibles.
+Exit code 0 indicates that all tools are available.

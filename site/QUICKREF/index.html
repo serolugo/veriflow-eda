@@ -695,17 +695,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#activate-environment-windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Activate environment (Windows)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -721,6 +710,28 @@
     <span class="md-ellipsis">
       
         Automation / CI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wrapper-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wrapper generation
       
     </span>
   </a>
@@ -1029,14 +1040,9 @@
 
 
 <h1 id="veriflow-v1-quick-reference">VeriFlow V1 — Quick Reference</h1>
-<h2 id="activate-environment-windows">Activate environment (Windows)</h2>
-<pre><code class="language-bat">C:\Users\&lt;user&gt;\oss-cad-suite\environment.bat
-cd C:\path\to\your\project
-</code></pre>
-<hr />
 <h2 id="commands">Commands</h2>
-<pre><code class="language-bash"># Interactive TUI (no arguments)
-veriflow
+<pre><code class="language-bash"># No arguments — shows help
+veriflow --help
 
 # Project Mode — run a project described by veriflow.yaml
 veriflow project run
@@ -1088,6 +1094,19 @@ veriflow --non-interactive db run --db ./database --tile 0001
 <p><code>--json</code> and <code>--non-interactive</code> are global flags — place them before the subcommand.</p>
 <p>Exit code is <code>0</code> on success, non-zero on any error.</p>
 <p>Every <code>db run</code> always writes <code>tiles/&lt;tile_id&gt;/runs/run-NNN/results.json</code> regardless of flags.</p>
+<hr />
+<h2 id="tool-check">Tool check</h2>
+<pre><code class="language-bash">veriflow doctor
+</code></pre>
+<p>Verifies that iverilog, vvp, and yosys are installed and in PATH. Run after installation and
+as a first troubleshooting step if <code>db run</code> fails. See <a href="../user-guide/doctor/">User Guide → Doctor</a>.</p>
+<hr />
+<h2 id="wrapper-generation">Wrapper generation</h2>
+<pre><code class="language-bash">veriflow wrap init --interface semicolab --top my_module src/my_module.v
+veriflow wrap generate --config wrapper_config.yaml
+</code></pre>
+<p>Generates a Verilog adapter wrapper that maps your RTL port names to an interface profile.
+See <a href="../user-guide/wrap/">User Guide → Wrap</a> for the full workflow, config schema, and wizard mode.</p>
 <hr />
 <h2 id="interface-profiles">Interface profiles</h2>
 <p>Set via <code>interface_name</code> in <code>database/project_config.yaml</code>. Applies to the entire database.</p>

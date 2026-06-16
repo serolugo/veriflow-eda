@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#command-reference-coming-soon" class="md-skip">
+        <a href="#command-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -731,6 +731,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All Commands
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -747,6 +765,69 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#db-database-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        db — Database Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-project-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        project — Project Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wrap-interface-wrapper-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wrap — Interface Wrapper Generator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doctor-tool-availability-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        doctor — Tool Availability Check
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -859,7 +940,119 @@
 
 
 
-<h1 id="command-reference-coming-soon">Command Reference — coming soon</h1>
+<h1 id="command-reference">Command Reference</h1>
+<p>All VeriFlow commands follow the pattern <code>veriflow [global flags] &lt;namespace&gt; &lt;subcommand&gt; [flags]</code>.</p>
+<p>The four top-level namespaces are listed below. For flag-level detail, follow the link in each
+row to the page where that command is fully documented.</p>
+<hr />
+<h2 id="db-database-mode"><code>db</code> — Database Mode</h2>
+<p>Full documentation: <a href="../../MANUAL/">User Guide → Database Mode</a></p>
+<table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>db init</code></td>
+<td>Create a new tile database directory with a <code>project_config.yaml</code> scaffold</td>
+</tr>
+<tr>
+<td><code>db create-tile</code></td>
+<td>Add a new tile to the database and scaffold its source files</td>
+</tr>
+<tr>
+<td><code>db run</code></td>
+<td>Run the verification pipeline (connectivity, simulation, synthesis) for a tile</td>
+</tr>
+<tr>
+<td><code>db waves</code></td>
+<td>Open the waveform file from a completed run</td>
+</tr>
+<tr>
+<td><code>db bump-version</code></td>
+<td>Increment the version field of a tile ID</td>
+</tr>
+<tr>
+<td><code>db bump-revision</code></td>
+<td>Increment the revision field of a tile ID (resets version to 01)</td>
+</tr>
+<tr>
+<td><code>db list-tiles</code></td>
+<td>List all tiles in the database</td>
+</tr>
+<tr>
+<td><code>db list-runs</code></td>
+<td>List all runs for a specific tile</td>
+</tr>
+<tr>
+<td><code>db show-run</code></td>
+<td>Show the details of a specific run</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="project-project-mode"><code>project</code> — Project Mode</h2>
+<p>Full documentation: <a href="../../PROJECT_CONFIG/">User Guide → Project Mode</a></p>
+<table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>project run</code></td>
+<td>Run the verification pipeline for a project described by <code>veriflow.yaml</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="wrap-interface-wrapper-generator"><code>wrap</code> — Interface Wrapper Generator</h2>
+<p>Full documentation: <a href="../../user-guide/wrap/">User Guide → Wrap</a></p>
+<table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wrap init</code></td>
+<td>Read RTL source files and scaffold a <code>wrapper_config.yaml</code> with the port mapping</td>
+</tr>
+<tr>
+<td><code>wrap generate</code></td>
+<td>Read a completed <code>wrapper_config.yaml</code>, validate it, and generate the wrapper Verilog</td>
+</tr>
+<tr>
+<td><code>wrap wizard</code></td>
+<td>Interactive session that runs init and generate in one guided flow</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="doctor-tool-availability-check"><code>doctor</code> — Tool Availability Check</h2>
+<p>Full documentation: <a href="../../user-guide/doctor/">User Guide → Doctor</a></p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>doctor</code></td>
+<td>Check that all required EDA tools (iverilog, vvp, yosys) are installed and in PATH</td>
+</tr>
+</tbody>
+</table>
+<p><code>doctor</code> has no subcommands. Run it as <code>veriflow doctor</code> or <code>veriflow doctor --json</code>.</p>
 
 
 

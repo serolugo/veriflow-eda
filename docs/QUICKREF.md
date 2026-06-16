@@ -1,18 +1,10 @@
 # VeriFlow V1 — Quick Reference
 
-## Activate environment (Windows)
-```bat
-C:\Users\<user>\oss-cad-suite\environment.bat
-cd C:\path\to\your\project
-```
-
----
-
 ## Commands
 
 ```bash
-# Interactive TUI (no arguments)
-veriflow
+# No arguments — shows help
+veriflow --help
 
 # Project Mode — run a project described by veriflow.yaml
 veriflow project run
@@ -71,6 +63,29 @@ veriflow --non-interactive db run --db ./database --tile 0001
 Exit code is `0` on success, non-zero on any error.
 
 Every `db run` always writes `tiles/<tile_id>/runs/run-NNN/results.json` regardless of flags.
+
+---
+
+## Tool check
+
+```bash
+veriflow doctor
+```
+
+Verifies that iverilog, vvp, and yosys are installed and in PATH. Run after installation and
+as a first troubleshooting step if `db run` fails. See [User Guide → Doctor](user-guide/doctor.md).
+
+---
+
+## Wrapper generation
+
+```bash
+veriflow wrap init --interface semicolab --top my_module src/my_module.v
+veriflow wrap generate --config wrapper_config.yaml
+```
+
+Generates a Verilog adapter wrapper that maps your RTL port names to an interface profile.
+See [User Guide → Wrap](user-guide/wrap.md) for the full workflow, config schema, and wizard mode.
 
 ---
 

@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#doctor-coming-soon" class="md-skip">
+        <a href="#veriflow-doctor-tool-availability-check" class="md-skip">
           Skip to content
         </a>
       
@@ -616,6 +616,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Doctor
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -632,6 +650,97 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plain-text-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain-text output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#-json-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        --json flag
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="--json flag">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-field-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON field reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-to-use-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to use it
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -859,7 +968,183 @@
 
 
 
-<h1 id="doctor-coming-soon">Doctor — coming soon</h1>
+<h1 id="veriflow-doctor-tool-availability-check"><code>veriflow doctor</code> — Tool Availability Check</h1>
+<p><code>veriflow doctor</code> verifies that the EDA tools required by VeriFlow's backends are installed
+and accessible. Run it after installation and as a first troubleshooting step if <code>db run</code> or
+<code>wrap generate</code> fail due to a missing tool.</p>
+<hr />
+<h2 id="what-it-checks">What it checks</h2>
+<table>
+<thead>
+<tr>
+<th>Backend category</th>
+<th>Backend name</th>
+<th>Tools checked</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connectivity</td>
+<td>icarus</td>
+<td><code>iverilog</code></td>
+</tr>
+<tr>
+<td>Simulation</td>
+<td>icarus</td>
+<td><code>iverilog</code>, <code>vvp</code></td>
+</tr>
+<tr>
+<td>Synthesis</td>
+<td>yosys</td>
+<td><code>yosys</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="plain-text-output">Plain-text output</h2>
+<pre><code>[CONNECTIVITY]
+  icarus
+    iverilog      [OK]    Icarus Verilog version 11.0 (stable)
+
+[SIMULATION]
+  icarus
+    iverilog      [OK]    Icarus Verilog version 11.0 (stable)
+    vvp           [OK]    Icarus Verilog runtime version 11.0 (stable)
+
+[SYNTHESIS]
+  yosys
+    yosys         [OK]    Yosys 0.9 (git sha1 ...)
+</code></pre>
+<p>Each tool line shows <code>[OK]</code> when the binary is found and reports its version, or <code>[FAIL]</code>
+with an error message when the binary is not in PATH.</p>
+<hr />
+<h2 id="-json-flag"><code>--json</code> flag</h2>
+<pre><code class="language-bash">veriflow doctor --json
+</code></pre>
+<p>Outputs a JSON object to stdout instead of the text report:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;OK&quot;,
+  &quot;backends&quot;: {
+    &quot;connectivity&quot;: [
+      {
+        &quot;name&quot;: &quot;icarus&quot;,
+        &quot;tools&quot;: [
+          {&quot;tool&quot;: &quot;iverilog&quot;, &quot;available&quot;: true, &quot;version&quot;: &quot;Icarus Verilog version 11.0 (stable)&quot;, &quot;path&quot;: &quot;/usr/bin/iverilog&quot;, &quot;error&quot;: null}
+        ]
+      }
+    ],
+    &quot;simulation&quot;: [
+      {
+        &quot;name&quot;: &quot;icarus&quot;,
+        &quot;tools&quot;: [
+          {&quot;tool&quot;: &quot;iverilog&quot;, &quot;available&quot;: true, &quot;version&quot;: &quot;Icarus Verilog version 11.0 (stable)&quot;, &quot;path&quot;: &quot;/usr/bin/iverilog&quot;, &quot;error&quot;: null},
+          {&quot;tool&quot;: &quot;vvp&quot;,      &quot;available&quot;: true, &quot;version&quot;: &quot;Icarus Verilog runtime version 11.0 (stable)&quot;, &quot;path&quot;: &quot;/usr/bin/vvp&quot;, &quot;error&quot;: null}
+        ]
+      }
+    ],
+    &quot;synthesis&quot;: [
+      {
+        &quot;name&quot;: &quot;yosys&quot;,
+        &quot;tools&quot;: [
+          {&quot;tool&quot;: &quot;yosys&quot;, &quot;available&quot;: false, &quot;version&quot;: null, &quot;path&quot;: null, &quot;error&quot;: &quot;'yosys' not found in PATH&quot;}
+        ]
+      }
+    ]
+  }
+}
+</code></pre>
+<h3 id="json-field-reference">JSON field reference</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td><code>"OK"</code> if all tools are available; <code>"FAIL"</code> if any tool is missing</td>
+</tr>
+<tr>
+<td><code>backends</code></td>
+<td>object</td>
+<td>Keys: <code>connectivity</code>, <code>simulation</code>, <code>synthesis</code></td>
+</tr>
+<tr>
+<td><code>backends.&lt;category&gt;[]</code></td>
+<td>array</td>
+<td>One entry per backend in that category</td>
+</tr>
+<tr>
+<td><code>backends.&lt;category&gt;[].name</code></td>
+<td>string</td>
+<td>Backend name (e.g. <code>"icarus"</code>, <code>"yosys"</code>)</td>
+</tr>
+<tr>
+<td><code>backends.&lt;category&gt;[].tools[]</code></td>
+<td>array</td>
+<td>One entry per tool the backend requires</td>
+</tr>
+<tr>
+<td><code>.tools[].tool</code></td>
+<td>string</td>
+<td>Binary name</td>
+</tr>
+<tr>
+<td><code>.tools[].available</code></td>
+<td>bool</td>
+<td><code>true</code> if the binary was found and invoked successfully</td>
+</tr>
+<tr>
+<td><code>.tools[].version</code></td>
+<td>string | null</td>
+<td>First non-empty output line from <code>&lt;tool&gt; -V</code>; <code>null</code> if not available</td>
+</tr>
+<tr>
+<td><code>.tools[].path</code></td>
+<td>string | null</td>
+<td>Absolute path returned by <code>which</code>; <code>null</code> if not found</td>
+</tr>
+<tr>
+<td><code>.tools[].error</code></td>
+<td>string | null</td>
+<td>Error description when <code>available</code> is <code>false</code>; <code>null</code> otherwise</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="exit-codes">Exit codes</h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>All tools in all backends are available</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>At least one tool is missing or could not be invoked</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="when-to-use-it">When to use it</h2>
+<ul>
+<li><strong>Post-installation</strong> — run <code>veriflow doctor</code> immediately after installing iverilog and yosys
+  to confirm VeriFlow can see both tools. See <a href="../../INSTALL/">Installation</a> for per-platform
+  instructions.</li>
+<li><strong>Troubleshooting</strong> — if <code>veriflow db run</code> or <code>veriflow wrap generate</code> fail with a message
+  about a missing tool, run <code>veriflow doctor</code> first to identify which binary is absent before
+  checking other configuration.</li>
+</ul>
 
 
 
