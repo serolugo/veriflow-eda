@@ -19,9 +19,9 @@ from typing import List, Optional, Tuple
 
 _PORT_RE = re.compile(
     r"\b(input|output|inout)\b"
-    r"(?:\s+(?:wire|reg|logic))?"
-    r"(?:\s*(\[[\w\s:+-]+\]))?"   # group 2: optional bus expression
-    r"\s+([\w]+)"                  # group 3: port name
+    r"(?:\s+(?:wire|reg|logic|signed|unsigned))*"  # zero or more type qualifiers
+    r"(?:\s*(\[[^\]]+\]))?"                         # group 2: optional bus [hi:lo]
+    r"\s*([\w]+)"                                   # group 3: port name (0+ spaces)
     r"\s*[,;)\n]",
     re.IGNORECASE,
 )

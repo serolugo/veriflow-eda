@@ -23,7 +23,7 @@ The three commands in this namespace are:
 ## `veriflow wrap init`
 
 ```bash
-veriflow wrap init --interface <name> --top <top_module> <rtl_files...> \
+veriflow wrap init --interface <name> --top <rtl_file> \
     [--config PATH] [--wrapper-name NAME] \
     [--author AUTHOR] [--description DESC] [--version VER] \
     [--force]
@@ -32,8 +32,7 @@ veriflow wrap init --interface <name> --top <top_module> <rtl_files...> \
 | Flag | Required | Description |
 |---|---|---|
 | `--interface NAME` | yes | Interface profile to target (e.g. `semicolab`). Run `veriflow doctor` to see registered profiles. |
-| `--top MODULE` | yes | Name of the RTL top module. Must appear in at least one of the listed source files. |
-| `<rtl_files...>` | yes | One or more Verilog source files (space-separated). List the file containing `--top` first; if the module is not found there, VeriFlow searches the remaining files in order. |
+| `--top FILE` | yes | Verilog source file containing the top module. The module name is auto-detected from the file contents. |
 | `--config PATH` | no | Where to write `wrapper_config.yaml`. Default: `wrapper_config.yaml` in the current directory. |
 | `--wrapper-name NAME` | no | Name for the generated wrapper module. Default: `<top_module>_wrapper`. |
 | `--author` | no | Written to `metadata.author` in the config. |
@@ -41,14 +40,24 @@ veriflow wrap init --interface <name> --top <top_module> <rtl_files...> \
 | `--version` | no | Written to `metadata.version` in the config. Default: `"1.0.0"`. |
 | `--force` | no | Overwrite an existing `wrapper_config.yaml` without prompting. |
 
-`wrap init` does not generate the wrapper — it produces a `wrapper_config.yaml` with the
+`wrap init` does not generate the wrapper -- it produces a `wrapper_config.yaml` with the
 port mapping section pre-populated with the IP ports it extracted and the interface profile
 ports listed as comments for reference. Open the file, fill in the mapping, then run
 `wrap generate`.
 
-> If `--top` is not found in the first file, VeriFlow searches each subsequent file
-> in the order listed. If the module is not found in any file, the command exits with an
-> error (`VF_WRAP_E_TOP_MODULE_NOT_FOUND`) — check the module name and file list.
+The command prints the detected module name so you can confirm it is correct before
+editing the config.
+
+### Auto-detection limit
+
+`--top` must point to a file that contains **exactly one** `module` declaration.
+
+- **Zero modules found** (`VF_WRAP_E_NO_MODULE_FOUND`): the file has no `module`
+  statement -- check that you passed the right file.
+- **Multiple modules found** (`VF_WRAP_E_MULTIPLE_MODULES_FOUND`): the file contains
+  more than one `module` declaration. This case is not supported by auto-detection.
+  Move the top module to its own separate `.v` file before running `wrap init`.
+  There is no flag to override this -- it is a deliberate design limit.
 
 ---
 
@@ -287,7 +296,7 @@ endmodule
 ### 2. Scaffold the config
 
 ```bash
-veriflow wrap init --interface semicolab --top counter8 counter8.v \
+veriflow wrap init --interface semicolab --top counter8.v \
     --wrapper-name counter8_wrapper
 ```
 

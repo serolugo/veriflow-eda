@@ -308,3 +308,62 @@ def test_db_mode_commands_require_db_unchanged(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         main(["db", "init"])
     assert exc_info.value.code != 0
+
+
+# ── E. Missing config file — clean error, no raw traceback ───────────────────
+
+def test_missing_config_exits_nonzero(tmp_path):
+    """CLI must exit non-zero (not crash) when the config file is missing."""
+    from veriflow.cli import main
+    rc = main(["project", "run", "--config", str(tmp_path / "no_such.yaml")])
+    assert rc != 0
+
+
+def test_missing_config_prints_clean_error_not_traceback(tmp_path):
+    """Missing config must produce a clean [ERROR] line, not a Python traceback."""
+    import io
+    import contextlib
+    from veriflow.cli import main
+
+    stderr_buf = io.StringIO()
+    with contextlib.redirect_stderr(stderr_buf):
+        main(["project", "run", "--config", str(tmp_path / "no_such.yaml")])
+
+    output = stderr_buf.getvalue()
+    assert "Traceback" not in output
+    assert "FileNotFoundError" not in output
+    assert "[ERROR]" in output
+
+
+def test_missing_config_json_mode_returns_structured_error(tmp_path):
+    """In --json mode, missing config must produce a structured error dict, not an exception."""
+    import io
+    import json
+    import contextlib
+    from veriflow.cli import main
+
+    stdout_buf = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buf):
+        rc = main(["--json", "project", "run", "--config", str(tmp_path / "no_such.yaml")])
+
+    assert rc != 0
+    payload = json.loads(stdout_buf.getvalue())
+    assert payload["status"] == "ERROR"
+    assert payload["error"]["code"] == "VF_PROJECT_CONFIG_NOT_FOUND"
+
+
+def test_missing_default_config_exits_nonzero(tmp_path, monkeypatch):
+    """Running with no --config in a directory without veriflow.yaml must exit non-zero cleanly."""
+    import io
+    import contextlib
+    from veriflow.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    stderr_buf = io.StringIO()
+    with contextlib.redirect_stderr(stderr_buf):
+        rc = main(["project", "run"])
+
+    assert rc != 0
+    output = stderr_buf.getvalue()
+    assert "Traceback" not in output
+    assert "FileNotFoundError" not in output

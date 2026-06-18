@@ -28,7 +28,6 @@ def cmd_wrap_init(args: argparse.Namespace) -> int:
             code="VF_WRAP_E_CONFIG_EXISTS",
         )
 
-    rtl_files = [str(f) for f in args.rtl_files]
     metadata: dict = {}
     for key in ("author", "description", "version"):
         val = getattr(args, key, None)
@@ -37,13 +36,13 @@ def cmd_wrap_init(args: argparse.Namespace) -> int:
 
     config = wrap_init(
         interface_name=args.interface,
-        top_module=args.top,
-        rtl_sources=rtl_files,
+        rtl_file=args.rtl_file,
         wrapper_name=getattr(args, "wrapper_name", None),
         metadata=metadata or None,
     )
 
     ip_ports = config.pop("_ip_ports")
+    top_module = config["design"]["top_module"]
     interface_profile = get_interface_profile(args.interface)
 
     yaml_str = render_wrapper_config_yaml(config, interface_profile, ip_ports)
@@ -55,7 +54,10 @@ def cmd_wrap_init(args: argparse.Namespace) -> int:
         f"  [secondary]Interface  [/secondary]  [id]{interface_profile.name}[/id]"
         f"  ({len(interface_profile.ports)} ports)"
     )
-    console.print(f"  [secondary]Top module [/secondary]  [id]{args.top}[/id]")
+    console.print(
+        f"  [secondary]Top module [/secondary]  [id]{top_module}[/id]"
+        "  [secondary](auto-detected)[/secondary]"
+    )
     console.print()
 
     if ip_ports:
@@ -67,6 +69,6 @@ def cmd_wrap_init(args: argparse.Namespace) -> int:
         console.print("  [secondary](no ports detected in top module)[/secondary]")
 
     console.print()
-    print_done(f"Wrote [id]{config_path}[/id]  — fill in the ports section")
+    print_done(f"Wrote [id]{config_path}[/id]  -- fill in the ports section")
 
     return 0

@@ -81,56 +81,66 @@ def run_tile(
 
 def wrap_init(
     interface_name: str,
-    top_module: str,
-    rtl_sources: list[str],
+    rtl_file: "str | Path",
     *,
     wrapper_name: Optional[str] = None,
     metadata: Optional[dict] = None,
 ) -> dict:
-    """Scaffold a wrapper config dict from RTL and interface.
+    """Scaffold a wrapper config dict from a single RTL file.
 
-    Searches *rtl_sources* for *top_module* file-by-file (same strategy as
-    WrapWorkflow.generate, N11), extracts IP ports (3-tuples name/direction/width,
-    N10), and returns a dict matching the wrapper_config.yaml schema.
+    Reads *rtl_file* and auto-detects the top module name (requires exactly
+    one module declaration in the file). Extracts IP ports (3-tuples
+    name/direction/width, N10), and returns a dict matching the
+    wrapper_config.yaml schema.
     Does NOT write any files.
 
     The returned dict also contains a private ``"_ip_ports"`` key (list of
     3-tuples) that cmd_wrap_init uses to render the commented YAML scaffold.
     Callers that only need the config dict can ignore it.
 
-    VeriFlowError propagates for VF_INTERFACE_UNKNOWN and
-    VF_WRAP_E_TOP_MODULE_NOT_FOUND.
+    Raises:
+        VeriFlowError(VF_INTERFACE_UNKNOWN)              -- interface not registered
+        VeriFlowError(VF_WRAP_E_NO_MODULE_FOUND)         -- file has no module declaration
+        VeriFlowError(VF_WRAP_E_MULTIPLE_MODULES_FOUND)  -- file has 2+ module declarations
     """
     import re
     from veriflow.core.wrapper.port_parser import extract_ports
     from veriflow.models.interface_profile import get_interface_profile
 
-    # Validate interface_name early — raises VF_INTERFACE_UNKNOWN if not registered
+    # Validate interface_name early -- raises VF_INTERFACE_UNKNOWN if not registered
     get_interface_profile(interface_name)
 
-    # N11: search file-by-file in listed order
-    module_re = re.compile(
-        r"\bmodule\s+" + re.escape(top_module) + r"\b",
-        re.IGNORECASE,
-    )
-    source_content: Optional[str] = None
-    for src in rtl_sources:
-        text = Path(src).read_text(encoding="utf-8")
-        if module_re.search(text):
-            source_content = text
-            break
+    rtl_path = Path(rtl_file)
+    text = rtl_path.read_text(encoding="utf-8")
 
-    if source_content is None:
+    # Auto-detect module name from the file
+    module_re = re.compile(r"\bmodule\s+(\w+)", re.IGNORECASE)
+    found = module_re.findall(text)
+    seen: set = set()
+    modules: list = []
+    for name in found:
+        if name not in seen:
+            seen.add(name)
+            modules.append(name)
+
+    if len(modules) == 0:
         raise VeriFlowError(
-            f"Top module {top_module!r} not found in any rtl_source.",
-            code="VF_WRAP_E_TOP_MODULE_NOT_FOUND",
-            details={
-                "top_module": top_module,
-                "rtl_sources": list(rtl_sources),
-            },
+            f"No module declaration found in {rtl_path}.",
+            code="VF_WRAP_E_NO_MODULE_FOUND",
+            details={"rtl_file": str(rtl_path)},
+        )
+    if len(modules) > 1:
+        raise VeriFlowError(
+            f"Multiple module declarations found in {rtl_path}: "
+            f"{', '.join(modules)}. "
+            "Auto-detection requires exactly one module per file. "
+            "Move the top module to its own file before running wrap init.",
+            code="VF_WRAP_E_MULTIPLE_MODULES_FOUND",
+            details={"rtl_file": str(rtl_path), "modules": modules},
         )
 
-    ip_ports = extract_ports(source_content, top_module)
+    top_module = modules[0]
+    ip_ports = extract_ports(text, top_module)
     meta = dict(metadata) if metadata else {}
 
     return {
@@ -143,12 +153,13 @@ def wrap_init(
         },
         "design": {
             "top_module": top_module,
-            "rtl_sources": list(rtl_sources),
+            "rtl_sources": [str(rtl_path)],
         },
         "wrapper_name": wrapper_name or f"{top_module}_wrapper",
         "ports": {name: None for name, _, _ in ip_ports},
-        "_ip_ports": ip_ports,  # private — for cmd_wrap_init; not a YAML schema key
+        "_ip_ports": ip_ports,  # private -- for cmd_wrap_init; not a YAML schema key
     }
+
 
 
 def wrap_generate(

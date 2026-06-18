@@ -12,6 +12,30 @@ by hand and for frontends (such as TileWizard) that generate them. Parsing is im
 
 ## Quick start
 
+Generate a commented scaffold, then edit it to match your project:
+
+```bash
+# Generate veriflow.yaml with guided comments
+veriflow project init
+
+# Open veriflow.yaml and fill in at minimum:
+#   design.top_module: "your_module_name"
+#   design.rtl_sources:
+#     - path/to/your_module.v
+
+# Then run the pipeline
+veriflow project run
+```
+
+`project init` writes a `veriflow.yaml` in the current directory (use `--config <path>` to
+choose a different location, `--force` to overwrite an existing file).
+
+The generated file contains every section as a comment so you can uncomment and fill in only
+what you need. Only `design.top_module` and `design.rtl_sources` are required before
+`veriflow project run` will accept the config.
+
+Once the file is filled in, run the pipeline:
+
 ```bash
 # Run with an explicit config path
 veriflow project run --config veriflow.yaml
@@ -173,6 +197,7 @@ The parser fails fast with stable `VeriFlowError` codes, including:
 
 | Code | Cause |
 |---|---|
+| `VF_PROJECT_CONFIG_NOT_FOUND` | config file does not exist at the given path |
 | `VF_DESIGN_TOP_REQUIRED` | `design.top_module` missing or empty |
 | `VF_DESIGN_RTL_REQUIRED` | `design.rtl_sources` missing or empty |
 | `VF_INTERFACE_CONFIG_INVALID` | malformed `interface` section / unsupported keys |

@@ -1164,3 +1164,158 @@ def test_project_workflow_config_is_dataclass(tmp_path):
 def test_project_run_result_is_dataclass():
     import dataclasses
     assert dataclasses.is_dataclass(ProjectRunResult)
+
+
+# ── G. Regression: rtl_sources resolved to absolute regardless of cwd ─────────
+
+def test_from_file_rtl_sources_are_absolute_when_cwd_differs(tmp_path, monkeypatch):
+    """from_file must produce absolute rtl_sources even when cwd != config dir.
+
+    Regression for the smoke-test bug where yosys received a relative path
+    and failed with "File 'counter8.v' not found" when the tool was invoked
+    from a directory other than the one containing veriflow.yaml.
+    """
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    config = project_dir / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
+        encoding="utf-8",
+    )
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    cfg = ProjectWorkflowConfig.from_file(config)
+
+    assert all(p.is_absolute() for p in cfg.rtl_sources), (
+        "rtl_sources must be absolute regardless of the calling process's cwd"
+    )
+    assert cfg.rtl_sources == [project_dir / "counter8.v"]
+
+
+def test_from_file_relative_config_path_rtl_sources_are_absolute(tmp_path, monkeypatch):
+    """from_file resolves a relative config path before deriving rtl_sources.
+
+    Covers the default CLI invocation: `veriflow project run` (no --config)
+    resolves to 'veriflow.yaml' relative to cwd.  rtl_sources must still
+    be absolute so backends never receive a bare filename like 'counter8.v'.
+    """
+    config = tmp_path / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    cfg = ProjectWorkflowConfig.from_file(Path("veriflow.yaml"))
+
+    assert all(p.is_absolute() for p in cfg.rtl_sources)
+    assert cfg.rtl_sources == [tmp_path / "counter8.v"]
+
+
+def test_from_file_runs_dir_is_absolute_when_cwd_differs(tmp_path, monkeypatch):
+    """runs_dir derived from config must also be absolute after the fix."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    config = project_dir / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - top.v\n",
+        encoding="utf-8",
+    )
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    cfg = ProjectWorkflowConfig.from_file(config)
+
+    assert cfg.runs_dir.is_absolute()
+    assert cfg.runs_dir == project_dir / "runs"
+
+
+def test_workflow_synth_backend_receives_absolute_rtl_paths(tmp_path, monkeypatch):
+    """SynthesisStage must pass absolute paths to the backend, not bare filenames.
+
+    This is the direct regression test: the backend's run_synthesis call must
+    receive absolute Path objects so that yosys (or any other backend) can find
+    the files without depending on the process's cwd at execution time.
+    """
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    config = project_dir / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
+        encoding="utf-8",
+    )
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    from unittest.mock import MagicMock
+    from veriflow.core.backends.base import SynthesisBackend
+
+    mock_be = MagicMock(spec=SynthesisBackend)
+    mock_be.run_synthesis.return_value = (
+        "PASS",
+        {"cells": "3", "warnings": "0", "errors": "0", "has_latches": False},
+    )
+
+    with patch(
+        "veriflow.workflows.project.get_synthesis_backend",
+        return_value=mock_be,
+    ):
+        wf = ProjectWorkflow.from_file(config)
+        wf.run()
+
+    call_kwargs = mock_be.run_synthesis.call_args
+    rtl_files_received = call_kwargs.kwargs.get("rtl_files") or call_kwargs.args[0]
+    assert all(p.is_absolute() for p in rtl_files_received), (
+        "Backend received relative paths; yosys would fail with 'file not found' "
+        "when cwd does not match the config directory"
+    )
+
+
+# ── H. Regression: missing config file raises VeriFlowError, not FileNotFoundError
+
+def test_from_file_missing_config_raises_veriflow_error(tmp_path):
+    """from_file must raise VeriFlowError, not a raw FileNotFoundError."""
+    missing = tmp_path / "does_not_exist.yaml"
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_file(missing)
+    assert exc_info.value.code == "VF_PROJECT_CONFIG_NOT_FOUND"
+
+
+def test_from_file_missing_config_error_message_includes_path(tmp_path):
+    """The error message must name the resolved path so the user knows what was searched."""
+    missing = tmp_path / "no_config.yaml"
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_file(missing)
+    assert str(missing.resolve()) in str(exc_info.value)
+
+
+def test_from_file_missing_config_details_include_both_paths(tmp_path, monkeypatch):
+    """details dict must carry both the resolved path and the original given path."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_file(Path("veriflow.yaml"))
+
+    details = exc_info.value.details or {}
+    assert "path" in details
+    assert "path_given" in details
+    assert details["path_given"] == "veriflow.yaml"
+
+
+def test_workflow_from_file_missing_config_raises_veriflow_error(tmp_path):
+    """ProjectWorkflow.from_file propagates VeriFlowError for a missing config."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflow.from_file(tmp_path / "missing.yaml")
+    assert exc_info.value.code == "VF_PROJECT_CONFIG_NOT_FOUND"

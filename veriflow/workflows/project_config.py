@@ -348,7 +348,14 @@ class ProjectWorkflowConfig:
         cls,
         path: Path | str,
     ) -> "ProjectWorkflowConfig":
-        path = Path(path)
+        given = Path(path)
+        path = given.resolve()
+        if not path.exists():
+            raise VeriFlowError(
+                f"Project config not found: {path}",
+                code="VF_PROJECT_CONFIG_NOT_FOUND",
+                details={"path": str(path), "path_given": str(given)},
+            )
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         if raw is None:
             raw = {}

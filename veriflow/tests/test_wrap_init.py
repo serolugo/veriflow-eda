@@ -26,6 +26,17 @@ module my_dut (
 endmodule
 """
 
+_TWO_MODS_V = """\
+module mod_a (
+    input wire clk
+);
+endmodule
+module mod_b (
+    input wire data
+);
+endmodule
+"""
+
 _VALID_PORTS = {
     "clk_i":    "clk",
     "rst_ni":   "arst_n",
@@ -36,19 +47,26 @@ _VALID_PORTS = {
 
 @pytest.fixture
 def dut_dir(tmp_path: Path) -> Path:
-    """Temp dir with defs.v (no module) and my_dut.v (has module)."""
+    """Temp dir with defs.v (no module) and my_dut.v (single module)."""
     (tmp_path / "defs.v").write_text("`define DATA_WIDTH 16\n", encoding="utf-8")
     (tmp_path / "my_dut.v").write_text(_DUT_V, encoding="utf-8")
     return tmp_path
 
 
-# ── wrap_init — dict structure ────────────────────────────────────────────────
+@pytest.fixture
+def two_mods_file(tmp_path: Path) -> Path:
+    """Temp file with two module declarations."""
+    p = tmp_path / "two_mods.v"
+    p.write_text(_TWO_MODS_V, encoding="utf-8")
+    return p
+
+
+# ── wrap_init -- dict structure ───────────────────────────────────────────────
 
 def _call_init(dut_dir: Path, **kwargs) -> dict:
     defaults = {
         "interface_name": "semicolab",
-        "top_module": "my_dut",
-        "rtl_sources": [str(dut_dir / "my_dut.v")],
+        "rtl_file": str(dut_dir / "my_dut.v"),
     }
     defaults.update(kwargs)
     return wrap_init(**defaults)
@@ -69,9 +87,15 @@ def test_wrap_init_design_top_module(dut_dir):
     assert result["design"]["top_module"] == "my_dut"
 
 
+def test_wrap_init_detects_module_name(dut_dir):
+    """Auto-detected module name matches the only module in the file."""
+    result = _call_init(dut_dir)
+    assert result["design"]["top_module"] == "my_dut"
+
+
 def test_wrap_init_design_rtl_sources(dut_dir):
     src = str(dut_dir / "my_dut.v")
-    result = wrap_init("semicolab", "my_dut", [src])
+    result = wrap_init("semicolab", src)
     assert result["design"]["rtl_sources"] == [src]
 
 
@@ -139,44 +163,50 @@ def test_wrap_init_ip_ports_widths(dut_dir):
     assert by_name["result_o"] == 8
 
 
-# ── wrap_init — P3 multi-file search ─────────────────────────────────────────
+# ── wrap_init -- error cases ──────────────────────────────────────────────────
 
-def test_wrap_init_p3_module_in_second_file(dut_dir):
-    # defs.v (no module) listed first, my_dut.v second — should still find it
-    result = wrap_init(
-        "semicolab", "my_dut",
-        [str(dut_dir / "defs.v"), str(dut_dir / "my_dut.v")],
-    )
-    assert result["design"]["top_module"] == "my_dut"
-    assert len(result["ports"]) == 4
-
-
-def test_wrap_init_p3_module_in_first_file(dut_dir):
-    result = wrap_init(
-        "semicolab", "my_dut",
-        [str(dut_dir / "my_dut.v"), str(dut_dir / "defs.v")],
-    )
-    assert len(result["ports"]) == 4
-
-
-# ── wrap_init — error cases ───────────────────────────────────────────────────
-
-def test_wrap_init_top_module_not_found(dut_dir):
+def test_wrap_init_no_module_found(dut_dir):
+    """File with no module declaration raises VF_WRAP_E_NO_MODULE_FOUND."""
     with pytest.raises(VeriFlowError) as exc_info:
-        wrap_init("semicolab", "ghost_module", [str(dut_dir / "my_dut.v")])
-    assert exc_info.value.code == "VF_WRAP_E_TOP_MODULE_NOT_FOUND"
+        wrap_init("semicolab", str(dut_dir / "defs.v"))
+    assert exc_info.value.code == "VF_WRAP_E_NO_MODULE_FOUND"
 
 
-def test_wrap_init_top_module_not_found_details(dut_dir):
+def test_wrap_init_no_module_found_details(dut_dir):
+    """details['rtl_file'] contains the path of the offending file."""
+    defs_path = str(dut_dir / "defs.v")
     with pytest.raises(VeriFlowError) as exc_info:
-        wrap_init("semicolab", "ghost_module", [str(dut_dir / "my_dut.v")])
-    assert "ghost_module" in str(exc_info.value.details)
+        wrap_init("semicolab", defs_path)
+    assert exc_info.value.details["rtl_file"] == defs_path
+
+
+def test_wrap_init_multiple_modules_found(two_mods_file):
+    """File with two module declarations raises VF_WRAP_E_MULTIPLE_MODULES_FOUND."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        wrap_init("semicolab", str(two_mods_file))
+    assert exc_info.value.code == "VF_WRAP_E_MULTIPLE_MODULES_FOUND"
+
+
+def test_wrap_init_multiple_modules_names_in_message(two_mods_file):
+    """Error message lists both detected module names."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        wrap_init("semicolab", str(two_mods_file))
+    msg = str(exc_info.value)
+    assert "mod_a" in msg
+    assert "mod_b" in msg
+
+
+def test_wrap_init_multiple_modules_details(two_mods_file):
+    """details['modules'] contains both module names."""
+    with pytest.raises(VeriFlowError) as exc_info:
+        wrap_init("semicolab", str(two_mods_file))
+    assert "mod_a" in exc_info.value.details["modules"]
+    assert "mod_b" in exc_info.value.details["modules"]
 
 
 def test_wrap_init_unknown_interface(dut_dir):
     with pytest.raises(VeriFlowError) as exc_info:
-        wrap_init("nonexistent_interface", "my_dut", [str(dut_dir / "my_dut.v")])
-    # VeriFlowError with VF_INTERFACE_UNKNOWN is raised by get_interface_profile
+        wrap_init("nonexistent_interface", str(dut_dir / "my_dut.v"))
     assert exc_info.value.code == "VF_INTERFACE_UNKNOWN"
 
 
@@ -269,7 +299,7 @@ def test_render_yaml_roundtrip_valid_after_filling_ports(dut_dir):
 
 
 def test_render_metadata_author_empty_quoted(dut_dir):
-    """Empty metadata fields must not produce 'null' — they must be empty strings."""
+    """Empty metadata fields must not produce 'null' -- they must be empty strings."""
     src = _render(dut_dir)
     doc = yaml.safe_load(src)
     assert doc["metadata"]["author"] == ""
@@ -287,7 +317,7 @@ def test_render_version_preserved(dut_dir):
 
 def test_render_rtl_sources_preserved(dut_dir):
     src_path = str(dut_dir / "my_dut.v")
-    config = wrap_init("semicolab", "my_dut", [src_path])
+    config = wrap_init("semicolab", src_path)
     ip_ports = config.pop("_ip_ports")
     iface = get_interface_profile("semicolab")
     src = render_wrapper_config_yaml(config, iface, ip_ports)
@@ -309,8 +339,7 @@ def test_render_no_ip_ports_section(dut_dir):
 def _make_args(**kwargs) -> argparse.Namespace:
     defaults = {
         "interface": "semicolab",
-        "top": "my_dut",
-        "rtl_files": [],
+        "rtl_file": "",
         "config": "wrapper_config.yaml",
         "wrapper_name": None,
         "author": None,
@@ -326,7 +355,7 @@ def test_cli_init_writes_config(dut_dir, tmp_path):
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     args = _make_args(
-        rtl_files=[str(dut_dir / "my_dut.v")],
+        rtl_file=str(dut_dir / "my_dut.v"),
         config=str(out),
     )
     rc = cmd_wrap_init(args)
@@ -337,7 +366,7 @@ def test_cli_init_writes_config(dut_dir, tmp_path):
 def test_cli_init_config_parseable(dut_dir, tmp_path):
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
-    args = _make_args(rtl_files=[str(dut_dir / "my_dut.v")], config=str(out))
+    args = _make_args(rtl_file=str(dut_dir / "my_dut.v"), config=str(out))
     cmd_wrap_init(args)
     doc = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert doc["interface_name"] == "semicolab"
@@ -348,7 +377,7 @@ def test_cli_init_config_exists_raises(dut_dir, tmp_path):
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     out.write_text("existing", encoding="utf-8")
-    args = _make_args(rtl_files=[str(dut_dir / "my_dut.v")], config=str(out))
+    args = _make_args(rtl_file=str(dut_dir / "my_dut.v"), config=str(out))
     with pytest.raises(VeriFlowError) as exc_info:
         cmd_wrap_init(args)
     assert exc_info.value.code == "VF_WRAP_E_CONFIG_EXISTS"
@@ -359,7 +388,7 @@ def test_cli_init_force_overwrites(dut_dir, tmp_path):
     out = tmp_path / "wrapper_config.yaml"
     out.write_text("old content", encoding="utf-8")
     args = _make_args(
-        rtl_files=[str(dut_dir / "my_dut.v")],
+        rtl_file=str(dut_dir / "my_dut.v"),
         config=str(out),
         force=True,
     )
@@ -374,7 +403,7 @@ def test_cli_init_custom_wrapper_name(dut_dir, tmp_path):
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     args = _make_args(
-        rtl_files=[str(dut_dir / "my_dut.v")],
+        rtl_file=str(dut_dir / "my_dut.v"),
         config=str(out),
         wrapper_name="custom_wrap",
     )
@@ -387,7 +416,7 @@ def test_cli_init_metadata_author(dut_dir, tmp_path):
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     args = _make_args(
-        rtl_files=[str(dut_dir / "my_dut.v")],
+        rtl_file=str(dut_dir / "my_dut.v"),
         config=str(out),
         author="Roman",
     )
@@ -396,31 +425,32 @@ def test_cli_init_metadata_author(dut_dir, tmp_path):
     assert doc["metadata"]["author"] == "Roman"
 
 
-def test_cli_init_top_module_not_found_propagates(dut_dir, tmp_path):
+def test_cli_init_no_module_found_propagates(dut_dir, tmp_path):
+    """File with no module declaration raises VF_WRAP_E_NO_MODULE_FOUND via CLI."""
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     args = _make_args(
-        rtl_files=[str(dut_dir / "my_dut.v")],
+        rtl_file=str(dut_dir / "defs.v"),
         config=str(out),
-        top="ghost_module",
     )
     with pytest.raises(VeriFlowError) as exc_info:
         cmd_wrap_init(args)
-    assert exc_info.value.code == "VF_WRAP_E_TOP_MODULE_NOT_FOUND"
+    assert exc_info.value.code == "VF_WRAP_E_NO_MODULE_FOUND"
     assert not out.exists()
 
 
-def test_cli_init_p3_second_file(dut_dir, tmp_path):
+def test_cli_init_multiple_modules_found_propagates(two_mods_file, tmp_path):
+    """File with multiple modules raises VF_WRAP_E_MULTIPLE_MODULES_FOUND via CLI."""
     from veriflow.commands.wrap_init import cmd_wrap_init
     out = tmp_path / "wrapper_config.yaml"
     args = _make_args(
-        rtl_files=[str(dut_dir / "defs.v"), str(dut_dir / "my_dut.v")],
+        rtl_file=str(two_mods_file),
         config=str(out),
     )
-    rc = cmd_wrap_init(args)
-    assert rc == 0
-    doc = yaml.safe_load(out.read_text(encoding="utf-8"))
-    assert len(doc["ports"]) == 4
+    with pytest.raises(VeriFlowError) as exc_info:
+        cmd_wrap_init(args)
+    assert exc_info.value.code == "VF_WRAP_E_MULTIPLE_MODULES_FOUND"
+    assert not out.exists()
 
 
 # ── render_wrapper_config_yaml: filled ports (N14) ───────────────────────────

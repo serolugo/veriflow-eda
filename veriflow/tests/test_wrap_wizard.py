@@ -514,7 +514,7 @@ def test_render_filled_ports_appear_as_values(dut_dir):
     from veriflow.core.wrapper.config_template import render_wrapper_config_yaml
     from veriflow.models.interface_profile import get_interface_profile
 
-    config = wrap_init("semicolab", "my_dut", [str(dut_dir / "my_dut.v")])
+    config = wrap_init("semicolab", str(dut_dir / "my_dut.v"))
     ip_ports = config.pop("_ip_ports")
     config["ports"]["clk_i"] = "clk"
     config["ports"]["data_i"] = "csr_in[15:0]"
@@ -536,7 +536,7 @@ def test_render_all_filled_ports_parseable(dut_dir):
     from veriflow.models.interface_profile import get_interface_profile
     from veriflow.models.wrapper_config import WrapperConfig
 
-    config = wrap_init("semicolab", "my_dut", [str(dut_dir / "my_dut.v")])
+    config = wrap_init("semicolab", str(dut_dir / "my_dut.v"))
     ip_ports = config.pop("_ip_ports")
     config["ports"] = {
         "clk_i":    "clk",

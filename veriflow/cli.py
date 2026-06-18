@@ -9,8 +9,9 @@ Usage:
     veriflow db waves --db ./database --tile XXXX
     veriflow db bump-version --db ./database --tile XXXX
     veriflow db bump-revision --db ./database --tile XXXX
+    veriflow project init [--config veriflow.yaml] [--force]
     veriflow project run --config veriflow.yaml
-    veriflow wrap init --interface <name> --top <module> <rtl_files...>
+    veriflow wrap init --interface <name> --top <rtl_file>
     veriflow wrap generate --config wrapper_config.yaml
     veriflow wrap wizard
 """
@@ -65,6 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Path to project config file (default: veriflow.yaml)",
     )
+
+    p_project_init = project_sub.add_parser("init", help="Generate a commented veriflow.yaml scaffold")
+    p_project_init.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Output config file path (default: veriflow.yaml)")
+    p_project_init.add_argument("--force", action="store_true", help="Overwrite config file if it already exists")
 
     # db (Database Mode namespace)
     p_db = sub.add_parser("db", help="Database Mode commands")
@@ -129,8 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_wrap_init = wrap_sub.add_parser("init", help="Scaffold a wrapper_config.yaml from RTL and interface profile")
     p_wrap_init.add_argument("--interface", required=True, metavar="NAME", dest="interface", help="Interface profile name")
-    p_wrap_init.add_argument("--top", required=True, metavar="MODULE", dest="top", help="RTL top module name")
-    p_wrap_init.add_argument("rtl_files", nargs="+", metavar="RTL_FILE", help="RTL source files")
+    p_wrap_init.add_argument("--top", required=True, metavar="FILE", dest="rtl_file", help="RTL source file; top module name is auto-detected from its contents")
     p_wrap_init.add_argument("--config", default="wrapper_config.yaml", metavar="PATH", help="Output config file path (default: wrapper_config.yaml)")
     p_wrap_init.add_argument("--wrapper-name", default=None, metavar="NAME", dest="wrapper_name", help="Wrapper module name (default: <top_module>_wrapper)")
     p_wrap_init.add_argument("--author", default=None, metavar="NAME", help="Metadata author")
@@ -209,6 +213,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.run_project import cmd_run_project
                         exit_code = cmd_run_project(Path(args.config))
+                    elif project_cmd == "init":
+                        dispatched = True
+                        from veriflow.commands.init_project import cmd_init_project
+                        exit_code = cmd_init_project(args)
                     else:
                         if json_mode:
                             error_payload = {
