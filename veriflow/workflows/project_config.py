@@ -356,7 +356,14 @@ class ProjectWorkflowConfig:
                 code="VF_PROJECT_CONFIG_NOT_FOUND",
                 details={"path": str(path), "path_given": str(given)},
             )
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise VeriFlowError(
+                f"YAML parse error in {path}:\n  {exc}",
+                code="VF_PROJECT_CONFIG_YAML_ERROR",
+                details={"path": str(path)},
+            ) from exc
         if raw is None:
             raw = {}
         return cls.from_dict(raw, root=path.parent)

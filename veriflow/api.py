@@ -111,6 +111,12 @@ def wrap_init(
     get_interface_profile(interface_name)
 
     rtl_path = Path(rtl_file)
+    if not rtl_path.exists():
+        raise VeriFlowError(
+            f"RTL file not found: {rtl_path}",
+            code="VF_WRAP_RTL_FILE_NOT_FOUND",
+            details={"path": str(rtl_path)},
+        )
     text = rtl_path.read_text(encoding="utf-8")
 
     # Auto-detect module name from the file

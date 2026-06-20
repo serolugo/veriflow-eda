@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_wrap_gen = wrap_sub.add_parser("generate", help="Generate wrapper from wrapper_config.yaml")
     p_wrap_gen.add_argument("--config", default="wrapper_config.yaml", metavar="PATH", help="Path to wrapper_config.yaml (default: wrapper_config.yaml)")
-    p_wrap_gen.add_argument("--out", default=None, metavar="PATH", help="Output directory (default: same directory as config file)")
+    p_wrap_gen.add_argument("--out", default=None, metavar="PATH", help="Output directory (default: wrap_out/ relative to config file)")
 
     p_wrap_wizard = wrap_sub.add_parser("wizard", help="Interactive wrapper configuration wizard")
     p_wrap_wizard.add_argument(
@@ -340,6 +340,13 @@ def main(argv: list[str] | None = None) -> int:
                         from veriflow.commands.wrap_generate import cmd_wrap_generate
                         exit_code, wrap_gen_result = cmd_wrap_generate(args)
                     elif wrap_cmd == "wizard":
+                        if non_interactive:
+                            raise VeriFlowError(
+                                "wrap wizard requires interactive mode; "
+                                "use wrap init + wrap generate for non-interactive workflows",
+                                code="VF_WIZARD_NOT_INTERACTIVE",
+                                exit_code=2,
+                            )
                         dispatched = True
                         from veriflow.commands.wrap_wizard import cmd_wrap_wizard
                         exit_code = cmd_wrap_wizard(args)

@@ -198,6 +198,7 @@ The parser fails fast with stable `VeriFlowError` codes, including:
 | Code | Cause |
 |---|---|
 | `VF_PROJECT_CONFIG_NOT_FOUND` | config file does not exist at the given path |
+| `VF_PROJECT_CONFIG_YAML_ERROR` | config file exists but contains invalid YAML (parse error) |
 | `VF_DESIGN_TOP_REQUIRED` | `design.top_module` missing or empty |
 | `VF_DESIGN_RTL_REQUIRED` | `design.rtl_sources` missing or empty |
 | `VF_INTERFACE_CONFIG_INVALID` | malformed `interface` section / unsupported keys |

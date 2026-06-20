@@ -79,7 +79,14 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
 
     # 1. Read project config
     project_cfg_path = db / "project_config.yaml"
-    raw = yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {}
+    try:
+        raw = yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise VeriFlowError(
+            f"YAML parse error in {project_cfg_path}:\n  {exc}",
+            code="VF_TILE_CONFIG_YAML_ERROR",
+            details={"path": str(project_cfg_path)},
+        ) from exc
     project_config = ProjectConfig.from_dict(raw)
     validate_project_config(project_config)
 

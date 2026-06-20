@@ -9,7 +9,14 @@ def cmd_waves(db: Path, tile_number: str, run_id: str | None = None) -> None:
     """Open waveform viewer for a specific run of a tile."""
 
     validate_database(db)
-    tile_number_str = f"{int(tile_number):04d}"
+    try:
+        tile_number_str = f"{int(tile_number):04d}"
+    except ValueError:
+        raise VeriFlowError(
+            f"Tile number must be numeric: {tile_number!r}",
+            code="VF_TILE_NUMBER_INVALID",
+            details={"tile_number": tile_number},
+        )
 
     # Look up tile_id
     tile_row = get_tile_row(db / "tile_index.csv", tile_number_str)

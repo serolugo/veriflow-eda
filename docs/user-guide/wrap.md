@@ -52,6 +52,8 @@ editing the config.
 
 `--top` must point to a file that contains **exactly one** `module` declaration.
 
+- **File not found** (`VF_WRAP_RTL_FILE_NOT_FOUND`): the path given to `--top` does not
+  exist. Check the path and try again.
 - **Zero modules found** (`VF_WRAP_E_NO_MODULE_FOUND`): the file has no `module`
   statement -- check that you passed the right file.
 - **Multiple modules found** (`VF_WRAP_E_MULTIPLE_MODULES_FOUND`): the file contains
@@ -130,7 +132,7 @@ veriflow wrap generate --config wrapper_config.yaml [--out DIR]
 | Flag | Required | Description |
 |---|---|---|
 | `--config PATH` | yes | Path to the completed `wrapper_config.yaml`. |
-| `--out DIR` | no | Output directory. Default: the directory containing the config file. |
+| `--out DIR` | no | Output directory. Default: `wrap_out/` relative to the directory containing the config file. |
 
 ### What it validates
 
@@ -140,6 +142,9 @@ written, and a JSON file with the error details is the only output:
 
 | What you will see | Error code (in JSON/logs) | What it means |
 |---|---|---|
+| config file not found | `VF_WRAP_CONFIG_NOT_FOUND` | The path given to `--config` does not exist |
+| YAML parse error | `VF_WRAP_CONFIG_YAML_ERROR` | `wrapper_config.yaml` exists but contains invalid YAML |
+| RTL source not found | `VF_WRAP_RTL_SOURCE_NOT_FOUND` | A path listed in `design.rtl_sources` does not exist |
 | `invalid mapping syntax` | `VF_WRAP_E_MAPPING_SYNTAX` | A value in `ports:` is not a valid port name or `port[hi:lo]` slice |
 | `interface port not found` | `VF_WRAP_E_INTERFACE_PORT_UNKNOWN` | The right-hand side names a port that does not exist in the chosen interface profile |
 | `IP port not found` | `VF_WRAP_E_IP_PORT_UNKNOWN` | The left-hand side names a port that was not extracted from your RTL |
@@ -148,15 +153,16 @@ written, and a JSON file with the error details is the only output:
 
 ### What it generates
 
-On validation success, `wrap generate` writes the following files to `--out` (or the
-directory containing the config):
+On validation success, `wrap generate` writes the following files to `--out` (default:
+`wrap_out/` relative to the config file). All output is contained inside `out_dir` — no loose
+files are written next to the config:
 
 ```
-<out_dir>/
+<out_dir>/                   # default: <config_dir>/wrap_out/
   <wrapper_name>.json        # result report (always written, even on failure)
-  <wrapper_name>.v           # the generated wrapper (validation PASS only)
   rtl/
     <basename>.v             # copy of each file listed in rtl_sources (validation PASS only)
+    <wrapper_name>.v         # the generated wrapper (validation PASS only)
   logs/
     connectivity.log         # iverilog elaboration log (validation PASS only)
 ```
@@ -189,7 +195,7 @@ inspect the issue.
   "wrapper": {
     "name": "my_ip_wrapper",
     "top_module": "my_ip",
-    "file": "my_ip_wrapper.v"
+    "file": "rtl/my_ip_wrapper.v"
   },
   "rtl_sources": ["rtl/my_ip.v", "rtl/my_ip_defs.v"],
   "ports": {
@@ -254,6 +260,10 @@ choosing the interface profile to mapping ports one by one — and writes the
 | Flag | Description |
 |---|---|
 | `--force` | Overwrite an existing config file at the chosen path without prompting |
+
+`wrap wizard` requires an interactive terminal. Running it with `--non-interactive` exits
+immediately with error code `VF_WIZARD_NOT_INTERACTIVE`. Use `wrap init` + `wrap generate`
+for non-interactive workflows (CI, scripts).
 
 ### Wizard vs `init` + `generate`
 
@@ -368,15 +378,16 @@ to `0`, input bits are left unused inside the wrapper.
 veriflow wrap generate --config wrapper_config.yaml
 ```
 
-Output written to the same directory as the config:
+Output written to `wrap_out/` relative to the config file (use `--out DIR` to choose a different location):
 
 ```
-counter8_wrapper.json
-counter8_wrapper.v
-rtl/
-  counter8.v
-logs/
-  connectivity.log
+wrap_out/
+  counter8_wrapper.json
+  rtl/
+    counter8.v
+    counter8_wrapper.v
+  logs/
+    connectivity.log
 ```
 
 ### 5. Inspect the result
@@ -390,7 +401,7 @@ logs/
   "wrapper": {
     "name": "counter8_wrapper",
     "top_module": "counter8",
-    "file": "counter8_wrapper.v"
+    "file": "rtl/counter8_wrapper.v"
   },
   "rtl_sources": ["rtl/counter8.v"],
   "ports": {

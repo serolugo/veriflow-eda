@@ -58,7 +58,20 @@ class WrapWorkflow:
         config_path = Path(config_path).resolve()
         config_dir = config_path.parent
 
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if not config_path.exists():
+            raise VeriFlowError(
+                f"Wrapper config not found: {config_path}",
+                code="VF_WRAP_CONFIG_NOT_FOUND",
+                details={"path": str(config_path)},
+            )
+        try:
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise VeriFlowError(
+                f"YAML parse error in {config_path}:\n  {exc}",
+                code="VF_WRAP_CONFIG_YAML_ERROR",
+                details={"path": str(config_path)},
+            ) from exc
         config = WrapperConfig.from_dict(raw)
 
         # Resolve rtl_sources relative to config file's directory
@@ -71,6 +84,12 @@ class WrapWorkflow:
         )
         source_content: str | None = None
         for rp in rtl_paths:
+            if not rp.exists():
+                raise VeriFlowError(
+                    f"RTL source not found: {rp}",
+                    code="VF_WRAP_RTL_SOURCE_NOT_FOUND",
+                    details={"path": str(rp), "rtl_sources": [str(p) for p in rtl_paths]},
+                )
             text = rp.read_text(encoding="utf-8")
             if module_re.search(text):
                 source_content = text
@@ -91,7 +110,7 @@ class WrapWorkflow:
         result = validate_mapping(config, interface_profile, ip_ports)
 
         if out_dir is None:
-            out_dir = config_dir
+            out_dir = config_dir / "wrap_out"
         out_dir = Path(out_dir).resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -124,7 +143,7 @@ class WrapWorkflow:
                 "wrapper": {
                     "name": config.wrapper_name,
                     "top_module": config.design.top_module,
-                    "file": f"{config.wrapper_name}.v",
+                    "file": f"rtl/{config.wrapper_name}.v",
                 },
                 "rtl_sources": rtl_sources_rel,
                 "ports": {
@@ -143,11 +162,12 @@ class WrapWorkflow:
         # Validation PASS — generate wrapper, copy RTL, run connectivity check
         wrapper_src = generate_wrapper(config, interface_profile, result, ip_ports)
 
-        wrapper_path = out_dir / f"{config.wrapper_name}.v"
-        wrapper_path.write_text(wrapper_src, encoding="utf-8")
-
         rtl_out_dir = out_dir / "rtl"
         rtl_out_dir.mkdir(parents=True, exist_ok=True)
+
+        wrapper_path = rtl_out_dir / f"{config.wrapper_name}.v"
+        wrapper_path.write_text(wrapper_src, encoding="utf-8")
+
         for rp in rtl_paths:
             shutil.copy2(rp, rtl_out_dir / rp.name)
 
@@ -172,7 +192,7 @@ class WrapWorkflow:
             "wrapper": {
                 "name": config.wrapper_name,
                 "top_module": config.design.top_module,
-                "file": f"{config.wrapper_name}.v",
+                "file": f"rtl/{config.wrapper_name}.v",
             },
             "rtl_sources": rtl_sources_rel,
             "ports": {

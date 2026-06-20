@@ -137,7 +137,7 @@ def test_generate_pass_wrapper_file_created(dut_dir, tmp_path):
     config_path = _write_config(dut_dir)
     out_dir = tmp_path / "out"
     WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
-    assert (out_dir / "my_dut_wrapper.v").exists()
+    assert (out_dir / "rtl" / "my_dut_wrapper.v").exists()
 
 
 def test_generate_pass_rtl_copied(dut_dir, tmp_path):
@@ -188,7 +188,7 @@ def test_generate_pass_wrapper_fields(dut_dir, tmp_path):
     w = result["wrapper"]
     assert w["name"] == "my_dut_wrapper"
     assert w["top_module"] == "my_dut"
-    assert w["file"] == "my_dut_wrapper.v"
+    assert w["file"] == "rtl/my_dut_wrapper.v"
 
 
 def test_generate_pass_rtl_sources_relative(dut_dir, tmp_path):
@@ -276,7 +276,7 @@ def test_validation_fail_no_wrapper_v(dut_dir, tmp_path):
     out_dir = tmp_path / "out"
     result = WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
     assert result["status"] == "FAIL"
-    assert not (out_dir / "my_dut_wrapper.v").exists()
+    assert not (out_dir / "rtl" / "my_dut_wrapper.v").exists()
 
 
 def test_validation_fail_json_written(dut_dir, tmp_path):
@@ -327,7 +327,7 @@ def test_connectivity_fail_wrapper_v_written(dut_dir, tmp_path):
     config_path = _write_config(dut_dir)
     out_dir = tmp_path / "out"
     WrapWorkflow(_FakeBackend("FAIL")).generate(config_path, out_dir)
-    assert (out_dir / "my_dut_wrapper.v").exists()
+    assert (out_dir / "rtl" / "my_dut_wrapper.v").exists()
 
 
 def test_connectivity_fail_rtl_copied(dut_dir, tmp_path):
@@ -370,11 +370,40 @@ def test_top_module_not_found_no_output(dut_dir, tmp_path):
 
 # ── out_dir defaults ──────────────────────────────────────────────────────────
 
-def test_out_dir_defaults_to_config_dir(dut_dir):
+def test_out_dir_defaults_to_out_subdir(dut_dir):
     config_path = _write_config(dut_dir)
     WrapWorkflow(_FakeBackend("PASS")).generate(config_path)  # no out_dir
-    # JSON should appear next to the config file
-    assert (dut_dir / "my_dut_wrapper.json").exists()
+    # All output must go into wrap_out/ — nothing loose in the config directory
+    assert (dut_dir / "wrap_out" / "my_dut_wrapper.json").exists()
+    assert not (dut_dir / "my_dut_wrapper.json").exists()
+
+
+def test_out_dir_default_wrapper_v_in_rtl_subdir(dut_dir):
+    config_path = _write_config(dut_dir)
+    WrapWorkflow(_FakeBackend("PASS")).generate(config_path)
+    assert (dut_dir / "wrap_out" / "rtl" / "my_dut_wrapper.v").exists()
+    assert not (dut_dir / "wrap_out" / "my_dut_wrapper.v").exists()
+    assert not (dut_dir / "my_dut_wrapper.v").exists()
+
+
+def test_out_dir_default_rtl_in_out_subdir(dut_dir):
+    config_path = _write_config(dut_dir)
+    WrapWorkflow(_FakeBackend("PASS")).generate(config_path)
+    assert (dut_dir / "wrap_out" / "rtl" / "my_dut.v").exists()
+
+
+def test_out_dir_default_log_in_out_subdir(dut_dir):
+    config_path = _write_config(dut_dir)
+    WrapWorkflow(_FakeBackend("PASS")).generate(config_path)
+    assert (dut_dir / "wrap_out" / "logs" / "connectivity.log").exists()
+
+
+def test_out_dir_explicit_arg_overrides_default(dut_dir, tmp_path):
+    config_path = _write_config(dut_dir)
+    custom_out = tmp_path / "custom_out"
+    WrapWorkflow(_FakeBackend("PASS")).generate(config_path, custom_out)
+    assert (custom_out / "my_dut_wrapper.json").exists()
+    assert not (dut_dir / "wrap_out").exists()
 
 
 # ── iverilog smoke test ───────────────────────────────────────────────────────

@@ -15,7 +15,14 @@ def cmd_bump_version(db: Path, tile_number: str) -> None:
     works/ is copied from the old tile.
     """
     validate_database(db)
-    tile_number_str = f"{int(tile_number):04d}"
+    try:
+        tile_number_str = f"{int(tile_number):04d}"
+    except ValueError:
+        raise VeriFlowError(
+            f"Tile number must be numeric: {tile_number!r}",
+            code="VF_TILE_NUMBER_INVALID",
+            details={"tile_number": tile_number},
+        )
     tile_index_path = db / "tile_index.csv"
 
     # 1. Read current tile_id

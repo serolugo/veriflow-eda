@@ -134,14 +134,28 @@ class DatabaseWorkflow:
                 details={"path": str(tile_cfg_path)},
             )
 
-        tile_config = TileConfig.from_dict(
-            yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {}
-        )
+        try:
+            tile_config = TileConfig.from_dict(
+                yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8")) or {}
+            )
+        except yaml.YAMLError as exc:
+            raise VeriFlowError(
+                f"YAML parse error in {tile_cfg_path}:\n  {exc}",
+                code="VF_DATABASE_CONFIG_YAML_ERROR",
+                details={"path": str(tile_cfg_path)},
+            ) from exc
 
         project_cfg_path = self.db_path / "project_config.yaml"
-        project_config = ProjectConfig.from_dict(
-            yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {}
-        )
+        try:
+            project_config = ProjectConfig.from_dict(
+                yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {}
+            )
+        except yaml.YAMLError as exc:
+            raise VeriFlowError(
+                f"YAML parse error in {project_cfg_path}:\n  {exc}",
+                code="VF_DATABASE_CONFIG_YAML_ERROR",
+                details={"path": str(project_cfg_path)},
+            ) from exc
         interface_name = project_config.interface_name
         interface_profile = get_interface_profile(interface_name)
 

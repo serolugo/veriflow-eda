@@ -177,7 +177,8 @@ def cmd_wrap_wizard(args: argparse.Namespace) -> int:
             print(f"    {e['code']}: {e['message']}")
         remap_name = input("  Port to re-map (or Enter to cancel): ").strip()
         if not remap_name:
-            return 1
+            print("Wizard cancelled -- no files written.", file=sys.stderr)
+            return 0
         port_entry = next((p for p in ip_ports if p[0] == remap_name), None)
         if port_entry is None:
             print(f"  Unknown port: {remap_name!r}")
