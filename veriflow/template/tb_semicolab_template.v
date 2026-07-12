@@ -2,12 +2,12 @@
 
 module tb;
 
-// ── Parameters ────────────────────────────────────────────────────────────────
+// -- Parameters ----------------------------------------------------------------
 parameter CSR_IN_WIDTH  = 16;
 parameter CSR_OUT_WIDTH = 16;
 parameter REG_WIDTH     = 32;
 
-// ── Signals ───────────────────────────────────────────────────────────────────
+// -- Signals -------------------------------------------------------------------
 reg clk;
 reg arst_n;
 reg  [CSR_IN_WIDTH-1:0]  csr_in;
@@ -18,10 +18,10 @@ wire [CSR_OUT_WIDTH-1:0] csr_out;
 wire                     csr_in_re;
 wire                     csr_out_we;
 
-// ── Clock ─────────────────────────────────────────────────────────────────────
+// -- Clock ---------------------------------------------------------------------
 always #5 clk = ~clk;
 
-// ── DUT Instantiation ─────────────────────────────────────────────────────────
+// -- DUT Instantiation ---------------------------------------------------------
 /* DUT_MODULE */ DUT (
     .clk       (clk),
     .arst_n    (arst_n),
@@ -34,13 +34,13 @@ always #5 clk = ~clk;
     .csr_out_we(csr_out_we)
 );
 
-// ── Waveform Dump ─────────────────────────────────────────────────────────────
+// -- Waveform Dump -------------------------------------------------------------
 initial begin
     $dumpfile("waves.vcd");
     $dumpvars(0, tb);
 end
 
-// ── Tasks ─────────────────────────────────────────────────────────────────────
+// -- Tasks ---------------------------------------------------------------------
 task write_data_reg_a(input [31:0] data);
     begin
         @(posedge clk);
@@ -75,7 +75,7 @@ task read_csr_out(output [15:0] data);
     end
 endtask
 
-// ── Stimulus ──────────────────────────────────────────────────────────────────
+// -- Stimulus ------------------------------------------------------------------
 initial begin
     clk        = 0;
     arst_n     = 0;
@@ -86,13 +86,13 @@ initial begin
     arst_n = 1;
     repeat(1) @(posedge clk);
 
-    // ── USER STIMULUS BEGIN ──────────────────────────────────────────────────
+    // -- USER STIMULUS BEGIN --------------------------------------------------
     // Add your test stimulus here.
     // Example:
     //   write_data_reg_a(32'hDEADBEEF);
     //   write_data_reg_b(32'h00000001);
     //   repeat(4) @(posedge clk);
-    // ── USER STIMULUS END ────────────────────────────────────────────────────
+    // -- USER STIMULUS END ----------------------------------------------------
 
     $finish;
 end

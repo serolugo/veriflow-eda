@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                             parser.print_help()
                         exit_code = 1
                     else:
-                        db = Path(args.db)
+                        db = Path(args.db).resolve()
 
                         if db_cmd == "init":
                             dispatched = True

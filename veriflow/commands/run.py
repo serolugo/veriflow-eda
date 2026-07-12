@@ -7,6 +7,7 @@ from veriflow.ui.output import (
     print_run_header,
     print_section,
     print_status,
+    print_warn,
 )
 from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
 
@@ -46,6 +47,9 @@ def cmd_run(
     synth_metrics = data["stages"]["synthesis"].get("metrics") or {}
 
     print_run_header(db, execution.tile_id, execution.run_id)
+
+    for warning in data.get("warnings") or []:
+        print_warn(warning)
 
     if conn_result == "FAIL":
         conn_log_path = execution.run_dir / "out" / "connectivity" / "logs" / "connectivity.log"

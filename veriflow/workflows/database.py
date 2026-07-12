@@ -84,6 +84,38 @@ class DatabaseRunInfo:
 
 _RUN_DIR_PATTERN = re.compile(r"^run-(\d{3})$")
 
+_TB_DUT_INSTANCE_RE = re.compile(r"(\w+)\s+DUT\s*\(")
+
+
+def _check_tb_module_mismatch(tb_files: list[Path], top_module: str) -> str | None:
+    """Warn when tb_tile.v instantiates a module name that no longer matches
+    tile_config.yaml's top_module (e.g. after switching RTL to a wrapper).
+
+    tb_tile.v is self-contained and hand-edited by the user, so this is a
+    warning, not an error: a mismatch may be intentional.
+    """
+    if not top_module:
+        return None
+    tb_tile = next((f for f in tb_files if f.name == "tb_tile.v"), None)
+    if tb_tile is None:
+        return None
+    try:
+        content = tb_tile.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if re.search(rf"\b{re.escape(top_module)}\s+\w+\s*\(", content):
+        return None
+    match = _TB_DUT_INSTANCE_RE.search(content)
+    if match is None:
+        return None
+    found_module = match.group(1)
+    if found_module == top_module:
+        return None
+    return (
+        f"tb_tile.v instantiates '{found_module}' but tile_config.yaml declares "
+        f"top_module as '{top_module}' -- update tb_tile.v if needed"
+    )
+
 
 class DatabaseWorkflow:
     def __init__(self, database_path: Path | str) -> None:
@@ -254,6 +286,12 @@ class DatabaseWorkflow:
         # ── 8. Detect tool version ────────────────────────────────────────────
         iverilog_version = detect_iverilog_version()
 
+        # ── Non-fatal: tb_tile.v vs tile_config.yaml top_module sync check ────
+        warnings: list[str] = []
+        tb_mismatch = _check_tb_module_mismatch(tb_files, tile_config.top_module)
+        if tb_mismatch:
+            warnings.append(tb_mismatch)
+
         # ── 9. Build pipeline stages ──────────────────────────────────────────
         pipeline = build_default_pipeline(
             rtl_files=rtl_files,
@@ -291,6 +329,7 @@ class DatabaseWorkflow:
                 iverilog_version=iverilog_version,
                 conn_log_path=conn_log_path, sim_log_path=sim_log_path,
                 synth_log_path=synth_log_path, wave_path=wave_path,
+                warnings=warnings,
             )
             return DatabaseRunResult(
                 tile_id=tile_id,
@@ -333,6 +372,7 @@ class DatabaseWorkflow:
             iverilog_version=iverilog_version,
             conn_log_path=conn_log_path, sim_log_path=sim_log_path,
             synth_log_path=synth_log_path, wave_path=wave_path,
+            warnings=warnings,
         )
 
         return DatabaseRunResult(
@@ -563,6 +603,7 @@ def _finalize_run(
     sim_log_path: Path,
     synth_log_path: Path,
     wave_path: Path,
+    warnings: list[str] | None = None,
 ) -> dict:
     """Generate all documentation, update CSV, and return the run_result dict."""
 
@@ -742,6 +783,7 @@ def _finalize_run(
             "synth_log": synth_logs,
             "wave": wave_files,
         },
+        "warnings": warnings or [],
         "error": None,
     }
     generate_results_json(run_result, ctx.results_path)

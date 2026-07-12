@@ -178,6 +178,15 @@ endmodule
 
 Testbenches are **self-contained Verilog modules**: the files in `src/tb/` must form a complete, compilable testbench, including the DUT instantiation. VeriFlow compiles your RTL and testbench files together and selects the testbench top module explicitly (`tb_top_module` in `tile_config.yaml`). There is no marker extraction and no runtime code injection — the whole testbench file is yours to edit.
 
+> **Keeping `tb_tile.v` in sync with `top_module`.** `create-tile` instantiates the DUT in
+> `tb_tile.v` using whatever `top_module` you passed at creation time (or leaves it blank for
+> generic projects). If you later change `top_module` in `tile_config.yaml` — for example when
+> switching from direct RTL to a wrapper module — `tb_tile.v` is **not** updated automatically;
+> it is a hand-edited file and VeriFlow does not rewrite it after generation. `db run` checks for
+> this and prints a `VF_SIM_TB_MODULE_MISMATCH` warning (not an error, since a mismatch can be
+> intentional) when the instantiated module name no longer matches `top_module`. Update the DUT
+> instantiation in `tb_tile.v` to clear the warning.
+
 **Semicolab projects**
 
 `create-tile` generates `tb_tile.v` from a scaffold template with everything already in place: signal declarations for the nine-port contract, clock generation, reset sequence, waveform dump (`$dumpfile`/`$dumpvars`), the DUT instantiation (using the `--top-module` name), and helper tasks. Add your stimulus in the marked stimulus block:

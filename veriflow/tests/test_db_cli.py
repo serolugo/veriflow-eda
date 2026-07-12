@@ -139,6 +139,19 @@ def test_db_namespace_init_force_flag_forwarded(tmp_path):
     assert rc == 0
 
 
+def test_db_namespace_run_resolves_relative_dot_db_path(tmp_path, monkeypatch):
+    """--db . must resolve to an absolute path, not be passed through as '.'."""
+    from veriflow.cli import main
+    monkeypatch.chdir(tmp_path)
+    with patch("veriflow.commands.init_db.cmd_init") as mock_fn:
+        rc = main(["db", "init", "--db", "."])
+    assert rc == 0
+    called_path = mock_fn.call_args.args[0]
+    assert called_path.is_absolute()
+    assert called_path == tmp_path.resolve()
+    assert str(called_path) != "."
+
+
 def test_db_namespace_create_tile_dispatches(tmp_path):
     from veriflow.cli import main
     with patch("veriflow.commands.create_tile.cmd_create_tile") as mock_fn:

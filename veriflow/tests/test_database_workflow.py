@@ -1357,3 +1357,72 @@ def test_read_apis_do_not_modify_results_json():
         assert (result.run_dir / "results.json").read_text(encoding="utf-8") == results_before
     finally:
         shutil.rmtree(tmp)
+
+
+# ── tb_tile.v vs tile_config.yaml top_module sync check ───────────────────────
+
+
+def test_no_warning_when_top_module_matches_tb_tile():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)  # top_module="my_tile"; create-tile wrote tb_tile.v with "my_tile DUT ("
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        result = DatabaseWorkflow(db).run_tile("0001", opts)
+        assert result.data["warnings"] == []
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_warning_when_top_module_changed_after_create_tile():
+    """Simulates switching direct RTL to a wrapper: top_module is edited in
+    tile_config.yaml but tb_tile.v (self-contained, hand-edited) still
+    instantiates the old module name."""
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp)  # tb_tile.v instantiates "my_tile DUT ("
+        _add_rtl(db, "0001", "my_tile_wrapper")
+        _fill_tile_config(db, "0001", "my_tile_wrapper")
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        result = DatabaseWorkflow(db).run_tile("0001", opts)
+        assert len(result.data["warnings"]) == 1
+        warning = result.data["warnings"][0]
+        assert "tb_tile.v instantiates 'my_tile'" in warning
+        assert "top_module as 'my_tile_wrapper'" in warning
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_no_warning_when_no_tb_tile_present():
+    from veriflow.workflows.database import DatabaseRunOptions, DatabaseWorkflow
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        db = _setup_db(tmp, interface_name=None)
+        tb_tile = db / "config" / "tile_0001" / "src" / "tb" / "tb_tile.v"
+        if tb_tile.exists():
+            tb_tile.unlink()
+        opts = DatabaseRunOptions(skip_connectivity=True, skip_sim=True, skip_synth=True)
+        result = DatabaseWorkflow(db).run_tile("0001", opts)
+        assert result.data["warnings"] == []
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_check_tb_module_mismatch_helper_directly():
+    from veriflow.workflows.database import _check_tb_module_mismatch
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        tb_tile = tmp / "tb_tile.v"
+        tb_tile.write_text(
+            "module tb;\ncounter8_top DUT (.clk(clk));\nendmodule\n", encoding="utf-8"
+        )
+        msg = _check_tb_module_mismatch([tb_tile], "counter8_top_wrapper")
+        assert msg is not None
+        assert "counter8_top" in msg and "counter8_top_wrapper" in msg
+
+        assert _check_tb_module_mismatch([tb_tile], "counter8_top") is None
+        assert _check_tb_module_mismatch([tb_tile], "") is None
+        assert _check_tb_module_mismatch([], "counter8_top_wrapper") is None
+    finally:
+        shutil.rmtree(tmp)
