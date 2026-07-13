@@ -32,7 +32,18 @@ def cmd_bump_revision(db: Path, tile_number: str) -> None:
     print_step("bump-revision", f"Current tile_id : {old_tile_id}")
 
     # 2. Parse — increment revision, reset version to 01
-    parsed = parse_tile_id(old_tile_id)
+    try:
+        parsed = parse_tile_id(old_tile_id)
+    except ValueError as exc:
+        raise VeriFlowError(
+            f"Cannot bump revision: tile_id {old_tile_id!r} does not match the "
+            "legacy fixed-width format (<prefix>-YYMMDDNNNNVVRR) that "
+            "bump-revision currently requires. This project's project_config.yaml "
+            "likely sets a custom id_format; bumping is not yet supported "
+            "for custom formats.",
+            code="VF_TILE_ID_BUMP_UNSUPPORTED_FORMAT",
+            details={"tile_id": old_tile_id},
+        ) from exc
     new_revision = parsed["id_revision"] + 1
     new_version = 1  # reset on revision bump
 

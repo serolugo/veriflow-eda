@@ -89,6 +89,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="top_module",
         help="RTL top module name (required when the interface profile needs testbench scaffolding)",
     )
+    p_db_ct.add_argument(
+        "--tile-author",
+        default="",
+        metavar="NAME",
+        dest="tile_author",
+        help="Tile author's full name (written into tile_config.yaml; used for the {author_initials} id_format placeholder)",
+    )
 
     p_db_run = db_sub.add_parser("run", help="Run the verification pipeline")
     p_db_run.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
@@ -256,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                         elif db_cmd == "create-tile":
                             dispatched = True
                             from veriflow.commands.create_tile import cmd_create_tile
-                            cmd_create_tile(db, top_module=args.top_module)
+                            cmd_create_tile(db, top_module=args.top_module, tile_author=args.tile_author)
 
                         elif db_cmd == "run":
                             if non_interactive and args.waves:

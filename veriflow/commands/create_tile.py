@@ -6,7 +6,7 @@ import yaml
 
 from veriflow.core import VeriFlowError
 from veriflow.core.csv_store import append_tile_index, get_next_tile_number
-from veriflow.core.tile_id import generate_tile_id
+from veriflow.core.tile_id import compute_initials, format_tile_id
 from veriflow.core.validator import validate_database, validate_project_config
 from veriflow.generators.readme import generate_readme
 from veriflow.models.interface_profile import InterfaceProfile, get_interface_profile
@@ -65,7 +65,7 @@ notes: |
 """
 
 
-def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
+def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") -> None:
     """Create a new tile entry in the database.
 
     top_module: RTL top module name.  Required when the selected interface
@@ -73,6 +73,10 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     when missing).  When provided, it is written into tile_config.yaml AND
     substituted into src/tb/tb_tile.v so that both artifacts share the same
     declared DUT name as a single source of truth.
+
+    tile_author: Optional tile author name.  Written into tile_config.yaml
+    when provided, and used to compute the {author_initials} placeholder for
+    project_config.yaml's id_format.
     """
 
     validate_database(db)
@@ -120,14 +124,27 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     id_version = 1
     id_revision = 1
 
-    # 5. Generate tile_id
-    tile_id = generate_tile_id(
-        project_config.id_prefix,
-        tile_number,
-        id_version,
-        id_revision,
-        today=date.today(),
-    )
+    # 5. Generate tile_id from project_config.id_format
+    today = date.today()
+    if "{short_hash}" in project_config.id_format:
+        print(
+            "[create-tile] WARNING VF_ID_PLACEHOLDER_UNAVAILABLE: "
+            "id_format uses {short_hash}, which is not yet available "
+            "(requires a content snapshot). Substituting '000000'."
+        )
+    placeholders = {
+        "prefix": project_config.id_prefix,
+        "date": today.strftime("%y%m%d"),
+        "tile_number": tile_number_str,
+        "version": f"{id_version:02d}",
+        "revision": f"{id_revision:02d}",
+        "shuttle_name": project_config.shuttle_name,
+        "interface": interface_name or "",
+        "technology": project_config.technology_name or "generic",
+        "author_initials": compute_initials(tile_author),
+        "short_hash": "000000",
+    }
+    tile_id = format_tile_id(project_config.id_format, placeholders)
 
     print(f"[create-tile] Generating tile {tile_number_str} -> {tile_id}")
 
@@ -140,6 +157,8 @@ def cmd_create_tile(db: Path, *, top_module: str = "") -> None:
     config_text = _TILE_CONFIG_TEMPLATE.replace("__PORTS_COMMENT__", _ports_comment(profile))
     if top_module:
         config_text = config_text.replace('top_module: ""', f'top_module: "{top_module}"')
+    if tile_author:
+        config_text = config_text.replace('tile_author: ""', f'tile_author: "{tile_author}"')
     (config_tile_dir / "tile_config.yaml").write_text(config_text, encoding="utf-8")
     print(f"[create-tile] Written tile_config.yaml")
 

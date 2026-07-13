@@ -32,7 +32,18 @@ def cmd_bump_version(db: Path, tile_number: str) -> None:
     print_step("bump-version", f"Current tile_id : {old_tile_id}")
 
     # 2. Parse and increment id_version — revision stays the same
-    parsed = parse_tile_id(old_tile_id)
+    try:
+        parsed = parse_tile_id(old_tile_id)
+    except ValueError as exc:
+        raise VeriFlowError(
+            f"Cannot bump version: tile_id {old_tile_id!r} does not match the "
+            "legacy fixed-width format (<prefix>-YYMMDDNNNNVVRR) that "
+            "bump-version currently requires. This project's project_config.yaml "
+            "likely sets a custom id_format; bumping is not yet supported "
+            "for custom formats.",
+            code="VF_TILE_ID_BUMP_UNSUPPORTED_FORMAT",
+            details={"tile_id": old_tile_id},
+        ) from exc
     new_version = parsed["id_version"] + 1
     new_revision = parsed["id_revision"]  # unchanged
 

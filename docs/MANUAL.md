@@ -95,6 +95,61 @@ The `id_prefix` field is required — tiles cannot be created without it.
 
 Semicolab is an interface profile (a named port contract), not a boolean mode. An unknown name fails with `VF_INTERFACE_UNKNOWN`.
 
+### 4.3 Customize the tile ID format (`id_format`)
+
+By default, `create-tile` generates tile IDs in the fixed layout used since the project's
+earliest versions: `<prefix>-<YYMMDD><tile_number><version><revision>` (e.g.
+`MST130-01-26032500010101`). This is controlled by the optional `id_format` field in
+`project_config.yaml`:
+
+```yaml
+id_format: "{prefix}-{date}{tile_number}{version}{revision}"  # default
+```
+
+`id_format` is a Python format string evaluated against the placeholders below at
+`create-tile` time. Omitting `id_format` entirely keeps the default layout, so existing
+databases are unaffected.
+
+| Placeholder | Resolves to |
+|---|---|
+| `{prefix}` | `id_prefix` |
+| `{date}` | `create-tile` date, `YYMMDD` |
+| `{tile_number}` | tile number, zero-padded to 4 digits |
+| `{version}` | `id_version`, zero-padded to 2 digits |
+| `{revision}` | `id_revision`, zero-padded to 2 digits |
+| `{shuttle_name}` | `shuttle_name` (optional field, default `""`) |
+| `{interface}` | `interface_name` |
+| `{technology}` | `technology.name`, or `"generic"` if the `technology:` section is omitted |
+| `{author_initials}` | initials of the tile author (from `--tile-author`, computed at `create-tile` time — e.g. "Roman Lugo" → `"RL"`) |
+| `{short_hash}` | **not yet implemented** (requires a content snapshot) — resolves to `"000000"` and prints a `VF_ID_PLACEHOLDER_UNAVAILABLE` warning if used |
+
+An unknown placeholder (a typo) fails fast with `VF_ID_FORMAT_INVALID`, naming the bad
+placeholder and listing the valid ones.
+
+Common formats:
+
+```yaml
+# Default -- current fixed-width layout
+id_format: "{prefix}-{date}{tile_number}{version}{revision}"
+
+# Minimal
+id_format: "{prefix}-{tile_number}"
+
+# With shuttle name
+id_format: "{prefix}-{shuttle_name}-{tile_number}"
+
+# With interface, dotted version.revision
+id_format: "{prefix}-{interface}-{tile_number}-{version}.{revision}"
+```
+
+> **`bump-version` / `bump-revision` and custom `id_format`.** These commands parse the
+> *existing* tile_id's fixed-width numeric suffix to derive the next version/revision, then
+> generate the new ID with the legacy hardcoded layout — they do not yet re-run `id_format`.
+> For databases still using the default `id_format`, this is transparent. If you set a custom
+> `id_format` that doesn't produce the legacy `<prefix>-YYMMDDNNNNVVRR` shape, `bump-version`/
+> `bump-revision` fail cleanly with `VF_TILE_ID_BUMP_UNSUPPORTED_FORMAT` rather than crash —
+> bumping under a custom `id_format` is not supported yet.
+
 ---
 
 ## 5. Tile Management
@@ -102,10 +157,12 @@ Semicolab is an interface profile (a named port contract), not a boolean mode. A
 ### 5.1 Create a tile
 
 ```bash
-veriflow db create-tile --db ./database --top-module adder_tile
+veriflow db create-tile --db ./database --top-module adder_tile --tile-author "Roman Lugo"
 ```
 
 `--top-module` is required for Semicolab projects: the name is written into `tile_config.yaml` and substituted into the generated testbench so both share the same DUT name. For generic projects it can be omitted.
+
+`--tile-author` is optional: when given, it's written into `tile_config.yaml`'s `tile_author` field and used to compute the `{author_initials}` `id_format` placeholder (see [4.3](#43-customize-the-tile-id-format-id_format)).
 
 Automatically generates:
 - `database/config/tile_0001/tile_config.yaml` — tile + run configuration (single file)

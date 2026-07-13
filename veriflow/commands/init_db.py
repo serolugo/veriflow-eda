@@ -10,6 +10,23 @@ repo: ""
 interface_name: null  # set to a registered profile name (e.g. "semicolab") to enable connectivity checking
 description: |
 
+# shuttle_name: ""    # optional -- used by the {shuttle_name} id_format placeholder
+
+# id_format: "{prefix}-{date}{tile_number}{version}{revision}"  # optional -- default shown; customize the tile_id layout
+#   Available placeholders:
+#     {prefix}          -- id_prefix (above)
+#     {date}            -- create-tile date, YYMMDD
+#     {tile_number}     -- tile number, zero-padded to 4 digits
+#     {version}         -- id_version, zero-padded to 2 digits
+#     {revision}        -- id_revision, zero-padded to 2 digits
+#     {shuttle_name}    -- shuttle_name (above)
+#     {interface}       -- interface_name (above)
+#     {technology}      -- technology.name below, or "generic" if unset
+#     {author_initials} -- initials of tile_author (--tile-author or tile_config.yaml)
+#     {short_hash}      -- not yet available; resolves to "000000" with a warning
+
+# technology:
+#   name: generic       # optional -- used by the {technology} id_format placeholder
 """
 
 

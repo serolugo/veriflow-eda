@@ -1,5 +1,47 @@
 from datetime import date
 
+from veriflow.core import VeriFlowError
+
+# Placeholders always available when formatting a tile_id (see format_tile_id).
+_KNOWN_PLACEHOLDERS = (
+    "prefix", "date", "tile_number", "version", "revision",
+    "shuttle_name", "interface", "technology", "author_initials", "short_hash",
+)
+
+
+def compute_initials(full_name: str) -> str:
+    """Return the uppercase initials of a person's name, e.g. "Roman Lugo" -> "RL".
+
+    Empty or whitespace-only input returns "".
+    """
+    parts = [p for p in full_name.strip().split() if p]
+    return "".join(p[0].upper() for p in parts)
+
+
+def format_tile_id(id_format: str, placeholders: dict[str, str]) -> str:
+    """Render id_format with the given placeholder values.
+
+    Raises VeriFlowError(code="VF_ID_FORMAT_INVALID") if id_format references
+    a placeholder name that isn't in `placeholders` (typically a user typo),
+    or if the format string is otherwise malformed.
+    """
+    try:
+        return id_format.format(**placeholders)
+    except KeyError as exc:
+        unknown = exc.args[0]
+        raise VeriFlowError(
+            f"Unknown placeholder '{{{unknown}}}' in id_format: {id_format!r}. "
+            f"Available placeholders: {', '.join(sorted(placeholders))}",
+            code="VF_ID_FORMAT_INVALID",
+            details={"id_format": id_format, "unknown_placeholder": str(unknown)},
+        ) from exc
+    except (IndexError, ValueError) as exc:
+        raise VeriFlowError(
+            f"Invalid id_format {id_format!r}: {exc}",
+            code="VF_ID_FORMAT_INVALID",
+            details={"id_format": id_format},
+        ) from exc
+
 
 def generate_tile_id(
     id_prefix: str,

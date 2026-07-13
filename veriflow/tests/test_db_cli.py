@@ -156,7 +156,18 @@ def test_db_namespace_create_tile_dispatches(tmp_path):
     from veriflow.cli import main
     with patch("veriflow.commands.create_tile.cmd_create_tile") as mock_fn:
         rc = main(["db", "create-tile", "--db", str(tmp_path), "--top-module", "my_tile"])
-    mock_fn.assert_called_once_with(Path(str(tmp_path)), top_module="my_tile")
+    mock_fn.assert_called_once_with(Path(str(tmp_path)), top_module="my_tile", tile_author="")
+    assert rc == 0
+
+
+def test_db_namespace_create_tile_tile_author_forwarded(tmp_path):
+    from veriflow.cli import main
+    with patch("veriflow.commands.create_tile.cmd_create_tile") as mock_fn:
+        rc = main([
+            "db", "create-tile", "--db", str(tmp_path),
+            "--top-module", "my_tile", "--tile-author", "Roman Lugo",
+        ])
+    mock_fn.assert_called_once_with(Path(str(tmp_path)), top_module="my_tile", tile_author="Roman Lugo")
     assert rc == 0
 
 
