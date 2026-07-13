@@ -84,6 +84,16 @@ class DatabaseRunInfo:
 
 _RUN_DIR_PATTERN = re.compile(r"^run-(\d{3})$")
 
+
+def _normalize_run_id(run_id: str) -> str:
+    """Accept a bare run number (e.g. "8") and normalize it to "run-008",
+    mirroring how --tile 1 resolves to tile_0001. Already-formatted ids
+    (e.g. "run-008") pass through unchanged."""
+    if run_id.isdigit():
+        return f"run-{int(run_id):03d}"
+    return run_id
+
+
 _TB_DUT_INSTANCE_RE = re.compile(r"(\w+)\s+DUT\s*\(")
 
 
@@ -456,6 +466,7 @@ class DatabaseWorkflow:
         Raises VF_DATABASE_RUN_RESULT_MISSING when results.json is absent.
         Stages are reconstructed from the persisted stage dictionary.
         """
+        run_id = _normalize_run_id(run_id)
         resolved_id = self._resolve_tile_id(tile_id, tile_number)
         tile_dir = self.db_path / "tiles" / resolved_id
         if not tile_dir.exists():

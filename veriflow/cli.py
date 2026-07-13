@@ -28,6 +28,7 @@ if str(_pkg_root) not in sys.path:
     sys.path.insert(0, str(_pkg_root))
 
 from veriflow.core import VeriFlowError
+from veriflow.ui.output import print_cli_error
 
 
 def _emit_json(data: dict) -> None:
@@ -176,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         if json_mode:
             _emit_json({"status": "ERROR", "error": err.to_dict()})
         else:
-            print(f"[ERROR] {err}", file=sys.stderr)
+            print_cli_error(str(err))
         return err.exit_code
 
     # In JSON mode:
@@ -392,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
                 if json_mode:
                     error_payload = {"status": "ERROR", "error": e.to_dict()}
                 else:
-                    print(f"[ERROR] {e}", file=sys.stderr)
+                    print_cli_error(str(e))
                 exit_code = e.exit_code
 
             except KeyboardInterrupt:

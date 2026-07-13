@@ -18,6 +18,7 @@ from veriflow.ui.theme import (
 )
 
 console = Console(theme=VERIFLOW_THEME)
+error_console = Console(theme=VERIFLOW_THEME, stderr=True)
 
 
 # ── Status indicators ──────────────────────────────────────────────────────────
@@ -59,6 +60,17 @@ def print_warn(message: str) -> None:
 
 def print_error(message: str) -> None:
     console.print(f"\n  [error]Error:[/error] {message}\n")
+
+
+def print_cli_error(message: str) -> None:
+    """Print the top-level `[ERROR] <message>` line used by the CLI's central
+    error handler (cli.py), in pastel red, to stderr."""
+    error_console.print(f"[error]\\[ERROR][/error] {message}")
+
+
+def print_step(prefix: str, message: str) -> None:
+    """Print a `[prefix] message` progress line (e.g. "[bump-version] ...")."""
+    console.print(f"  [secondary]\\[{prefix}][/secondary] {message}")
 
 
 def print_fail_detail(message: str, log_path: Path | None = None) -> None:

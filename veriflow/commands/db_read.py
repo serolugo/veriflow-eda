@@ -156,5 +156,8 @@ def _status_markup(status: str | None) -> str:
     if status in ("SKIPPED", "SKIP"):
         return "[secondary]SKIPPED[/secondary]"
     if status == "COMPLETED":
-        return "[pass]COMPLETED[/pass]"
+        # Simulation stages report "COMPLETED" internally (no pass/fail concept
+        # of their own); display it as "PASS" for consistency with the other
+        # stages and with the overall run status shown by list-runs.
+        return "[pass]PASS[/pass]"
     return f"[secondary]{status or '—'}[/secondary]"
