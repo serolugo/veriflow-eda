@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from veriflow.core import VeriFlowError
+from veriflow.ui.output import console, print_done, print_step
 
 
 _PROJECT_CONFIG_TEMPLATE = """\
@@ -39,7 +40,7 @@ def cmd_init(db: Path, force: bool = False) -> None:
             f"  Use --force to overwrite."
         )
 
-    print(f"[init] Creating database at {db}")
+    print_step("init", f"Creating database at {db}")
 
     # 1. Create root
     db.mkdir(parents=True, exist_ok=True)
@@ -48,29 +49,28 @@ def cmd_init(db: Path, force: bool = False) -> None:
     tiles_dir = db / "tiles"
     tiles_dir.mkdir(exist_ok=True)
     (tiles_dir / ".gitkeep").touch()
-    print(f"[init] Created tiles/")
+    print_step("init", "Created tiles/")
 
     # 3. Create config/
     config_dir = db / "config"
     config_dir.mkdir(exist_ok=True)
-    print(f"[init] Created config/")
+    print_step("init", "Created config/")
 
     # 4. Write project_config.yaml template
     project_cfg = db / "project_config.yaml"
     project_cfg.write_text(_PROJECT_CONFIG_TEMPLATE, encoding="utf-8")
-    print(f"[init] Written project_config.yaml")
+    print_step("init", "Written project_config.yaml")
 
     # 5. Create tile_index.csv (empty)
     tile_index = db / "tile_index.csv"
     tile_index.write_text("", encoding="utf-8")
-    print(f"[init] Created tile_index.csv")
+    print_step("init", "Created tile_index.csv")
 
     # 6. Create records.csv (empty)
     records = db / "records.csv"
     records.write_text("", encoding="utf-8")
-    print(f"[init] Created records.csv")
+    print_step("init", "Created records.csv")
 
-    print()
-    print("✓ Database initialized successfully.")
-    print(f"  Path : {db.resolve()}")
-    print(f"  Next : Fill in {db / 'project_config.yaml'}")
+    print_done("Database initialized successfully.")
+    console.print(f"  [secondary]Path[/secondary] : [id]{db.resolve()}[/id]")
+    console.print(f"  [secondary]Next[/secondary] : Fill in [id]{db / 'project_config.yaml'}[/id]")

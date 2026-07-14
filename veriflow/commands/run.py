@@ -55,9 +55,13 @@ def cmd_run(
         conn_log_path = execution.run_dir / "out" / "connectivity" / "logs" / "connectivity.log"
         print_fail_detail("Check failed — pipeline stopped", conn_log_path)
 
+    # Simulation stages report "COMPLETED" internally (no pass/fail concept of
+    # their own); display it as "PASS" for consistency with show-run/list-runs.
+    sim_display = "PASS" if sim_result == "COMPLETED" else sim_result
+
     print_section("Results")
     print_status("Connectivity", conn_result)
-    print_status("Simulation", sim_result)
+    print_status("Simulation", sim_display)
     cells_detail = str(synth_metrics.get("cells", "")) if synth_metrics.get("cells") else ""
     print_status("Synthesis", synth_result, cells_detail)
     print_done(

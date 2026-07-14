@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from rich import box
+from rich.box import Box
 
 from veriflow.ui.theme import (
     VERIFLOW_THEME,
@@ -18,6 +19,24 @@ from veriflow.ui.theme import (
 )
 
 console = Console(theme=VERIFLOW_THEME)
+
+# box.SIMPLE_HEAD's top/bottom edges are blank (space-filled); rendering them
+# (show_edge=True) would reintroduce a blank line, and leaving them off
+# (show_edge=False) means the header has no rule *above* it, only below --
+# the two rules end up different widths (title-separator's fixed 44 chars vs
+# the table's own adaptive width). This custom box gives the table a real
+# top rule identical in style/width to its head-row rule, both auto-sized
+# together by Rich, so "line above header" == "line below header" always.
+_FRAMED_HEAD_BOX = Box(
+    " ── \n"
+    "    \n"
+    " ── \n"
+    "    \n"
+    "    \n"
+    "    \n"
+    "    \n"
+    " ── \n"
+)
 error_console = Console(theme=VERIFLOW_THEME, stderr=True)
 
 
@@ -95,6 +114,13 @@ def print_section(title: str) -> None:
     console.print(f"  [secondary]{'─' * 44}[/secondary]")
 
 
+def print_title(title: str) -> None:
+    """Print a section title with no separator line -- used before a Rich
+    Table, which draws its own top rule (see print_tiles_table/print_runs_table)
+    so the rule above the header matches the rule below it in width."""
+    console.print(f"\n  [label]{title}[/label]")
+
+
 # ── Tables ─────────────────────────────────────────────────────────────────────
 
 def print_ports_table(ports: list[dict]) -> None:
@@ -114,6 +140,59 @@ def print_ports_table(ports: list[dict]) -> None:
         table.add_row(p["name"], p["direction"], str(p["width"]))
 
     console.print()
+    console.print(table)
+
+
+def print_tiles_table(rows: list[tuple[str, str, str, str, str, str]]) -> None:
+    """Render tile rows as a styled table.
+
+    Columns: #, Tile ID, Name, Author, Ver, Interface. Column widths are
+    adaptive (Rich sizes each column to its content automatically).
+    """
+    table = Table(
+        box=_FRAMED_HEAD_BOX,
+        show_header=True,
+        header_style=f"bold {BLUE}",
+        border_style=GREY,
+        padding=(0, 2),
+        show_edge=True,
+    )
+    table.add_column("#",         style=BLUE)
+    table.add_column("Tile ID",   style=GREY)
+    table.add_column("Name",      style=WHITE)
+    table.add_column("Author",    style=GREY)
+    table.add_column("Ver",       style=GREY)
+    table.add_column("Interface", style=GREY)
+
+    for number, tile_id, name, author, ver, interface in rows:
+        table.add_row(number, tile_id, name, author, ver, interface)
+
+    console.print(table)
+
+
+def print_runs_table(rows: list[tuple[str, str, str, str]]) -> None:
+    """Render run rows as a styled table.
+
+    Columns: Run, Status, Date, Wave. `status`/`wave` entries are expected
+    to already carry Rich markup (e.g. "[pass]PASS[/pass]") -- the caller
+    resolves status/wave coloring since it knows the domain status values.
+    """
+    table = Table(
+        box=_FRAMED_HEAD_BOX,
+        show_header=True,
+        header_style=f"bold {BLUE}",
+        border_style=GREY,
+        padding=(0, 2),
+        show_edge=True,
+    )
+    table.add_column("Run",    style=BLUE)
+    table.add_column("Status")
+    table.add_column("Date",   style=GREY)
+    table.add_column("Wave")
+
+    for run_id, status, date_str, wave in rows:
+        table.add_row(run_id, status, date_str, wave)
+
     console.print(table)
 
 

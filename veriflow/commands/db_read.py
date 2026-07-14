@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from veriflow.ui.output import console, print_section
+from veriflow.ui.output import (
+    console,
+    print_runs_table,
+    print_section,
+    print_tiles_table,
+    print_title,
+)
 from veriflow.workflows.database import (
     DatabaseRunInfo,
     DatabaseRunResult,
@@ -24,22 +30,24 @@ def cmd_db_list_tiles(db: Path | str) -> list[DatabaseTileInfo]:
     wf = DatabaseWorkflow(db)
     tiles = wf.list_tiles()
 
-    print_section("Tiles")
+    print_title("Tiles")
     if not tiles:
         console.print("  [secondary](no tiles registered)[/secondary]")
         return tiles
 
+    rows = []
     for t in tiles:
         v = f"v{t.version}" if t.version else "v?"
         r = f"r{t.revision}" if t.revision else "r?"
-        iface = f"  interface={t.interface_name}" if t.interface_name else ""
-        name = t.tile_name or "—"
-        author = t.tile_author or "—"
-        console.print(
-            f"  [id]{t.tile_number}[/id]  [secondary]{t.tile_id}[/secondary]"
-            f"  {name}  [secondary]{author}[/secondary]"
-            f"  [secondary]{v} {r}[/secondary]{iface}"
-        )
+        rows.append((
+            t.tile_number,
+            t.tile_id,
+            t.tile_name or "—",
+            t.tile_author or "—",
+            f"{v} {r}",
+            t.interface_name or "—",
+        ))
+    print_tiles_table(rows)
 
     return tiles
 
@@ -62,19 +70,18 @@ def cmd_db_list_runs(
     else:
         display_id = "?"
 
-    print_section(f"Runs for {display_id}")
+    print_title(f"Runs for {display_id}")
     if not runs:
         console.print("  [secondary](no runs found)[/secondary]")
         return runs
 
+    rows = []
     for r in runs:
         status_markup = _status_markup(r.status)
         date_str = r.date or "—"
-        wave_str = "wave=[pass]yes[/pass]" if r.wave_path else "wave=[secondary]no[/secondary]"
-        console.print(
-            f"  [id]{r.run_id}[/id]  {status_markup}"
-            f"  [secondary]{date_str}[/secondary]  {wave_str}"
-        )
+        wave_markup = "[pass]yes[/pass]" if r.wave_path else "[secondary]no[/secondary]"
+        rows.append((r.run_id, status_markup, date_str, wave_markup))
+    print_runs_table(rows)
 
     return runs
 

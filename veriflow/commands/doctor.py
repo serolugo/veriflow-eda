@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from veriflow.core.backends.registry import _CONNECTIVITY, _SIMULATION, _SYNTHESIS
+from veriflow.ui.output import console
 
 
 def cmd_doctor(args: argparse.Namespace) -> tuple[int, dict]:
@@ -37,11 +38,14 @@ def cmd_doctor(args: argparse.Namespace) -> tuple[int, dict]:
 
 def _print_report(report: dict) -> None:
     for category_name, backends in report["backends"].items():
-        print(f"\n[{category_name.upper()}]")
+        console.print(f"\n\\[{category_name.upper()}]")
         for backend_info in backends:
-            print(f"  {backend_info['name']}")
+            console.print(f"  {backend_info['name']}")
             for t in backend_info["tools"]:
-                marker = "[OK]  " if t["available"] else "[FAIL]"
+                if t["available"]:
+                    marker = "[pass]\\[OK][/pass]  "
+                else:
+                    marker = "[fail]\\[FAIL][/fail]"
                 detail = t["version"] if t["available"] else t["error"]
-                print(f"    {t['tool']:<12}  {marker}  {detail or ''}")
-    print()
+                console.print(f"    {t['tool']:<12}  {marker}  {detail or ''}")
+    console.print()
