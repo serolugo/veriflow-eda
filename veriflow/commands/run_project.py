@@ -20,6 +20,7 @@ def _print_result(pr: ProjectRunResult) -> None:
     console.print()
     console.print(f"  [secondary]Project run[/secondary]  [id]{pr.run_dir}[/id]")
     console.print(f"  [secondary]Status     [/secondary]  {status_tag}")
+    console.print(f"  [secondary]→ results: {pr.run_dir / 'results.json'}[/secondary]")
 
     print_section("Stages")
     for stage_name, sr in pr.result.stages.items():

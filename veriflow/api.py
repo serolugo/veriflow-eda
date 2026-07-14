@@ -185,3 +185,28 @@ def wrap_generate(
         config_path=Path(config_path),
         out_dir=Path(out_dir) if out_dir is not None else None,
     )
+
+
+def get_project_run_result(run_dir: str | Path) -> dict:
+    """Read and return the results.json for a Project Mode run.
+
+    Parameters
+    ----------
+    run_dir : str | Path
+        Path to the run directory (e.g. "runs/run-001"), as produced by
+        `veriflow project run` / `ProjectWorkflow.run()`.
+
+    Raises:
+        VeriFlowError(VF_PROJECT_RUN_RESULT_NOT_FOUND) -- results.json missing
+    """
+    import json
+
+    run_dir = Path(run_dir)
+    results_path = run_dir / "results.json"
+    if not results_path.exists():
+        raise VeriFlowError(
+            f"results.json not found for run: {run_dir}",
+            code="VF_PROJECT_RUN_RESULT_NOT_FOUND",
+            details={"run_dir": str(run_dir), "path": str(results_path)},
+        )
+    return json.loads(results_path.read_text(encoding="utf-8"))

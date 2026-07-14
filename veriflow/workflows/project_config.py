@@ -278,6 +278,7 @@ class ProjectWorkflowConfig:
     interface: ProjectInterfaceConfig | None = None
     execution: ProjectExecutionConfig = field(default_factory=ProjectExecutionConfig)
     technology: ProjectTechnologyConfig = field(default_factory=ProjectTechnologyConfig)
+    root: Path = field(default_factory=lambda: Path("."))
 
     @classmethod
     def from_dict(
@@ -341,6 +342,7 @@ class ProjectWorkflowConfig:
             execution=execution,
             technology=technology,
             runs_dir=runs_dir,
+            root=Path(root),
         )
 
     @classmethod
