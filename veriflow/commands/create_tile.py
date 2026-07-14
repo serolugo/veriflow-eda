@@ -66,7 +66,7 @@ notes: |
 """
 
 
-def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") -> None:
+def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") -> dict:
     """Create a new tile entry in the database.
 
     top_module: RTL top module name.  Required when the selected interface
@@ -78,6 +78,8 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
     tile_author: Optional tile author name.  Written into tile_config.yaml
     when provided, and used to compute the {author_initials} placeholder for
     project_config.yaml's id_format.
+
+    Returns {"tile_id": ..., "tile_number": ...} for the newly created tile.
     """
 
     validate_database(db)
@@ -221,3 +223,5 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
     console.print(f"  [secondary]Tile ID    [/secondary] : [id]{tile_id}[/id]")
     console.print(f"  [secondary]Next       [/secondary] : Fill in [id]config/tile_{tile_number_str}/tile_config.yaml[/id]")
     console.print(f"                 Add RTL to [id]config/tile_{tile_number_str}/src/rtl/[/id]")
+
+    return {"tile_id": tile_id, "tile_number": tile_number_str}

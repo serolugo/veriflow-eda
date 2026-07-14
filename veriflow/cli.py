@@ -11,6 +11,7 @@ Usage:
     veriflow db bump-revision --db ./database --tile XXXX
     veriflow project init [--config veriflow.yaml] [--force]
     veriflow project run --config veriflow.yaml
+    veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
     veriflow wrap init --interface <name> --top <rtl_file>
     veriflow wrap generate --config wrapper_config.yaml
     veriflow wrap wizard
@@ -71,6 +72,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_init = project_sub.add_parser("init", help="Generate a commented veriflow.yaml scaffold")
     p_project_init.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Output config file path (default: veriflow.yaml)")
     p_project_init.add_argument("--force", action="store_true", help="Overwrite config file if it already exists")
+
+    p_project_import = project_sub.add_parser(
+        "import", help="Import a verified Project Mode run into a database as a new tile"
+    )
+    p_project_import.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_project_import.add_argument(
+        "--config",
+        default="veriflow.yaml",
+        metavar="PATH",
+        help="Path to project config file (default: veriflow.yaml)",
+    )
+    p_project_import.add_argument(
+        "--run",
+        default=None,
+        metavar="run-NNN",
+        dest="run_id",
+        help="Specific run to import (default: latest run with status PASS)",
+    )
 
     # db (Database Mode namespace)
     p_db = sub.add_parser("db", help="Database Mode commands")
@@ -225,6 +244,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.init_project import cmd_init_project
                         exit_code = cmd_init_project(args)
+                    elif project_cmd == "import":
+                        dispatched = True
+                        from veriflow.commands.import_project import cmd_import_project
+                        exit_code = cmd_import_project(args)
                     else:
                         if json_mode:
                             error_payload = {

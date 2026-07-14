@@ -210,3 +210,186 @@ def get_project_run_result(run_dir: str | Path) -> dict:
             details={"run_dir": str(run_dir), "path": str(results_path)},
         )
     return json.loads(results_path.read_text(encoding="utf-8"))
+
+
+def _find_latest_passing_run(runs_dir: Path) -> tuple[Optional[str], Optional[dict]]:
+    """Return (run_id, results_dict) for the highest-numbered run-NNN under
+    runs_dir whose results.json has status == "PASS", or (None, None)."""
+    import json
+    import re
+
+    if not runs_dir.exists():
+        return None, None
+
+    pattern = re.compile(r"^run-(\d{3})$")
+    numbered = []
+    for entry in runs_dir.iterdir():
+        if entry.is_dir():
+            m = pattern.match(entry.name)
+            if m:
+                numbered.append((int(m.group(1)), entry.name))
+    numbered.sort(reverse=True)
+
+    for _, run_name in numbered:
+        results_path = runs_dir / run_name / "results.json"
+        if not results_path.exists():
+            continue
+        try:
+            data = json.loads(results_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if data.get("status") == "PASS":
+            return run_name, data
+
+    return None, None
+
+
+def project_import(
+    config_path: str | Path,
+    db_path: str | Path,
+    *,
+    run_id: Optional[str] = None,
+) -> dict:
+    """Import a verified Project Mode run into a Database Mode database as a
+    new tile.
+
+    Copies the RTL (and, if present, testbench) sources recorded in the
+    chosen run's results.json into the new tile's src/rtl and src/tb, and
+    copies results.json itself to config/tile_NNNN/imported_run.json for
+    traceability (rtl_hash, timestamp, exact stage statuses of the run that
+    was imported).
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the Project Mode veriflow.yaml.
+    db_path : str | Path
+        Path to the destination VeriFlow database directory.
+    run_id : str | None
+        Specific run to import (e.g. "run-003"). If None, imports the
+        highest-numbered run under runs_dir whose results.json reports
+        status "PASS".
+
+    Raises:
+        VeriFlowError(VF_IMPORT_NO_PASSING_RUN)      -- run_id is None and no run has status PASS
+        VeriFlowError(VF_IMPORT_RUN_NOT_FOUND)        -- run_id given but missing / no results.json
+        VeriFlowError(VF_IMPORT_RUN_NOT_PASSING)      -- run_id given but its status != PASS
+        VeriFlowError(VF_IMPORT_INTERFACE_MISMATCH)   -- project's interface_name != database's
+    """
+    import shutil
+
+    import yaml
+
+    from veriflow.commands.create_tile import cmd_create_tile
+    from veriflow.core.validator import validate_database
+    from veriflow.models.project_config import ProjectConfig
+    from veriflow.workflows.project_config import ProjectWorkflowConfig
+
+    config_path = Path(config_path).resolve()
+    db_path = Path(db_path).resolve()
+
+    # a. Load the Project Mode config
+    project_config = ProjectWorkflowConfig.from_file(config_path)
+    runs_dir = project_config.runs_dir
+
+    # b. Determine which run to import
+    if run_id is None:
+        found_run_id, results = _find_latest_passing_run(runs_dir)
+        if found_run_id is None:
+            raise VeriFlowError(
+                f"No passing run found under {runs_dir}. "
+                "Run 'veriflow project run' until a run reports status PASS "
+                "before importing.",
+                code="VF_IMPORT_NO_PASSING_RUN",
+                details={"runs_dir": str(runs_dir)},
+            )
+        run_id = found_run_id
+    else:
+        results_path = runs_dir / run_id / "results.json"
+        if not results_path.exists():
+            raise VeriFlowError(
+                f"Run {run_id!r} not found (or has no results.json) under {runs_dir}",
+                code="VF_IMPORT_RUN_NOT_FOUND",
+                details={"run_id": run_id, "runs_dir": str(runs_dir)},
+            )
+        results = get_project_run_result(runs_dir / run_id)
+        if results.get("status") != "PASS":
+            raise VeriFlowError(
+                f"Run {run_id!r} has status {results.get('status')!r}, not PASS. "
+                "Only a passing run can be imported.",
+                code="VF_IMPORT_RUN_NOT_PASSING",
+                details={"run_id": run_id, "status": results.get("status")},
+            )
+
+    # d. Interface compatibility check
+    validate_database(db_path)
+    db_project_cfg_path = db_path / "project_config.yaml"
+    db_raw = yaml.safe_load(db_project_cfg_path.read_text(encoding="utf-8")) or {}
+    db_project_config = ProjectConfig.from_dict(db_raw)
+
+    project_interface_name = results.get("interface_name")
+    if project_interface_name is not None and project_interface_name != db_project_config.interface_name:
+        raise VeriFlowError(
+            f"Interface mismatch: the imported run uses interface_name="
+            f"{project_interface_name!r}, but the database's project_config.yaml "
+            f"declares interface_name={db_project_config.interface_name!r}.",
+            code="VF_IMPORT_INTERFACE_MISMATCH",
+            details={
+                "project_interface_name": project_interface_name,
+                "db_interface_name": db_project_config.interface_name,
+            },
+        )
+
+    # e. Create the tile and copy sources into it
+    top_module = results["top_module"]
+    tile_info = cmd_create_tile(db_path, top_module=top_module)
+    tile_number_str = tile_info["tile_number"]
+    tile_id = tile_info["tile_id"]
+
+    config_tile_dir = db_path / "config" / f"tile_{tile_number_str}"
+    rtl_dir = config_tile_dir / "src" / "rtl"
+    tb_dir = config_tile_dir / "src" / "tb"
+    project_root = config_path.parent
+
+    for rel in results.get("rtl_sources") or []:
+        src = (project_root / rel).resolve()
+        shutil.copy2(src, rtl_dir / Path(rel).name)
+
+    tb_sources = results.get("tb_sources") or []
+    if tb_sources:
+        # Importing a project's own already-complete, verified testbench --
+        # remove the auto-generated tb_tile.v placeholder scaffold first so
+        # the copied-in files are the sole (and only) testbench, avoiding a
+        # `module tb;` name collision between the two during simulation.
+        placeholder = tb_dir / "tb_tile.v"
+        if placeholder.exists():
+            placeholder.unlink()
+        for rel in tb_sources:
+            src = (project_root / rel).resolve()
+            shutil.copy2(src, tb_dir / Path(rel).name)
+
+    # Prefill tile_config.yaml: tile_name (project directory name), top_module
+    # (already set by cmd_create_tile), and tb_top_module if the project
+    # declares one. results.json's schema has no simulation.tb_top field, so
+    # this comes from the just-loaded ProjectWorkflowConfig instead.
+    tile_cfg_path = config_tile_dir / "tile_config.yaml"
+    tile_cfg_text = tile_cfg_path.read_text(encoding="utf-8")
+    tile_cfg_text = tile_cfg_text.replace('tile_name: ""', f'tile_name: "{project_root.name}"')
+    if project_config.tb_top:
+        tile_cfg_text = tile_cfg_text.replace(
+            'tb_top_module: "tb"', f'tb_top_module: "{project_config.tb_top}"'
+        )
+    tile_cfg_path.write_text(tile_cfg_text, encoding="utf-8")
+
+    # f. Copy results.json -> imported_run.json for traceability
+    shutil.copy2(runs_dir / run_id / "results.json", config_tile_dir / "imported_run.json")
+
+    # g. Summary
+    return {
+        "tile_id": tile_id,
+        "tile_number": tile_number_str,
+        "db_path": str(db_path),
+        "config_path": str(config_path),
+        "run_id": run_id,
+        "rtl_hash": results.get("rtl_hash", {}),
+    }
