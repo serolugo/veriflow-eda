@@ -150,6 +150,42 @@ id_format: "{prefix}-{interface}-{tile_number}-{version}.{revision}"
 > `bump-revision` fail cleanly with `VF_TILE_ID_BUMP_UNSUPPORTED_FORMAT` rather than crash —
 > bumping under a custom `id_format` is not supported yet.
 
+### 4.4 Configure the pipeline (`pipeline`)
+
+By default `db run` executes connectivity (if `interface_name` is also set), simulation (if
+the tile has testbench sources), then synthesis — the same behavior as always. The optional
+`pipeline` section in `project_config.yaml` sets a **database-wide default** stage list/order
+for all tiles; an individual tile's `tile_config.yaml` may override it completely (see
+[5.2](#52-configure-the-tile)).
+
+```yaml
+pipeline:
+  stages:
+    - type: connectivity
+    - type: simulation
+      backend: icarus     # optional per-stage override
+    - type: synthesis
+      backend: yosys
+```
+
+| Stage type | Runs when listed |
+|---|---|
+| `connectivity` | Only if `interface_name` is also set — same precondition as today |
+| `simulation` | Only if the tile has testbench sources — same precondition as today |
+| `synthesis` | No precondition |
+
+A stage type left out of `pipeline.stages` behaves exactly like passing the matching
+`--skip-check`/`--skip-sim`/`--skip-synth` flag to `db run` — it shows up as `SKIPPED` in
+the results, not omitted. An unrecognized `type` fails with `VF_PIPELINE_STAGE_UNKNOWN`.
+Omitting `pipeline` entirely (the common case) keeps the current default — existing
+databases are unaffected.
+
+> **Stage order in Database Mode is not reorderable.** Unlike Project Mode's `veriflow.yaml`,
+> `db run`'s connectivity → simulation → synthesis execution order is fixed regardless of the
+> order stages are listed in `pipeline.stages` — the section only controls **which** stages
+> run and their `backend:`, not the sequence. This is a scope limitation, not a bug: `db run`'s
+> early-stop-on-connectivity-FAIL logic assumes connectivity always runs first.
+
 ---
 
 ## 5. Tile Management
@@ -197,6 +233,20 @@ notes: |
 
 > The `top_module` field must match exactly the name of the `.v` file in `src/rtl/`.
 > `tb_top_module` defaults to `tb` and must match the module declared in your testbench.
+
+`tile_config.yaml` also accepts an optional `pipeline` section (see
+[4.4](#44-configure-the-pipeline-pipeline)) that **completely overrides** `project_config.yaml`'s
+`pipeline` for this tile only:
+
+```yaml
+pipeline:
+  stages:
+    - type: connectivity
+    - type: synthesis   # no simulation for this tile
+```
+
+Omit it to inherit the database's `pipeline` (or the current default if the database doesn't
+set one either).
 
 ### 5.3 Add the RTL
 

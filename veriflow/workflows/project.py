@@ -124,6 +124,17 @@ def _write_results_json(
 def build_project_flow(
     config: ProjectWorkflowConfig,
 ) -> tuple[Design, Flow]:
+    """Build the Design + Flow for config.pipeline (stage types, in order,
+    each with its optional per-stage backend override).
+
+    A stage type not present in config.pipeline.stages is simply never
+    instantiated -- same effect as the pre-pipeline-config behavior where
+    "no interface:" meant "no InterfaceStage" at all. connectivity still
+    requires config.interface (there is no profile to check against
+    otherwise); simulation still requires config.tb_sources non-empty --
+    both preconditions unchanged from before this feature, just driven by
+    "is this type in the pipeline" instead of unconditional inclusion.
+    """
     design = Design(
         top_module=config.top_module,
         rtl_sources=config.rtl_sources,
@@ -131,38 +142,47 @@ def build_project_flow(
     )
 
     profile = ExecutionProfile(
-        connectivity_backend=config.execution.connectivity_backend,
-        simulation_backend=config.execution.simulation_backend,
-        synthesis_backend=config.execution.synthesis_backend,
+        connectivity_backend=(
+            config.pipeline.backend_for("connectivity") or config.execution.connectivity_backend
+        ),
+        simulation_backend=(
+            config.pipeline.backend_for("simulation") or config.execution.simulation_backend
+        ),
+        synthesis_backend=(
+            config.pipeline.backend_for("synthesis") or config.execution.synthesis_backend
+        ),
         technology_name=config.technology.name,
     )
 
     stages = []
-
-    if config.interface is not None:
-        stages.append(
-            InterfaceStage(
-                interface_profile=get_interface_profile(config.interface.name),
-                profile=profile,
-                backend=get_connectivity_backend(profile.connectivity_backend),
+    for stage_cfg in config.pipeline.stages:
+        if stage_cfg.type == "connectivity":
+            if config.interface is None:
+                continue
+            stages.append(
+                InterfaceStage(
+                    interface_profile=get_interface_profile(config.interface.name),
+                    profile=profile,
+                    backend=get_connectivity_backend(profile.connectivity_backend),
+                )
             )
-        )
-
-    if config.tb_sources:
-        stages.append(
-            SimulationStage(
-                tb_top=config.tb_top,
-                profile=profile,
-                backend=get_simulation_backend(profile.simulation_backend),
+        elif stage_cfg.type == "simulation":
+            if not config.tb_sources:
+                continue
+            stages.append(
+                SimulationStage(
+                    tb_top=config.tb_top,
+                    profile=profile,
+                    backend=get_simulation_backend(profile.simulation_backend),
+                )
             )
-        )
-
-    stages.append(
-        SynthesisStage(
-            profile=profile,
-            backend=get_synthesis_backend(profile.synthesis_backend),
-        )
-    )
+        elif stage_cfg.type == "synthesis":
+            stages.append(
+                SynthesisStage(
+                    profile=profile,
+                    backend=get_synthesis_backend(profile.synthesis_backend),
+                )
+            )
 
     return design, Flow(stages)
 

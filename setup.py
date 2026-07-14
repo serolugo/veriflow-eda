@@ -1,11 +1,23 @@
+import re
+import pathlib
+
 from setuptools import setup, find_packages
 
 with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
+
+def _read_version():
+    text = (pathlib.Path(__file__).parent / "veriflow" / "__init__.py").read_text()
+    m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', text, re.M)
+    if not m:
+        raise RuntimeError("Cannot find __version__ in __init__.py")
+    return m.group(1)
+
+
 setup(
     name="veriflow-eda",
-    version="1.0.0",
+    version=_read_version(),
     description="Lightweight RTL verification and documentation framework for multi-project ASIC flows",
     long_description=long_description,
     long_description_content_type="text/markdown",

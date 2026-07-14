@@ -28,6 +28,17 @@ description: |
 
 # technology:
 #   name: generic       # optional -- used by the {technology} id_format placeholder
+
+# pipeline:             # optional -- default stage list/order for all tiles in this database;
+#   stages:              #   a tile's own tile_config.yaml may override this completely
+#     - type: connectivity
+#     - type: simulation
+#     - type: synthesis
+#   # each stage also accepts an optional `backend:` override, e.g.:
+#   #   - type: synthesis
+#   #     backend: yosys
+#   # omitting `pipeline:` entirely keeps the current default (all three
+#   # stages above, in order)
 """
 
 

@@ -142,6 +142,58 @@ fails with `VF_BACKEND_*_UNKNOWN`. This section introduces no new backends — t
 values are the defaults, and the section exists so future backends can be selected without a
 schema change.
 
+### `pipeline` (optional)
+
+```yaml
+pipeline:
+  stages:
+    - type: connectivity
+    - type: simulation
+      backend: icarus     # optional per-stage override; omit to use `execution`'s default
+    - type: synthesis
+      backend: yosys
+```
+
+Selects exactly which stages run, and in what order. Omitting the section (or `pipeline: null`)
+keeps the current default: connectivity (if `interface` is configured) → simulation (if
+`tb_sources` is non-empty) → synthesis, unconditionally — i.e. **omitting `pipeline` changes
+nothing** for existing configs.
+
+| Stage type | Requires | Runs when listed |
+|---|---|---|
+| `connectivity` | `interface` section configured | Verifies `top_module` against the interface profile's port contract |
+| `simulation` | `design.tb_sources` non-empty | Compiles + runs the testbench, captures `waves.vcd` |
+| `synthesis` | — | Always runnable; the only stage with no precondition |
+
+Rules:
+
+- A stage type **not listed** in `pipeline.stages` never runs at all — it shows up as `SKIPPED` in
+  the output and in `results.json`, exactly as if you had omitted `interface`/`tb_sources` (or
+  passed the matching `--skip-*` flag in Database Mode).
+- An unrecognized `type` value fails fast with `VF_PIPELINE_STAGE_UNKNOWN`.
+- `backend:` is optional per stage; omitting it uses the `execution` section's default for that
+  stage type (or the registry default if `execution` is also omitted).
+- Extra keys on a stage entry (for fields not implemented yet, e.g. a future `timeout:`) are
+  ignored silently rather than rejected, so configs stay forward-compatible.
+- Connectivity/simulation still require their underlying precondition (`interface`/`tb_sources`)
+  even when explicitly listed — listing `connectivity` with no `interface` section configured
+  simply means that stage is skipped, same as leaving it out of `pipeline` entirely.
+
+Common examples:
+
+```yaml
+# Connectivity + synthesis only, no simulation
+pipeline:
+  stages:
+    - type: connectivity
+    - type: synthesis
+
+# Synthesis-only smoke check
+pipeline:
+  stages:
+    - type: synthesis
+```
+
 ### `technology` (optional)
 
 ```yaml
@@ -206,6 +258,8 @@ The parser fails fast with stable `VeriFlowError` codes, including:
 | `VF_INTERFACE_UNKNOWN` | `interface.name` not in the registry |
 | `VF_EXECUTION_CONFIG_INVALID` | malformed `execution` section / unsupported keys |
 | `VF_BACKEND_CONNECTIVITY_UNKNOWN` / `VF_BACKEND_SIMULATION_UNKNOWN` / `VF_BACKEND_SYNTHESIS_UNKNOWN` | backend name not in the registry |
+| `VF_PIPELINE_CONFIG_INVALID` | `pipeline` section is not a mapping with a `stages` key |
+| `VF_PIPELINE_STAGE_UNKNOWN` | a `pipeline.stages[].type` value isn't `connectivity`/`simulation`/`synthesis` |
 | `VF_TECHNOLOGY_CONFIG_INVALID` | malformed `technology` section / unsupported keys |
 | `VF_TECHNOLOGY_UNKNOWN` | `technology.name` not in the registry |
 | `VF_SIM_TB_TOP_REQUIRED` | `tb_sources` given without `simulation.tb_top` |

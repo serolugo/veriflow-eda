@@ -283,6 +283,7 @@ def project_import(
     from veriflow.commands.create_tile import cmd_create_tile
     from veriflow.core.validator import validate_database
     from veriflow.models.project_config import ProjectConfig
+    from veriflow.models.tile_config import DEFAULT_TB_TOP_MODULE
     from veriflow.workflows.project_config import ProjectWorkflowConfig
 
     config_path = Path(config_path).resolve()
@@ -377,7 +378,8 @@ def project_import(
     tile_cfg_text = tile_cfg_text.replace('tile_name: ""', f'tile_name: "{project_root.name}"')
     if project_config.tb_top:
         tile_cfg_text = tile_cfg_text.replace(
-            'tb_top_module: "tb"', f'tb_top_module: "{project_config.tb_top}"'
+            f'tb_top_module: "{DEFAULT_TB_TOP_MODULE}"',
+            f'tb_top_module: "{project_config.tb_top}"',
         )
     tile_cfg_path.write_text(tile_cfg_text, encoding="utf-8")
 

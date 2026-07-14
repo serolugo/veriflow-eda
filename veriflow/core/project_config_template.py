@@ -27,6 +27,17 @@ design:
 #   simulation_backend: icarus
 #   synthesis_backend: yosys
 
+# pipeline:           # optional -- define which stages to run, and in what order
+#   stages:
+#     - type: connectivity
+#     - type: simulation
+#     - type: synthesis
+#   # each stage also accepts an optional `backend:` override, e.g.:
+#   #   - type: synthesis
+#   #     backend: yosys
+#   # omitting `pipeline:` entirely keeps the current default (all three
+#   # stages above, in order)
+
 # technology:
 #   name: generic
 

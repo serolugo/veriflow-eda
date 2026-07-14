@@ -44,6 +44,11 @@ from veriflow.core.backends.registry import (
 )
 from veriflow.models.execution_profile import default_execution_profile
 from veriflow.models.interface_profile import get_interface_profile
+from veriflow.models.pipeline_config import (
+    DEFAULT_PIPELINE,
+    PipelineConfig,
+    parse_optional_pipeline_section,
+)
 from veriflow.models.technology_profile import get_technology_profile
 
 _EXECUTION_DEFAULTS = default_execution_profile()
@@ -268,6 +273,12 @@ def _parse_technology_section(data: dict) -> ProjectTechnologyConfig:
     return ProjectTechnologyConfig(name=name)
 
 
+def _parse_pipeline_section(data: dict) -> PipelineConfig:
+    # omitted, or `pipeline: null` — current default: all three stages, in order.
+    # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed section.
+    return parse_optional_pipeline_section(data) or DEFAULT_PIPELINE
+
+
 @dataclass
 class ProjectWorkflowConfig:
     top_module: str
@@ -278,6 +289,7 @@ class ProjectWorkflowConfig:
     interface: ProjectInterfaceConfig | None = None
     execution: ProjectExecutionConfig = field(default_factory=ProjectExecutionConfig)
     technology: ProjectTechnologyConfig = field(default_factory=ProjectTechnologyConfig)
+    pipeline: PipelineConfig = field(default_factory=lambda: DEFAULT_PIPELINE)
     root: Path = field(default_factory=lambda: Path("."))
 
     @classmethod
@@ -310,6 +322,7 @@ class ProjectWorkflowConfig:
         interface = _parse_interface_section(data)
         execution = _parse_execution_section(data)
         technology = _parse_technology_section(data)
+        pipeline = _parse_pipeline_section(data)
 
         # simulation section
         sim_section = data.get("simulation")
@@ -341,6 +354,7 @@ class ProjectWorkflowConfig:
             interface=interface,
             execution=execution,
             technology=technology,
+            pipeline=pipeline,
             runs_dir=runs_dir,
             root=Path(root),
         )

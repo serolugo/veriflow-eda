@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from veriflow.core import VeriFlowError
+from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipeline_section
 
 
 _DEFAULT_ID_FORMAT = "{prefix}-{date}{tile_number}{version}{revision}"
@@ -18,6 +19,7 @@ class ProjectConfig:
     id_format: str = _DEFAULT_ID_FORMAT
     shuttle_name: str = ""
     technology_name: str | None = None
+    pipeline: PipelineConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProjectConfig":
@@ -63,6 +65,11 @@ class ProjectConfig:
             if isinstance(raw_tech_name, str):
                 technology_name = raw_tech_name.strip() or None
 
+        # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed
+        # section. None means "not set here" -- DatabaseWorkflow falls back to
+        # tile_config.yaml's pipeline, then to DEFAULT_PIPELINE.
+        pipeline = parse_optional_pipeline_section(data)
+
         return cls(
             id_prefix=data.get("id_prefix", "") or "",
             project_name=data.get("project_name", "") or "",
@@ -72,4 +79,5 @@ class ProjectConfig:
             id_format=id_format,
             shuttle_name=data.get("shuttle_name", "") or "",
             technology_name=technology_name,
+            pipeline=pipeline,
         )

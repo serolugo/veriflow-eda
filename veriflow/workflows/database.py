@@ -25,7 +25,9 @@ from veriflow.generators.notes import generate_notes
 from veriflow.generators.readme import generate_readme
 from veriflow.generators.results import generate_results_json
 from veriflow.generators.summary import generate_summary
+from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
 from veriflow.models.interface_profile import get_interface_profile, list_interface_profile_names
+from veriflow.models.pipeline_config import DEFAULT_PIPELINE
 from veriflow.models.project_config import ProjectConfig
 from veriflow.models.run_context import RunContext
 from veriflow.models.stage_result import StageResult
@@ -214,6 +216,32 @@ class DatabaseWorkflow:
         if interface_profile is None:
             skip_check = True
 
+        # ── Resolve effective pipeline: tile_config > project_config > default ─
+        # A stage type absent from the effective pipeline behaves exactly like
+        # the matching --skip-* flag -- same StageResult(status="SKIPPED"),
+        # no restructuring of build_default_pipeline needed. Per-stage
+        # `backend:` overrides feed a custom ExecutionProfile.
+        effective_pipeline = tile_config.pipeline or project_config.pipeline or DEFAULT_PIPELINE
+        if not effective_pipeline.has_stage("connectivity"):
+            skip_check = True
+        if not effective_pipeline.has_stage("simulation"):
+            skip_sim = True
+        if not effective_pipeline.has_stage("synthesis"):
+            skip_synth = True
+
+        _exec_defaults = default_execution_profile()
+        pipeline_profile = ExecutionProfile(
+            connectivity_backend=(
+                effective_pipeline.backend_for("connectivity") or _exec_defaults.connectivity_backend
+            ),
+            simulation_backend=(
+                effective_pipeline.backend_for("simulation") or _exec_defaults.simulation_backend
+            ),
+            synthesis_backend=(
+                effective_pipeline.backend_for("synthesis") or _exec_defaults.synthesis_backend
+            ),
+        )
+
         # Validate only the tools needed by the stages that will actually run.
         # iverilog: connectivity + simulation; yosys: synthesis only.
         need_iverilog = not (skip_check and skip_sim)
@@ -309,6 +337,7 @@ class DatabaseWorkflow:
             tb_top=tile_config.tb_top_module,
             top_module=tile_config.top_module,
             interface_profile=interface_profile,
+            profile=pipeline_profile,
         )
         conn_stage, sim_stage, synth_stage = pipeline.stages
 

@@ -11,7 +11,7 @@ from veriflow.core.validator import validate_database, validate_project_config
 from veriflow.generators.readme import generate_readme
 from veriflow.models.interface_profile import InterfaceProfile, get_interface_profile
 from veriflow.models.project_config import ProjectConfig
-from veriflow.models.tile_config import TileConfig
+from veriflow.models.tile_config import DEFAULT_TB_TOP_MODULE, TileConfig
 from veriflow.ui.output import console, print_done, print_step, print_warn
 
 _VERILOG_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
@@ -28,7 +28,7 @@ def _ports_comment(profile: InterfaceProfile | None) -> str:
     return "\n".join(lines)
 
 
-_TILE_CONFIG_TEMPLATE = """\
+_TILE_CONFIG_TEMPLATE = f"""\
 # =============================================================================
 # TILE INFORMATION  (permanent -- fill once)
 # =============================================================================
@@ -36,7 +36,7 @@ _TILE_CONFIG_TEMPLATE = """\
 tile_name: ""       # Display name for this tile
 tile_author: ""     # Your full name
 top_module: ""      # Must match the RTL filename exactly (e.g. adder_tile)
-tb_top_module: "tb" # Testbench top module name (module declared in tb_tile.v)
+tb_top_module: "{DEFAULT_TB_TOP_MODULE}" # Testbench top module name (module declared in tb_tile.v)
 
 description: |
   # What does this tile do?
@@ -49,6 +49,17 @@ usage_guide: |
 
 tb_description: |
   # Briefly describe your testbench approach
+
+# pipeline:             # optional -- overrides project_config.yaml's pipeline for this tile only
+#   stages:
+#     - type: connectivity
+#     - type: simulation
+#     - type: synthesis
+#   # each stage also accepts an optional `backend:` override, e.g.:
+#   #   - type: synthesis
+#   #     backend: yosys
+#   # omitting `pipeline:` entirely inherits project_config.yaml's pipeline
+#   # (or the current default if that's absent too: all three stages above, in order)
 
 # =============================================================================
 # RUN INFORMATION  (update before each run)

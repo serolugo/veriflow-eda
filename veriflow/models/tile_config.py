@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 
+from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipeline_section
+
+DEFAULT_TB_TOP_MODULE = "tb"
+
 
 @dataclass
 class TileConfig:
@@ -18,11 +22,16 @@ class TileConfig:
     tags: str
     main_change: str
     notes: str
+    # ── Pipeline override (optional; None = inherit from project_config.yaml) ─
+    pipeline: PipelineConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "TileConfig":
         raw_tb_top = data.get("tb_top_module")
-        tb_top_module = raw_tb_top if raw_tb_top is not None else "tb"
+        tb_top_module = raw_tb_top if raw_tb_top is not None else DEFAULT_TB_TOP_MODULE
+        # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed
+        # section. None means "not set here" -- inherit project_config.yaml's pipeline.
+        pipeline = parse_optional_pipeline_section(data)
         return cls(
             tile_name=data.get("tile_name", "") or "",
             tile_author=data.get("tile_author", "") or "",
@@ -37,4 +46,5 @@ class TileConfig:
             tags=data.get("tags", "") or "",
             main_change=data.get("main_change", "") or "",
             notes=data.get("notes", "") or "",
+            pipeline=pipeline,
         )
