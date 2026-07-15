@@ -500,9 +500,12 @@ def test_workflow_first_automatic_run_creates_run_001(tmp_path):
     cfg = _rtl_only_config(tmp_path)
     cfg.runs_dir = tmp_path / "runs"
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         pr = wf.run()
@@ -515,9 +518,12 @@ def test_workflow_second_automatic_run_creates_run_002(tmp_path):
     cfg = _rtl_only_config(tmp_path)
     cfg.runs_dir = tmp_path / "runs"
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         wf.run()
@@ -536,9 +542,12 @@ def test_workflow_non_run_nnn_dirs_ignored_during_allocation(tmp_path):
     (runs_dir / "run-001").mkdir()
     cfg.runs_dir = runs_dir
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         pr = wf.run()
@@ -550,9 +559,12 @@ def test_workflow_explicit_request_work_dir_respected(tmp_path):
     cfg = _rtl_only_config(tmp_path)
     explicit_dir = tmp_path / "my_run"
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         req = RunRequest(work_dir=explicit_dir)
@@ -567,9 +579,12 @@ def test_workflow_explicit_request_not_numbered_under_runs_dir(tmp_path):
     cfg.runs_dir = tmp_path / "runs"
     explicit_dir = tmp_path / "custom_output"
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         pr = wf.run(request=RunRequest(work_dir=explicit_dir))
@@ -589,7 +604,8 @@ def test_workflow_skip_flags_preserved_in_explicit_request(tmp_path):
         skip_sim=True,
         skip_synth=True,
     )
-    pr = wf.run(request=req)
+    with patch("veriflow.workflows.project.validate_tools"):
+        pr = wf.run(request=req)
 
     # All stages skipped — synthesis result should be SKIPPED
     assert pr.result.stages["synthesis"].status == "SKIPPED"
@@ -598,9 +614,12 @@ def test_workflow_skip_flags_preserved_in_explicit_request(tmp_path):
 def test_workflow_run_returns_project_run_result(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         wf = ProjectWorkflow(cfg)
         pr = wf.run()
@@ -612,9 +631,12 @@ def test_workflow_run_returns_project_run_result(tmp_path):
 def test_workflow_result_contains_underlying_run_result(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         pr = ProjectWorkflow(cfg).run()
 
@@ -638,6 +660,7 @@ def test_workflow_full_flow_from_empty_run_dir_succeeds(tmp_path):
     cfg.runs_dir = tmp_path / "runs"
 
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch(
             "veriflow.workflows.project.get_connectivity_backend",
             return_value=_mock_conn_backend(),
@@ -684,6 +707,7 @@ def test_workflow_full_config_result_stage_keys(tmp_path):
     cfg.runs_dir = tmp_path / "runs"
 
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch(
             "veriflow.workflows.project.get_connectivity_backend",
             return_value=_mock_conn_backend(),
@@ -705,9 +729,12 @@ def test_workflow_full_config_result_stage_keys(tmp_path):
 def test_workflow_rtl_only_result_stage_keys(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=_mock_synth_backend(),
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ),
     ):
         pr = ProjectWorkflow(cfg).run()
 
@@ -733,6 +760,7 @@ def test_workflow_project_does_not_pre_create_stage_artifact_dirs(tmp_path):
         return original_flow_run(self, design, request)
 
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch(
             "veriflow.workflows.project.get_synthesis_backend",
             return_value=_mock_synth_backend(),
@@ -1264,9 +1292,12 @@ def test_workflow_synth_backend_receives_absolute_rtl_paths(tmp_path, monkeypatc
         {"cells": "3", "warnings": "0", "errors": "0", "has_latches": False},
     )
 
-    with patch(
-        "veriflow.workflows.project.get_synthesis_backend",
-        return_value=mock_be,
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=mock_be,
+        ),
     ):
         wf = ProjectWorkflow.from_file(config)
         wf.run()

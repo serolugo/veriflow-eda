@@ -88,6 +88,7 @@ def _run_project(
 
     cfg = ProjectWorkflowConfig.from_file(config_path)
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch("veriflow.workflows.project.get_connectivity_backend", return_value=_mock_conn_backend(conn_status)),
         patch("veriflow.workflows.project.get_simulation_backend", return_value=_mock_sim_backend(sim_status)),
         patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend(synth_status)),

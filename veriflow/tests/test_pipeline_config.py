@@ -206,6 +206,7 @@ def test_run_with_custom_pipeline_skips_simulation_stage_result(tmp_path):
         "pipeline:\n  stages:\n    - type: connectivity\n    - type: synthesis\n",
     )
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch("veriflow.workflows.project.get_connectivity_backend", return_value=_mock_conn_backend()),
         patch("veriflow.workflows.project.get_simulation_backend", return_value=_mock_sim_backend()) as sim_getter,
         patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend()),
@@ -225,6 +226,7 @@ def test_results_json_shows_simulation_skipped_when_excluded_from_pipeline(tmp_p
         "pipeline:\n  stages:\n    - type: connectivity\n    - type: synthesis\n",
     )
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch("veriflow.workflows.project.get_connectivity_backend", return_value=_mock_conn_backend()),
         patch("veriflow.workflows.project.get_simulation_backend", return_value=_mock_sim_backend()),
         patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend()),

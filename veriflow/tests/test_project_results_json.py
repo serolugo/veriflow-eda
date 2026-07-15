@@ -81,6 +81,7 @@ def _full_config(root: Path) -> ProjectWorkflowConfig:
 
 def _run_full(cfg, *, conn_status="PASS", sim_status="COMPLETED", synth_status="PASS"):
     with (
+        patch("veriflow.workflows.project.validate_tools"),
         patch("veriflow.workflows.project.get_connectivity_backend", return_value=_mock_conn_backend(conn_status)),
         patch("veriflow.workflows.project.get_simulation_backend", return_value=_mock_sim_backend(sim_status)),
         patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend(synth_status)),
@@ -269,7 +270,10 @@ def test_results_json_log_paths_populated_when_stage_writes_a_log(tmp_path):
 
     cfg = _rtl_only_config(tmp_path)
     cfg.runs_dir = tmp_path / "runs"
-    with patch("veriflow.workflows.project.get_synthesis_backend", return_value=_RealFileSynthBackend()):
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch("veriflow.workflows.project.get_synthesis_backend", return_value=_RealFileSynthBackend()),
+    ):
         pr = ProjectWorkflow(cfg).run()
     data = _load_results(pr)
 
