@@ -778,3 +778,125 @@ When `--json` is active the CLI emits one JSON object to stdout after the comman
 ### 13.8 Portability
 
 All paths written to `results.json` and `manifest.yaml` are relative to the database root. No OS-specific absolute paths appear in any persistent artifact. A `results.json` produced on Windows is readable without modification on Linux and vice versa.
+
+---
+
+## 14. Project Mode
+
+Everything above this section describes **Database Mode** (`veriflow db ...`). This section
+covers **Project Mode** (`veriflow project ...`), the other operating mode introduced in
+section 1.
+
+### 14.1 When to use Project Mode vs Database Mode
+
+Use **Project Mode** when you want to verify a single RTL module against a single
+`veriflow.yaml` file, with no database, no tile numbering, and no multi-project run history —
+for example, checking a standalone IP block, iterating quickly during development, or running
+in CI on a repository that isn't a VeriFlow database. There is nothing to initialize beyond the
+config file itself.
+
+Use **Database Mode** when you're tracking many tiles across a shuttle/project, need version
+and revision history (`bump-version`/`bump-revision`), auto-generated per-tile documentation
+(`manifest.yaml`, `notes.md`, `summary.md`, `README.md`), and CSV indexes (`tile_index.csv`,
+`records.csv`).
+
+The two modes are not mutually exclusive: `veriflow project import` (14.3) takes a verified
+Project Mode run and promotes it into a database as a new tile, so a common flow is
+"prototype in Project Mode, then import into Database Mode once it's ready to track long-term."
+
+### 14.2 Full flow
+
+```bash
+# 1. Scaffold a commented veriflow.yaml in the current directory
+veriflow project init
+
+# 2. Edit veriflow.yaml -- at minimum set design.top_module and design.rtl_sources
+#    (see PROJECT_CONFIG.md for the complete schema: interface, execution,
+#    pipeline, technology, simulation, output sections)
+
+# 3. Run the pipeline
+veriflow project run
+
+# 4. Inspect the result
+cat runs/run-001/results.json
+```
+
+`project run` executes connectivity (only if `interface` is configured), simulation (only if
+`tb_sources` are non-empty), then synthesis — or whatever subset the optional `pipeline:`
+section selects (14.5). Each run is written to `runs/run-NNN/` (auto-incremented), and
+`results.json` is always written there, unconditionally — it does not require `--json`
+(same convention as Database Mode's `results.json`, 13.4).
+
+For the full `veriflow.yaml` schema, validation error codes, and `pipeline:` reference, see
+[PROJECT_CONFIG.md](PROJECT_CONFIG.md).
+
+### 14.3 `project import` — promote a run into a database
+
+```bash
+veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
+```
+
+Imports a verified Project Mode run into a Database Mode database as a new tile: creates the
+tile, copies the run's RTL (and testbench, if present) sources into the tile's `src/rtl`/`src/tb`,
+and copies `results.json` to `config/tile_NNNN/imported_run.json` for traceability. See
+[PROJECT_CONFIG.md](PROJECT_CONFIG.md#project-import) for the full syntax, validation rules,
+and error codes.
+
+### 14.4 `results.json` — Project Mode schema
+
+Every `project run` writes `results.json` to the run directory. Unlike Database Mode's
+`results.json` (13.4, `schema_version "1.2"`), Project Mode's has its own, simpler schema
+(`schema_version "1.0"`) since there is no tile/version/revision concept in this mode.
+
+**Location:** `<runs_dir>/run-NNN/results.json` (default `runs_dir`: `runs`)
+
+| Field | Description |
+|---|---|
+| `schema_version` | Document schema version (`"1.0"`) |
+| `status` | Overall status: `PASS` or `FAIL` |
+| `command` | Always `"project run"` |
+| `run_dir` | Path to this run directory, relative to the config file |
+| `interface_name` | Selected interface profile name, or `null` for a generic project |
+| `top_module` | RTL top module name |
+| `rtl_sources` / `tb_sources` | Relative paths to the RTL/TB files used |
+| `technology` | Technology target name (`"generic"` by default) |
+| `stages` | Per-stage results (`connectivity`, `simulation`, `synthesis`); a stage absent from the pipeline reports `"status": "SKIPPED"` |
+| `rtl_hash` | `{filename: sha256}` for each RTL source, snapshotted at run time |
+| `veriflow_version` | VeriFlow version that produced this run |
+| `timestamp` | ISO 8601 UTC timestamp |
+
+**Example:**
+
+```json
+{
+  "schema_version": "1.0",
+  "status": "PASS",
+  "command": "project run",
+  "run_dir": "runs/run-002",
+  "interface_name": null,
+  "top_module": "counter8",
+  "rtl_sources": ["counter8.v"],
+  "tb_sources": [],
+  "technology": "generic",
+  "stages": {
+    "connectivity": {"status": "SKIPPED", "log": null},
+    "simulation": {"status": "SKIPPED", "log": null, "waves": null},
+    "synthesis": {"status": "PASS", "log": "runs/run-002/out/synth/logs/synth.log"}
+  },
+  "rtl_hash": {"counter8.v": "b7d9fc0301211c1143be13ea41b2a1d9cc558b473387088cf234b2459c436935"},
+  "veriflow_version": "1.0.0",
+  "timestamp": "2026-07-14T04:16:19.283009+00:00"
+}
+```
+
+`project import` (14.3) reads this file to decide which run is importable (`status: "PASS"`)
+and which sources to copy.
+
+### 14.5 Configurable pipeline (`pipeline`)
+
+`veriflow.yaml` supports the same optional `pipeline:` section as `project_config.yaml`
+(4.4) — a list of stage types (`connectivity`, `simulation`, `synthesis`), in order, each with
+an optional per-stage `backend:` override. Omitting the section keeps the current default
+(all three stages, connectivity/simulation still gated on `interface`/`tb_sources` being
+configured). See [PROJECT_CONFIG.md](PROJECT_CONFIG.md#pipeline-optional) for the full schema,
+examples, and validation error codes (`VF_PIPELINE_CONFIG_INVALID`, `VF_PIPELINE_STAGE_UNKNOWN`).

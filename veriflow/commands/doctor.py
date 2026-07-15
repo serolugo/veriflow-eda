@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from veriflow import __homepage__
 from veriflow.core.backends.registry import _CONNECTIVITY, _SIMULATION, _SYNTHESIS
 from veriflow.ui.output import console
 
@@ -49,3 +50,10 @@ def _print_report(report: dict) -> None:
                 detail = t["version"] if t["available"] else t["error"]
                 console.print(f"    {t['tool']:<12}  {marker}  {detail or ''}")
     console.print()
+    if report["status"] == "FAIL":
+        console.print(
+            "[secondary]See[/secondary] "
+            f"[link]{__homepage__}/blob/main/docs/INSTALL.md[/link] "
+            "[secondary]for installation instructions.[/secondary]"
+        )
+        console.print()

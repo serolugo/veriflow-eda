@@ -265,3 +265,59 @@ The parser fails fast with stable `VeriFlowError` codes, including:
 | `VF_SIM_TB_TOP_REQUIRED` | `tb_sources` given without `simulation.tb_top` |
 
 Note: top-level `interface_name` is not supported — use the `interface` section.
+
+---
+
+## `project import`
+
+Promotes a verified Project Mode run into a Database Mode database as a new tile:
+
+```bash
+veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--db PATH` | yes | Path to the destination VeriFlow database directory. |
+| `--config PATH` | no | Path to the Project Mode config to import from. Default: `veriflow.yaml`. |
+| `--run run-NNN` | no | Specific run to import. Default: the highest-numbered run under `runs_dir` whose `results.json` reports `"status": "PASS"`. |
+
+### What it validates before importing
+
+1. A run to import can be identified: either `--run` names one that exists and has a
+   `results.json`, or (if `--run` is omitted) at least one run under `runs_dir` has
+   `"status": "PASS"`.
+2. The chosen run's `status` in `results.json` is `"PASS"` — a `FAIL` run is never importable,
+   whether picked automatically or named explicitly via `--run`.
+3. The destination database is structurally valid (same check `db run` uses —
+   `project_config.yaml`, `tile_index.csv`, `records.csv`, `tiles/` must all exist).
+4. The imported run's `interface_name` (from its `results.json`) matches the database's
+   `project_config.yaml` `interface_name` — importing a run built against a different
+   interface than the database's own would silently corrupt tile consistency, so this is
+   rejected rather than allowed through.
+
+### What it copies into the new tile
+
+- Creates a new tile via the same `create-tile` path Database Mode uses, keyed off the
+  imported run's `top_module`.
+- Copies every path in `results.json`'s `rtl_sources` into `config/tile_NNNN/src/rtl/`.
+- If `tb_sources` is non-empty, removes the auto-generated `tb_tile.v` placeholder and copies
+  the imported testbench files into `config/tile_NNNN/src/tb/` instead (the imported
+  testbench is self-contained, so the scaffold placeholder would otherwise collide on the
+  `tb` module name).
+- Prefills `tile_config.yaml`'s `tile_name` (from the project directory name) and
+  `tb_top_module` (from the project's `simulation.tb_top`, if set).
+- Copies `results.json` itself to `config/tile_NNNN/imported_run.json` — a traceability
+  snapshot of the exact run that was imported (`rtl_hash`, `timestamp`, per-stage statuses).
+
+Nothing under `runs_dir` in the Project Mode project is modified or deleted by the import —
+it only reads from it.
+
+### Error codes
+
+| Code | Cause |
+|---|---|
+| `VF_IMPORT_NO_PASSING_RUN` | `--run` omitted and no run under `runs_dir` has `status: "PASS"` |
+| `VF_IMPORT_RUN_NOT_FOUND` | `--run` given but that run (or its `results.json`) doesn't exist |
+| `VF_IMPORT_RUN_NOT_PASSING` | `--run` given but that run's `status` isn't `"PASS"` |
+| `VF_IMPORT_INTERFACE_MISMATCH` | the run's `interface_name` differs from the database's `project_config.yaml` `interface_name` |

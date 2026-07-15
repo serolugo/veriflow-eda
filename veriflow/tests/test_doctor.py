@@ -80,6 +80,25 @@ def test_doctor_text_shows_fail_marker(capsys):
     assert "[FAIL]" in out
 
 
+def test_doctor_text_shows_install_docs_pointer_on_failure(capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _FAIL_REGISTRY):
+        main(["doctor"])
+    out = capsys.readouterr().out
+    assert "docs/INSTALL.md" in out
+    assert "installation instructions" in out
+
+
+def test_doctor_text_omits_install_docs_pointer_when_all_ok(capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY):
+        main(["doctor"])
+    out = capsys.readouterr().out
+    assert "docs/INSTALL.md" not in out
+
+
 # ── C. JSON mode ──────────────────────────────────────────────────────────────
 
 def test_doctor_json_all_ok(capsys):

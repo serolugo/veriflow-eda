@@ -1319,3 +1319,106 @@ def test_workflow_from_file_missing_config_raises_veriflow_error(tmp_path):
     with pytest.raises(VeriFlowError) as exc_info:
         ProjectWorkflow.from_file(tmp_path / "missing.yaml")
     assert exc_info.value.code == "VF_PROJECT_CONFIG_NOT_FOUND"
+
+
+# ── I. Regression: missing EDA tools raise VF_TOOL_NOT_FOUND, not FileNotFoundError
+
+def test_workflow_run_missing_iverilog_raises_vf_tool_not_found(tmp_path):
+    """A full-config project (interface + tb_sources) needs iverilog; a missing
+    binary must surface as a clean VeriFlowError, not a raw subprocess crash."""
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {
+                "top_module": "top",
+                "rtl_sources": ["rtl/top.v"],
+                "tb_sources": ["tb/tb_top.v"],
+            },
+            "interface": {"name": "semicolab"},
+            "simulation": {"tb_top": "tb"},
+        },
+        root=tmp_path,
+    )
+    cfg.runs_dir = tmp_path / "runs"
+
+    with patch(
+        "veriflow.core.validator.shutil.which",
+        side_effect=lambda tool: None if tool == "iverilog" else "/usr/bin/yosys",
+    ):
+        with pytest.raises(VeriFlowError) as exc_info:
+            ProjectWorkflow(cfg).run()
+
+    assert exc_info.value.code == "VF_TOOL_NOT_FOUND"
+    assert exc_info.value.details["tool"] == "iverilog"
+
+
+def test_workflow_run_missing_yosys_raises_vf_tool_not_found(tmp_path):
+    """Synthesis is unconditionally in the default pipeline; a missing yosys
+    binary must surface as a clean VeriFlowError, not a raw subprocess crash."""
+    cfg = _rtl_only_config(tmp_path)
+    cfg.runs_dir = tmp_path / "runs"
+
+    with patch("veriflow.core.validator.shutil.which", return_value=None):
+        with pytest.raises(VeriFlowError) as exc_info:
+            ProjectWorkflow(cfg).run()
+
+    assert exc_info.value.code == "VF_TOOL_NOT_FOUND"
+    assert exc_info.value.details["tool"] == "yosys"
+
+
+def test_workflow_run_synthesis_only_pipeline_does_not_check_iverilog(tmp_path):
+    """A pipeline listing only 'synthesis' must validate yosys but never ask
+    for iverilog, even though it's still installed/available on this machine."""
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+            "pipeline": {"stages": [{"type": "synthesis"}]},
+        },
+        root=tmp_path,
+    )
+    cfg.runs_dir = tmp_path / "runs"
+
+    with patch("veriflow.workflows.project.validate_tools") as mock_validate:
+        with patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ):
+            ProjectWorkflow(cfg).run()
+
+    mock_validate.assert_called_once_with(need_iverilog=False, need_yosys=True)
+
+
+def test_workflow_run_default_pipeline_rtl_only_does_not_require_iverilog(tmp_path):
+    """DEFAULT_PIPELINE lists connectivity+simulation+synthesis, but a bare
+    rtl-only config (no interface, no tb_sources) never actually runs
+    connectivity/simulation -- iverilog must not be required in that case."""
+    cfg = _rtl_only_config(tmp_path)
+    cfg.runs_dir = tmp_path / "runs"
+
+    with patch("veriflow.workflows.project.validate_tools") as mock_validate:
+        with patch(
+            "veriflow.workflows.project.get_synthesis_backend",
+            return_value=_mock_synth_backend(),
+        ):
+            ProjectWorkflow(cfg).run()
+
+    mock_validate.assert_called_once_with(need_iverilog=False, need_yosys=True)
+
+
+def test_workflow_run_validates_tools_before_building_flow(tmp_path):
+    """validate_tools must run before any backend/stage is touched -- patch
+    get_synthesis_backend to blow up if called, and confirm the VeriFlowError
+    from validate_tools is what actually propagates."""
+    cfg = _rtl_only_config(tmp_path)
+    cfg.runs_dir = tmp_path / "runs"
+
+    with (
+        patch("veriflow.workflows.project.validate_tools", side_effect=VeriFlowError(
+            "Tool not found in PATH: yosys", code="VF_TOOL_NOT_FOUND", details={"tool": "yosys"},
+        )),
+        patch("veriflow.workflows.project.get_synthesis_backend") as mock_get_backend,
+    ):
+        with pytest.raises(VeriFlowError) as exc_info:
+            ProjectWorkflow(cfg).run()
+
+    assert exc_info.value.code == "VF_TOOL_NOT_FOUND"
+    mock_get_backend.assert_not_called()

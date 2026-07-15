@@ -28,14 +28,14 @@ console = Console(theme=VERIFLOW_THEME)
 # top rule identical in style/width to its head-row rule, both auto-sized
 # together by Rich, so "line above header" == "line below header" always.
 _FRAMED_HEAD_BOX = Box(
-    " ── \n"
+    " -- \n"
     "    \n"
-    " ── \n"
-    "    \n"
-    "    \n"
+    " -- \n"
     "    \n"
     "    \n"
-    " ── \n"
+    "    \n"
+    "    \n"
+    " -- \n"
 )
 error_console = Console(theme=VERIFLOW_THEME, stderr=True)
 
@@ -74,7 +74,7 @@ def print_status(label: str, status: str, detail: str = "") -> None:
 
 
 def print_warn(message: str) -> None:
-    console.print(f"  [warn]⚠[/warn]  [secondary]{message}[/secondary]")
+    console.print(f"  [warn]![/warn]  [secondary]{message}[/secondary]")
 
 
 def print_error(message: str) -> None:
@@ -94,9 +94,9 @@ def print_step(prefix: str, message: str) -> None:
 
 def print_fail_detail(message: str, log_path: Path | None = None) -> None:
     """Show the relevant error line + path to full log."""
-    console.print(f"    [secondary]→[/secondary] [fail]{message}[/fail]")
+    console.print(f"    [secondary]->[/secondary] [fail]{message}[/fail]")
     if log_path:
-        console.print(f"    [secondary]→ full log: {log_path}[/secondary]")
+        console.print(f"    [secondary]-> full log: {log_path}[/secondary]")
 
 
 # ── Section headers ────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ def print_run_header(db: Path, tile_id: str, run_id: str) -> None:
 
 def print_section(title: str) -> None:
     console.print(f"\n  [label]{title}[/label]")
-    console.print(f"  [secondary]{'─' * 44}[/secondary]")
+    console.print(f"  [secondary]{'-' * 44}[/secondary]")
 
 
 def print_title(title: str) -> None:
@@ -212,12 +212,12 @@ def print_file_tree(files: list[Path], root: Path) -> None:
 
 def print_wave_url(url: str) -> None:
     console.print()
-    console.print(f"  [pass]✓[/pass] [label]Waveform ready[/label]")
-    console.print(f"  [secondary]  Open in browser →[/secondary] [link]{url}[/link]")
+    console.print(f"  [pass]+[/pass] [label]Waveform ready[/label]")
+    console.print(f"  [secondary]  Open in browser ->[/secondary] [link]{url}[/link]")
     console.print()
 
 
 # ── Generic success / done ─────────────────────────────────────────────────────
 
 def print_done(message: str) -> None:
-    console.print(f"\n  [pass]✓[/pass]  {message}\n")
+    console.print(f"\n  [pass]+[/pass]  {message}\n")

@@ -15,6 +15,7 @@ from veriflow.core.run_id import get_next_run_id
 from veriflow.core.stages.connectivity import InterfaceStage
 from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
+from veriflow.core.validator import validate_tools
 from veriflow.framework import Design, Flow, RunRequest, RunResult
 from veriflow.generators.results import generate_results_json
 from veriflow.models.execution_profile import ExecutionProfile
@@ -121,6 +122,24 @@ def _write_results_json(
     generate_results_json(data, run_dir / "results.json")
 
 
+def _needed_tools(config: ProjectWorkflowConfig) -> tuple[bool, bool]:
+    """Which EDA tools the *effective* pipeline will actually invoke.
+
+    Mirrors build_project_flow's per-type inclusion logic exactly: a stage
+    type listed in config.pipeline still doesn't run unless its precondition
+    holds (connectivity needs config.interface, simulation needs
+    config.tb_sources) -- so a synthesis-only project on the default
+    pipeline (no interface, no tb_sources) must not be asked for iverilog.
+    """
+    need_iverilog = (
+        config.pipeline.has_stage("connectivity") and config.interface is not None
+    ) or (
+        config.pipeline.has_stage("simulation") and bool(config.tb_sources)
+    )
+    need_yosys = config.pipeline.has_stage("synthesis")
+    return need_iverilog, need_yosys
+
+
 def build_project_flow(
     config: ProjectWorkflowConfig,
 ) -> tuple[Design, Flow]:
@@ -205,6 +224,10 @@ class ProjectWorkflow:
         self,
         request: RunRequest | None = None,
     ) -> ProjectRunResult:
+        need_iverilog, need_yosys = _needed_tools(self.config)
+        if need_iverilog or need_yosys:
+            validate_tools(need_iverilog=need_iverilog, need_yosys=need_yosys)
+
         design, flow = build_project_flow(self.config)
 
         if request is None:

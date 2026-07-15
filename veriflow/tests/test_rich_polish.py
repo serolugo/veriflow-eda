@@ -246,7 +246,7 @@ def test_print_tiles_table_top_rule_matches_header_rule_width():
             [("0001", "TST-26071300010101", "n", "a", "v1 r1", "iface")]
         )
     )
-    rule_lines = [l for l in lines if l and set(l) <= {" ", "─"} and "─" in l]
+    rule_lines = [l for l in lines if l and set(l) <= {" ", "-"} and "-" in l]
     assert len(rule_lines) >= 2, f"expected at least 2 rule lines, got: {lines!r}"
     assert len(rule_lines[0]) == len(rule_lines[1])
 
@@ -301,7 +301,7 @@ def test_print_runs_table_top_rule_matches_header_rule_width():
             [("run-001", "[pass]PASS[/pass]", "2026-07-13", "[secondary]no[/secondary]")]
         )
     )
-    rule_lines = [l for l in lines if l and set(l) <= {" ", "─"} and "─" in l]
+    rule_lines = [l for l in lines if l and set(l) <= {" ", "-"} and "-" in l]
     assert len(rule_lines) >= 2, f"expected at least 2 rule lines, got: {lines!r}"
     assert len(rule_lines[0]) == len(rule_lines[1])
 

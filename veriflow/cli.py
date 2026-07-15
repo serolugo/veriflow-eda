@@ -28,6 +28,7 @@ _pkg_root = Path(__file__).resolve().parent.parent
 if str(_pkg_root) not in sys.path:
     sys.path.insert(0, str(_pkg_root))
 
+from veriflow import __homepage__
 from veriflow.core import VeriFlowError
 from veriflow.ui.output import print_cli_error
 
@@ -41,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="veriflow",
         description="VeriFlow — RTL verification and documentation tool",
+        epilog=(
+            "New here? Run 'veriflow project init' in an empty directory to get started, "
+            f"then 'veriflow doctor' to check required tools.\nDocs: {__homepage__}"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--json",
