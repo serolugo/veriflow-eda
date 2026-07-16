@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from veriflow.core.backends.base import SynthesisBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 from veriflow.core.pipeline import PipelineStage
 from veriflow.framework.stage_input import StageInput
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
+from veriflow.models.pdk_manager import get_liberty_path
 from veriflow.models.stage_result import StageResult
-from veriflow.models.technology_profile import get_technology_profile
+from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME, get_technology_profile
 
 
 class SynthesisStage(PipelineStage):
@@ -30,6 +33,22 @@ class SynthesisStage(PipelineStage):
         synth_log_path = ctx.synth_dir / "logs" / "synth.log"
         synth_log_path.parent.mkdir(parents=True, exist_ok=True)
         technology = get_technology_profile(self._profile.technology_name)
+
+        stage_warnings: list[str] = []
+        if technology.name != DEFAULT_TECHNOLOGY_NAME and not technology.liberty:
+            # A named technology with no liberty already set (the common case --
+            # none of the built-in technology.yaml files vendor one) falls back
+            # to whatever `veriflow pdk install` has put on disk. Missing PDK is
+            # a warning, not an error: synthesis still runs with generic mapping.
+            liberty_path = get_liberty_path(technology.name)
+            if liberty_path is not None:
+                technology = replace(technology, liberty=str(liberty_path))
+            else:
+                stage_warnings.append(
+                    f"PDK for {technology.name!r} not found -- run: veriflow pdk install {technology.name} "
+                    "[VF_TECHNOLOGY_PDK_NOT_INSTALLED]"
+                )
+
         status, parsed = self._backend.run_synthesis(
             rtl_files=design.rtl_sources,
             top_module=design.top_module,
@@ -52,4 +71,5 @@ class SynthesisStage(PipelineStage):
             tool=tool,
             log_paths=[log_rel] if synth_log_path.exists() else None,
             metrics=metrics,
+            warnings=stage_warnings or None,
         )

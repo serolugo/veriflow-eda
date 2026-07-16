@@ -92,6 +92,16 @@ def _compute_rtl_hash(rtl_sources: list[Path]) -> dict[str, str]:
     return hashes
 
 
+def _collect_warnings(result: RunResult) -> list[str]:
+    """Flatten warnings from every stage (e.g. VF_TECHNOLOGY_PDK_NOT_INSTALLED
+    from SynthesisStage) into a single ordered list for results.json."""
+    warnings: list[str] = []
+    for sr in result.stages.values():
+        if sr.warnings:
+            warnings.extend(sr.warnings)
+    return warnings
+
+
 def _write_results_json(
     config: ProjectWorkflowConfig,
     run_dir: Path,
@@ -116,6 +126,7 @@ def _write_results_json(
             "synthesis": _stage_entry(result, "synthesis", run_dir, root),
         },
         "rtl_hash": _compute_rtl_hash(design.rtl_sources),
+        "warnings": _collect_warnings(result),
         "veriflow_version": __version__,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

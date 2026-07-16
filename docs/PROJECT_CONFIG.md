@@ -243,13 +243,37 @@ Each `technology.yaml` has:
 | `synth_extra` | List of extra yosys script lines, appended after the `liberty` line (before `check`/`stat`) — e.g. `["-flatten"]`. |
 
 None of the four built-in technologies vendor a real `liberty` file yet (`sky130`/`gf180`/`ihp130`
-all ship `liberty: null` — only naming/metadata is populated, no PDK is bundled), so in practice
-every built-in technology produces the same generic synthesis script today. `liberty`/`synth_extra`
-are real, tested wiring, not placeholders: editing a `technology.yaml` under `veriflow/technologies/`
-(they're plain files in the installed package) to set a real `liberty` path takes effect
-immediately, no code change. There is currently no `veriflow.yaml`-level equivalent of
-`interface.definition` for registering a project-local technology file from outside that
-directory — every technology is a built-in today.
+all ship `liberty: null` in the repo) — `liberty` is resolved automatically once the technology's
+PDK is installed with `veriflow pdk install <name>` (see `docs/INSTALL.md`'s "PDK Installation"
+section and `veriflow.models.pdk_manager`); until then, synthesis falls back to the generic
+script and prints a `VF_TECHNOLOGY_PDK_NOT_INSTALLED` warning (included in `results.json`'s
+`warnings` field) rather than failing.
+
+#### `technology.definition` — external technology profiles
+
+```yaml
+technology:
+  name: mi_proceso
+  definition: ./technologies/mi_proceso.yaml
+```
+
+The only other supported key besides `name` is `definition`; anything else is rejected with
+`VF_TECHNOLOGY_CONFIG_INVALID`. `definition` points at a `technology.yaml`-shaped file (same
+schema as the built-ins) that doesn't have to live under `veriflow/technologies/` — the path is
+resolved relative to the directory containing `veriflow.yaml`. VeriFlow registers the profile
+from that file before the synthesis stage runs. A relative `liberty:` path **inside** that file
+is resolved relative to `veriflow.yaml`'s directory too (not the definition file's own directory,
+and not the process's current working directory).
+
+The registered profile's name is the `name:` field **inside the definition file**, not the
+`name:` in the `technology` section — if they differ, VeriFlow uses the definition file's name
+and emits a `UserWarning` (`VF_TECHNOLOGY_NAME_MISMATCH`) rather than failing, mirroring
+`interface.definition`'s `VF_INTERFACE_NAME_MISMATCH` behavior. Registering a name that collides
+with an already-registered technology (including a built-in one) overwrites it for the rest of
+the process.
+
+Omitting `definition` is unchanged from before: `name` must then refer to an already-registered
+(built-in) technology.
 
 ### `simulation` (optional, required with `tb_sources`)
 

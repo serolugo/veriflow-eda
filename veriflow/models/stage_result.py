@@ -12,6 +12,7 @@ class StageResult:
     artifacts: dict | None = None
     metrics: dict | None = None
     error: dict | None = None
+    warnings: list[str] | None = None
 
     def to_dict(self) -> dict:
         d: dict = {}
@@ -26,4 +27,6 @@ class StageResult:
             d["metrics"] = self.metrics
         if self.error is not None:
             d["error"] = self.error
+        if self.warnings:
+            d["warnings"] = self.warnings
         return d

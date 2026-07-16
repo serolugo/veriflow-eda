@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from unittest.mock import patch
 
 import pytest
 
 from veriflow.cli import main
+from veriflow.commands.doctor import cmd_doctor
 
 # ── stub backend factories ────────────────────────────────────────────────────
 
@@ -150,3 +152,60 @@ def test_doctor_parses():
     from veriflow.cli import build_parser
     args = build_parser().parse_args(["doctor"])
     assert args.command == "doctor"
+
+
+# ── E. [TECHNOLOGIES] section ────────────────────────────────────────────────
+
+def test_doctor_technologies_section_lists_all_registered_technologies(tmp_path, capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY), \
+         patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path):
+        main(["doctor"])
+    out = capsys.readouterr().out
+    assert "[TECHNOLOGIES]" in out
+    for name in ("generic", "sky130", "gf180", "ihp130"):
+        assert name in out
+
+
+def test_doctor_technologies_missing_pdk_does_not_affect_exit_code(tmp_path, capsys):
+    """Missing PDKs are informational -- doctor's exit code is driven solely
+    by EDA tool availability, since synthesis still works without a PDK."""
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY), \
+         patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path):
+        rc = main(["doctor"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "NOT INSTALLED" in out
+
+
+def test_doctor_technologies_installed_pdk_shows_ok_with_liberty(tmp_path, capsys):
+    lib_dir = tmp_path / "sky130" / "sky130A" / "libs.ref" / "sky130_fd_sc_hd" / "lib"
+    lib_dir.mkdir(parents=True)
+    lib_file = lib_dir / "sky130_fd_sc_hd__tt_025C_1v80.lib"
+    lib_file.write_text("", encoding="utf-8")
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY), \
+         patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path):
+        rc, report = cmd_doctor(argparse.Namespace())
+    sky130_entry = next(t for t in report["technologies"] if t["name"] == "sky130")
+    assert sky130_entry["status"] == "OK"
+    assert sky130_entry["liberty"] == str(lib_file)
+
+
+def test_doctor_json_includes_technologies(tmp_path, capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY), \
+         patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path):
+        rc = main(["--json", "doctor"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert rc == 0
+    names = {t["name"] for t in data["technologies"]}
+    assert names == {"generic", "sky130", "gf180", "ihp130"}
+    generic_entry = next(t for t in data["technologies"] if t["name"] == "generic")
+    assert generic_entry["status"] == "OK"

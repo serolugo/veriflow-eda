@@ -143,3 +143,114 @@ def test_synthesis_stage_resolves_and_forwards_technology(tmp_path):
     called_technology = mock_backend.run_synthesis.call_args.kwargs["technology"]
     assert called_technology is not None
     assert called_technology.name == "sky130"
+
+
+# ── SynthesisStage: automatic PDK liberty resolution (veriflow pdk) ───────────
+
+def test_synthesis_stage_resolves_installed_pdk_liberty(tmp_path):
+    """When the technology's PDK is installed on disk, SynthesisStage fills in
+    `liberty` automatically -- no `technology.yaml` edit required."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    fake_liberty = tmp_path / "sky130.lib"
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=fake_liberty):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    called_technology = mock_backend.run_synthesis.call_args.kwargs["technology"]
+    assert called_technology.liberty == str(fake_liberty)
+    assert result.warnings is None
+
+
+def test_synthesis_stage_warns_when_pdk_not_installed(tmp_path):
+    """Missing PDK is a warning, not an abort -- synthesis still runs with
+    generic (non-technology-mapped) script."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=None):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    called_technology = mock_backend.run_synthesis.call_args.kwargs["technology"]
+    assert called_technology.liberty is None
+    assert result.status == "PASS"  # synthesis still ran, generic mapping
+    assert result.warnings is not None
+    assert any("VF_TECHNOLOGY_PDK_NOT_INSTALLED" in w for w in result.warnings)
+    assert any("sky130" in w for w in result.warnings)
+
+
+def test_synthesis_stage_generic_technology_never_looks_up_pdk(tmp_path):
+    """`generic` has no installable PDK -- get_liberty_path must not even be called."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile()  # default technology_name == "generic"
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path") as mock_get_liberty:
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    mock_get_liberty.assert_not_called()
+    assert result.warnings is None
+
+
+def test_synthesis_stage_does_not_override_explicit_liberty(tmp_path):
+    """A technology with `liberty` already set (e.g. via technology.definition)
+    is left untouched -- no PDK lookup needed or performed."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+    from veriflow.models.technology_profile import register_technology_profile
+
+    register_technology_profile(TechnologyProfile(name="preconfigured", liberty="/already/set.lib"))
+    try:
+        mock_backend = MagicMock()
+        mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+        profile = ExecutionProfile(technology_name="preconfigured")
+        stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+        design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+        ctx = ExecutionContext(run_dir=tmp_path)
+
+        with patch("veriflow.core.stages.synthesis.get_liberty_path") as mock_get_liberty:
+            result = stage.run(StageInput(design=design, context=ctx))
+
+        mock_get_liberty.assert_not_called()
+        called_technology = mock_backend.run_synthesis.call_args.kwargs["technology"]
+        assert called_technology.liberty == "/already/set.lib"
+        assert result.warnings is None
+    finally:
+        from veriflow.models.technology_profile import _REGISTRY
+        _REGISTRY.pop("preconfigured", None)

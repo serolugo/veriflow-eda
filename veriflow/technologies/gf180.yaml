@@ -1,5 +1,10 @@
 name: gf180
-description: GlobalFoundries 180nm MCU PDK (gf180mcu_fd_sc_mcu7t5v0) -- liberty not yet vendored
+description: GlobalFoundries 180nm MCU PDK (gf180mcu_fd_sc_mcu7t5v0)
 synthesis_backend: yosys
 liberty: null
 synth_extra: []
+install_method: volare
+volare_pdk: gf180mcu
+pdk_subdir: gf180mcuD
+liberty_glob: "libs.ref/gf180mcu_fd_sc_mcu7t5v0/lib/gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib"
+install_hint: "veriflow pdk install gf180"

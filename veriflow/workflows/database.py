@@ -246,6 +246,7 @@ class DatabaseWorkflow:
             synthesis_backend=(
                 effective_pipeline.backend_for("synthesis") or _exec_defaults.synthesis_backend
             ),
+            technology_name=project_config.technology_name or _exec_defaults.technology_name,
         )
 
         # Validate only the tools needed by the stages that will actually run.
@@ -406,6 +407,8 @@ class DatabaseWorkflow:
             if _synth_sr.metrics
             else {"cells": "", "warnings": "0", "errors": "0", "has_latches": False}
         )
+        if _synth_sr.warnings:
+            warnings.extend(_synth_sr.warnings)
 
         # ── 14. Finalize ──────────────────────────────────────────────────────
         data = _finalize_run(

@@ -124,6 +124,50 @@ Exit code 0 indicates that all tools are available.
 
 ---
 
+## PDK Installation
+
+Technology mapping (`sky130`, `gf180`, `ihp130`) needs an actual PDK on disk --
+VeriFlow manages this itself under `~/.veriflow/pdks/`, with no manual
+`PDK_ROOT` or liberty path environment variables required.
+
+Check what's installed:
+
+```sh
+veriflow pdk list
+```
+
+Install a PDK:
+
+```sh
+veriflow pdk install sky130
+```
+
+`sky130` and `gf180` are fetched via [volare](https://pypi.org/project/volare/)
+and require the `pdks` extra:
+
+```sh
+pip install veriflow-eda[pdks]
+```
+
+`ihp130` is cloned directly from its git repository and only requires `git`
+to be in PATH -- no extra Python package needed.
+
+Update an already-installed PDK to the latest version:
+
+```sh
+veriflow pdk update sky130
+```
+
+`veriflow doctor` reports PDK install status alongside tool availability (see
+its `[TECHNOLOGIES]` section); `veriflow pdk status` shows the same
+information plus the full resolved liberty path for each installed PDK.
+
+If a technology's PDK isn't installed, synthesis still runs -- it falls back
+to generic (non-technology-mapped) synthesis and prints a
+`VF_TECHNOLOGY_PDK_NOT_INSTALLED` warning rather than failing the run.
+
+---
+
 ## Using a custom interface profile
 
 VeriFlow ships one built-in interface profile (`semicolab`), but a project

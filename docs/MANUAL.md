@@ -992,9 +992,97 @@ behavior, wired into `core/synth_runner.py`:
   netlist, with no code change required.
 
 None of the four built-in technologies vendor a real `liberty` file yet
-(`sky130.yaml`/`gf180.yaml`/`ihp130.yaml` all ship `liberty: null` — only
-`pdk`/`cell_library` naming is documented today, no PDK is bundled), so in
-practice every built-in technology still produces the same generic synthesis
-script as before this field existed. Set `technology.name` in `veriflow.yaml` (or `project_config.yaml`'s
-`technology:` section — see the `{technology}` placeholder in 4.3) to select
-one; an unregistered name fails with `VF_TECHNOLOGY_UNKNOWN`.
+(`sky130.yaml`/`gf180.yaml`/`ihp130.yaml` all ship `liberty: null` in the
+repo), so in practice every built-in technology still produces the same
+generic synthesis script until its PDK is installed with `veriflow pdk
+install` (14.8) -- once installed, `liberty` is resolved automatically at
+synthesis time, no config edit required. Set `technology.name` in
+`veriflow.yaml` (or `project_config.yaml`'s `technology:` section — see the
+`{technology}` placeholder in 4.3) to select one; an unregistered name fails
+with `VF_TECHNOLOGY_UNKNOWN`.
+
+### 14.8 PDK management (`veriflow pdk`)
+
+VeriFlow installs and tracks PDKs itself under `~/.veriflow/pdks/<technology
+name>/` -- no `PDK_ROOT` or liberty path environment variables to set by
+hand. Four subcommands:
+
+```bash
+veriflow pdk list                 # table: PDK, Status, Liberty, Install hint
+veriflow pdk install <name>       # e.g. sky130, gf180, ihp130
+veriflow pdk update <name>        # re-fetch the latest version
+veriflow pdk status               # like list, plus full resolved liberty paths
+```
+
+Status values in `pdk list`/`pdk status`:
+
+| Status | Meaning |
+|---|---|
+| `OK` | PDK installed and its liberty file resolved (or the technology needs no PDK, e.g. `generic`) |
+| `NOT INSTALLED` | `VERIFLOW_PDK_ROOT/<name>/` doesn't exist yet |
+| `INSTALLED, NO LIBERTY` | The directory exists but `liberty_glob` matched nothing inside it |
+
+Each built-in technology's `technologies/<name>.yaml` declares how it's
+installed:
+
+```yaml
+install_method: volare       # "volare" | "git"
+volare_pdk: sky130           # PDK name passed to `volare enable --pdk`
+pdk_subdir: sky130A          # subdirectory of the PDK root holding the actual PDK tree
+liberty_glob: "libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
+install_hint: "veriflow pdk install sky130"
+```
+
+- `sky130` and `gf180` use `install_method: volare` and require the `pdks`
+  extra (`pip install veriflow-eda[pdks]`); `pdk install`/`pdk update` fail
+  with a clear message (exit code 1) if `volare` isn't importable/in PATH.
+- `ihp130` uses `install_method: git` and only requires `git` in PATH
+  (`git clone`/`git pull` under the hood).
+- `generic` has no `install_method` -- it's always reported `OK`, "no PDK
+  required".
+
+`veriflow doctor`'s `[TECHNOLOGIES]` section shows the same OK/NOT INSTALLED
+status for every registered technology, alongside the existing EDA tool
+checks -- a missing PDK does **not** affect `doctor`'s exit code, since
+synthesis still works (falling back to generic mapping) without one.
+
+If a technology's PDK isn't installed when `project run`/`db run` reaches the
+synthesis stage, the run still completes -- a `VF_TECHNOLOGY_PDK_NOT_INSTALLED`
+warning is printed and included in `results.json`'s `warnings` field, but
+synthesis proceeds without technology mapping rather than aborting.
+
+### 14.9 External technology definitions (`technology.definition`)
+
+Like `interface.definition` (14.6), a technology doesn't have to be one of
+the four built-ins. Add `definition:` alongside `name:` in the `technology`
+section, pointing at your own `.yaml` file (path relative to `veriflow.yaml`):
+
+```yaml
+technology:
+  name: mi_proceso
+  definition: ./technologies/mi_proceso.yaml
+```
+
+```yaml
+# technologies/mi_proceso.yaml
+name: mi_proceso
+description: "Custom in-house technology"
+synthesis_backend: yosys
+liberty: ./cells/mi_proceso.lib   # relative to veriflow.yaml, not to this file
+synth_extra: []
+```
+
+`project run` registers the profile from that file before the synthesis
+stage runs. A relative `liberty:` path inside the definition file is resolved
+against `veriflow.yaml`'s directory (not the process's current working
+directory, and not the definition file's own directory). If `name:` in the
+`technology` section doesn't match the `name:` declared inside the
+definition file, VeriFlow uses the definition file's name and emits a
+`VF_TECHNOLOGY_NAME_MISMATCH` warning, mirroring `interface.definition`'s
+`VF_INTERFACE_NAME_MISMATCH` behavior.
+
+Database Mode's `project_config.yaml` supports the identical mechanism under
+a top-level `technology_definition:` key (paired with the existing
+`technology: {name: ...}` section), resolved relative to the database
+directory instead of `veriflow.yaml` -- the same naming convention as
+`interface_name:` / `interface_definition:` (4.2).

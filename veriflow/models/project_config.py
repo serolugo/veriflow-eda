@@ -98,6 +98,33 @@ class ProjectConfig:
             if isinstance(raw_tech_name, str):
                 technology_name = raw_tech_name.strip() or None
 
+        raw_tech_definition = data.get("technology_definition")
+        if raw_tech_definition is not None:
+            if not isinstance(raw_tech_definition, str) or not raw_tech_definition.strip():
+                raise VeriFlowError(
+                    "technology_definition must be a non-empty string path",
+                    code="VF_PROJECT_TECHNOLOGY_CONFIG_INVALID",
+                    details={"technology_definition": raw_tech_definition},
+                )
+            if root is None:
+                raise VeriFlowError(
+                    "technology_definition requires a config root to resolve against "
+                    "(internal error: ProjectConfig.from_dict called without root=)",
+                    code="VF_PROJECT_TECHNOLOGY_CONFIG_INVALID",
+                )
+            from veriflow.models.technology_profile import load_and_register_technology_profile_from_file
+
+            definition_path = (Path(root) / raw_tech_definition.strip()).resolve()
+            profile = load_and_register_technology_profile_from_file(definition_path, liberty_root=Path(root))
+            if technology_name and technology_name != profile.name:
+                warnings.warn(
+                    f"technology.name {technology_name!r} differs from the name "
+                    f"{profile.name!r} declared in technology_definition ({definition_path}). "
+                    f"Using {profile.name!r}. [VF_TECHNOLOGY_NAME_MISMATCH]",
+                    stacklevel=2,
+                )
+            technology_name = profile.name
+
         # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed
         # section. None means "not set here" -- DatabaseWorkflow falls back to
         # tile_config.yaml's pipeline, then to DEFAULT_PIPELINE.

@@ -50,7 +50,11 @@ from veriflow.models.pipeline_config import (
     PipelineConfig,
     parse_optional_pipeline_section,
 )
-from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME, get_technology_profile
+from veriflow.models.technology_profile import (
+    DEFAULT_TECHNOLOGY_NAME,
+    get_technology_profile,
+    load_and_register_technology_profile_from_file,
+)
 
 _EXECUTION_DEFAULTS = default_execution_profile()
 
@@ -258,7 +262,7 @@ def _parse_execution_section(data: dict) -> ProjectExecutionConfig:
     return ProjectExecutionConfig(**values)
 
 
-def _parse_technology_section(data: dict) -> ProjectTechnologyConfig:
+def _parse_technology_section(data: dict, *, root: Path) -> ProjectTechnologyConfig:
     section = data.get("technology")
     if section is None:
         # omitted or `technology: null` — generic technology target
@@ -273,14 +277,38 @@ def _parse_technology_section(data: dict) -> ProjectTechnologyConfig:
             details={"technology": section},
         )
 
-    unknown_keys = sorted(set(section) - {"name"})
+    unknown_keys = sorted(set(section) - {"name", "definition"})
     if unknown_keys:
         raise VeriFlowError(
             f"Unsupported keys in technology section: {', '.join(unknown_keys)}.\n"
-            "  Only 'name' is supported.",
+            "  Supported keys: 'name', 'definition'.",
             code="VF_TECHNOLOGY_CONFIG_INVALID",
             details={"unknown_keys": unknown_keys},
         )
+
+    raw_definition = section.get("definition")
+    if raw_definition is not None:
+        if not isinstance(raw_definition, str) or not raw_definition.strip():
+            raise VeriFlowError(
+                "technology.definition must be a non-empty string path",
+                code="VF_TECHNOLOGY_CONFIG_INVALID",
+                details={"definition": raw_definition},
+            )
+        definition_path = (root / raw_definition.strip()).resolve()
+        # Registers the profile from the .yaml file; a relative `liberty:`
+        # path inside it resolves against `root` (the veriflow.yaml
+        # directory), not the process cwd.
+        profile = load_and_register_technology_profile_from_file(definition_path, liberty_root=root)
+        raw_name = section.get("name")
+        name = profile.name
+        if isinstance(raw_name, str) and raw_name.strip() and raw_name.strip() != name:
+            warnings.warn(
+                f"technology.name {raw_name.strip()!r} differs from the name "
+                f"{name!r} declared in technology.definition ({definition_path}). "
+                f"Using {name!r}. [VF_TECHNOLOGY_NAME_MISMATCH]",
+                stacklevel=2,
+            )
+        return ProjectTechnologyConfig(name=name)
 
     raw_name = section.get("name")
     if raw_name is None:
@@ -347,7 +375,7 @@ class ProjectWorkflowConfig:
 
         interface = _parse_interface_section(data, root=root)
         execution = _parse_execution_section(data)
-        technology = _parse_technology_section(data)
+        technology = _parse_technology_section(data, root=root)
         pipeline = _parse_pipeline_section(data)
 
         # simulation section

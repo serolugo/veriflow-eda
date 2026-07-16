@@ -15,6 +15,11 @@ Usage:
     veriflow wrap init --interface <name> --top <rtl_file>
     veriflow wrap generate --config wrapper_config.yaml
     veriflow wrap wizard
+    veriflow doctor
+    veriflow pdk list
+    veriflow pdk install <name>
+    veriflow pdk update <name>
+    veriflow pdk status
 """
 
 import argparse
@@ -161,6 +166,20 @@ def build_parser() -> argparse.ArgumentParser:
     # doctor (tool availability check)
     sub.add_parser("doctor", help="Check EDA tool availability for all backends")
 
+    # pdk (PDK management namespace)
+    p_pdk = sub.add_parser("pdk", help="PDK management commands")
+    pdk_sub = p_pdk.add_subparsers(dest="pdk_command")
+
+    pdk_sub.add_parser("list", help="List all technologies and their PDK install status")
+
+    p_pdk_install = pdk_sub.add_parser("install", help="Install a technology's PDK")
+    p_pdk_install.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+
+    p_pdk_update = pdk_sub.add_parser("update", help="Update an installed PDK")
+    p_pdk_update.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+
+    pdk_sub.add_parser("status", help="Show detailed PDK install status (with resolved liberty paths)")
+
     # wrap (wrapper generation namespace)
     p_wrap = sub.add_parser("wrap", help="Wrapper generation commands")
     wrap_sub = p_wrap.add_subparsers(dest="wrap_command")
@@ -239,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
                 db_read_result: dict | None = None
                 wrap_gen_result: dict | None = None
                 doctor_result: dict | None = None
+                pdk_result: dict | None = None
 
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
@@ -393,6 +413,37 @@ def main(argv: list[str] | None = None) -> int:
                     from veriflow.commands.doctor import cmd_doctor
                     exit_code, doctor_result = cmd_doctor(args)
 
+                elif args.command == "pdk":
+                    pdk_cmd = getattr(args, "pdk_command", None)
+                    if pdk_cmd is None:
+                        if json_mode:
+                            error_payload = {
+                                "status": "ERROR",
+                                "error": {
+                                    "code": "VF_UNKNOWN_COMMAND",
+                                    "message": "No pdk subcommand specified",
+                                },
+                            }
+                        else:
+                            parser.print_help()
+                        exit_code = 1
+                    elif pdk_cmd == "list":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_list
+                        exit_code, pdk_result = cmd_pdk_list(args)
+                    elif pdk_cmd == "status":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_status
+                        exit_code, pdk_result = cmd_pdk_status(args)
+                    elif pdk_cmd == "install":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_install
+                        exit_code = cmd_pdk_install(args)
+                    elif pdk_cmd == "update":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_update
+                        exit_code = cmd_pdk_update(args)
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -424,6 +475,15 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload = {"status": "SUCCESS", "command": f"wrap {_wrap_cmd}"}
                     elif args.command == "doctor":
                         result_payload = doctor_result
+                    elif args.command == "pdk":
+                        _pdk_cmd = getattr(args, "pdk_command", None)
+                        if _pdk_cmd in ("list", "status") and pdk_result is not None:
+                            result_payload = pdk_result
+                        else:
+                            result_payload = {
+                                "status": "SUCCESS" if exit_code == 0 else "FAIL",
+                                "command": f"pdk {_pdk_cmd}",
+                            }
 
             except VeriFlowError as e:
                 if json_mode:

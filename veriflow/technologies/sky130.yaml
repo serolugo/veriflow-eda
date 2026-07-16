@@ -1,5 +1,10 @@
 name: sky130
-description: SkyWater 130nm PDK (sky130_fd_sc_hd) -- liberty not yet vendored
+description: SkyWater 130nm PDK (sky130_fd_sc_hd)
 synthesis_backend: yosys
 liberty: null
 synth_extra: []
+install_method: volare
+volare_pdk: sky130
+pdk_subdir: sky130A
+liberty_glob: "libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
+install_hint: "veriflow pdk install sky130"

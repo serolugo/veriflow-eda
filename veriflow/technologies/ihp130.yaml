@@ -1,5 +1,10 @@
 name: ihp130
-description: IHP 130nm SG13G2 PDK (sg13g2_stdcell) -- liberty not yet vendored
+description: IHP 130nm SG13G2 PDK (sg13g2_stdcell)
 synthesis_backend: yosys
 liberty: null
 synth_extra: []
+install_method: git
+git_url: https://github.com/IHP-GmbH/IHP-Open-PDK
+pdk_subdir: ihp-sg13g2
+liberty_glob: "libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_typ_1p20V_25C.lib"
+install_hint: "veriflow pdk install ihp130"

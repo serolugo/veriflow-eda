@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from veriflow.workflows import ProjectRunResult, ProjectWorkflow
-from veriflow.ui.output import console, print_done, print_section, print_status
+from veriflow.ui.output import console, print_done, print_section, print_status, print_warn
 
 _ARTIFACT_INDENT = " " * 48
 
@@ -21,6 +21,10 @@ def _print_result(pr: ProjectRunResult) -> None:
     console.print(f"  [secondary]Project run[/secondary]  [id]{pr.run_dir}[/id]")
     console.print(f"  [secondary]Status     [/secondary]  {status_tag}")
     console.print(f"  [secondary]-> results: {pr.run_dir / 'results.json'}[/secondary]")
+
+    for sr in pr.result.stages.values():
+        for warning in sr.warnings or []:
+            print_warn(warning)
 
     print_section("Stages")
     for stage_name, sr in pr.result.stages.items():
