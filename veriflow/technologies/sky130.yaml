@@ -5,6 +5,7 @@ liberty: null
 synth_extra: []
 install_method: volare
 volare_pdk: sky130
+default_version: "0fe599b2afb6708d281543108caf8310912f54af"
 pdk_subdir: sky130A
 liberty_glob: "libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
 install_hint: "veriflow pdk install sky130"

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from veriflow.models.technology_profile import get_technology_profile
+from veriflow.models.technology_profile import TechnologyProfile, get_technology_profile
 
 VERIFLOW_PDK_ROOT = Path.home() / ".veriflow" / "pdks"
 
@@ -42,3 +42,25 @@ def get_liberty_path(pdk_name: str) -> Path | None:
         return None
     matches = sorted(search_root.glob(technology.liberty_glob))
     return matches[0] if matches else None
+
+
+def build_volare_enable_command(technology: TechnologyProfile, pdk_dir: Path) -> list[str]:
+    """Build the `volare enable` argv for installing/updating *technology*
+    into *pdk_dir*.
+
+    When `technology.default_version` is set (a pinned commit hash from
+    `technologies/<name>.yaml`), it's passed as a positional argument right
+    after `--pdk <volare_pdk>`:
+
+        volare enable --pdk <volare_pdk> <default_version> --pdk-root <pdk_dir>
+
+    When absent, the command is unchanged from before this field existed --
+    volare resolves whatever it considers "latest" on its own:
+
+        volare enable --pdk <volare_pdk> --pdk-root <pdk_dir>
+    """
+    cmd = ["volare", "enable", "--pdk", technology.volare_pdk]
+    if technology.default_version:
+        cmd.append(technology.default_version)
+    cmd += ["--pdk-root", str(pdk_dir)]
+    return cmd

@@ -51,6 +51,20 @@ def test_load_yaml_with_only_name_uses_defaults(tmp_path):
     assert profile.synthesis_backend == "yosys"
     assert profile.liberty is None
     assert profile.synth_extra == []
+    assert profile.default_version is None
+
+
+def test_load_yaml_with_default_version(tmp_path):
+    yaml_path = tmp_path / "pinned.yaml"
+    yaml_path.write_text(
+        "name: pinned\n"
+        "install_method: volare\n"
+        "volare_pdk: pinned_pdk\n"
+        "default_version: \"0fe599b2afb6708d281543108caf8310912f54af\"\n",
+        encoding="utf-8",
+    )
+    profile = load_technology_profile_from_file(yaml_path)
+    assert profile.default_version == "0fe599b2afb6708d281543108caf8310912f54af"
 
 
 def test_load_missing_file_raises_not_found(tmp_path):

@@ -169,6 +169,22 @@ def test_pdk_install_volare_available_calls_expected_subprocess(tmp_path):
     assert str(tmp_path / "sky130") in args
 
 
+def test_pdk_install_passes_default_version_positionally(tmp_path):
+    """sky130.yaml/gf180.yaml pin a default_version -- it must be passed as
+    a positional arg right after `--pdk <volare_pdk>`."""
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run:
+        rc = main(["pdk", "install", "sky130"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    version = "0fe599b2afb6708d281543108caf8310912f54af"
+    assert version in args
+    assert args[args.index("--pdk") + 2] == version
+    assert args.index(version) < args.index("--pdk-root")
+
+
 def test_pdk_install_git_missing_prints_clear_message_and_exits_1(tmp_path, capsys):
     with patched_pdk_root(tmp_path), \
          patch("veriflow.commands.pdk._git_available", return_value=False):
@@ -225,6 +241,120 @@ def test_pdk_update_installed_calls_expected_subprocess(tmp_path):
     args = mock_run.call_args.args[0]
     assert args[0] == "volare"
     assert args[1] == "enable"
+
+
+def test_pdk_update_passes_default_version_positionally(tmp_path):
+    (tmp_path / "sky130").mkdir()
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run:
+        rc = main(["pdk", "update", "sky130"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    version = "0fe599b2afb6708d281543108caf8310912f54af"
+    assert version in args
+    assert args[args.index("--pdk") + 2] == version
+
+
+# ── pdk versions ──────────────────────────────────────────────────────────────
+
+def test_pdk_versions_success_calls_ls_remote_and_parses_lines(tmp_path):
+    fake_result = MagicMock(returncode=0, stdout="abc123\ndef456\n\n", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run:
+        from veriflow.commands.pdk import cmd_pdk_versions
+        import argparse
+        rc, result = cmd_pdk_versions(argparse.Namespace(pdk_name="sky130"))
+    assert rc == 0
+    assert result["pdk"] == "sky130"
+    assert result["versions"] == ["abc123", "def456"]
+    called_args = mock_run.call_args.args[0]
+    assert called_args == ["volare", "ls-remote", "--pdk", "sky130"]
+
+
+def test_pdk_versions_output_hides_volare_mention_on_success(tmp_path, capsys):
+    """Per spec: the user shouldn't need to know volare exists."""
+    fake_result = MagicMock(returncode=0, stdout="abc123\n", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result):
+        main(["pdk", "versions", "sky130"])
+    out = capsys.readouterr().out
+    assert "volare" not in out.lower()
+    assert "abc123" in out
+    assert "Available versions" in out
+
+
+def test_pdk_versions_volare_missing_prints_clear_message_and_exits_1(tmp_path, capsys):
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=False):
+        rc = main(["pdk", "versions", "sky130"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "volare" in out
+    assert "pdks" in out
+
+
+def test_pdk_versions_unsupported_for_git_backed_technology(tmp_path):
+    from veriflow.commands.pdk import cmd_pdk_versions
+    import argparse
+    with patched_pdk_root(tmp_path):
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_versions(argparse.Namespace(pdk_name="ihp130"))
+    assert exc_info.value.code == "VF_PDK_VERSIONS_UNSUPPORTED"
+
+
+def test_pdk_versions_unsupported_for_generic(tmp_path):
+    from veriflow.commands.pdk import cmd_pdk_versions
+    import argparse
+    with patched_pdk_root(tmp_path):
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_versions(argparse.Namespace(pdk_name="generic"))
+    assert exc_info.value.code == "VF_PDK_VERSIONS_UNSUPPORTED"
+
+
+def test_pdk_versions_unknown_technology_raises(tmp_path):
+    from veriflow.commands.pdk import cmd_pdk_versions
+    import argparse
+    with patched_pdk_root(tmp_path):
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_versions(argparse.Namespace(pdk_name="notapdkname"))
+    assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_pdk_versions_subprocess_failure_raises(tmp_path):
+    fake_result = MagicMock(returncode=1, stdout="", stderr="network error")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result):
+        from veriflow.commands.pdk import cmd_pdk_versions
+        import argparse
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_versions(argparse.Namespace(pdk_name="sky130"))
+    assert exc_info.value.code == "VF_PDK_VERSIONS_FAILED"
+
+
+def test_pdk_versions_json_mode(tmp_path, capsys):
+    fake_result = MagicMock(returncode=0, stdout="abc123\n", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result):
+        rc = main(["--json", "pdk", "versions", "sky130"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert rc == 0
+    assert data["command"] == "pdk versions"
+    assert data["versions"] == ["abc123"]
+
+
+def test_pdk_versions_parses():
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["pdk", "versions", "sky130"])
+    assert args.command == "pdk"
+    assert args.pdk_command == "versions"
+    assert args.pdk_name == "sky130"
 
 
 # ── Parser ────────────────────────────────────────────────────────────────────

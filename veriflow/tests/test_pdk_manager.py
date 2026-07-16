@@ -108,3 +108,50 @@ def test_get_liberty_path_generic_has_no_glob(tmp_path):
     """generic.yaml has no liberty_glob -- always None regardless of what's on disk."""
     with _patch_pdk_root(tmp_path):
         assert pdk_manager.get_liberty_path("generic") is None
+
+
+# ── build_volare_enable_command ───────────────────────────────────────────────
+
+def test_build_volare_enable_command_with_default_version(tmp_path):
+    technology = _fake_technology(
+        name="sky130",
+        volare_pdk="sky130",
+        default_version="0fe599b2afb6708d281543108caf8310912f54af",
+    )
+    pdk_dir = tmp_path / "sky130"
+    cmd = pdk_manager.build_volare_enable_command(technology, pdk_dir)
+    assert cmd == [
+        "volare", "enable", "--pdk", "sky130",
+        "0fe599b2afb6708d281543108caf8310912f54af",
+        "--pdk-root", str(pdk_dir),
+    ]
+
+
+def test_build_volare_enable_command_without_default_version_unchanged(tmp_path):
+    """No default_version -- same shape as before this field existed."""
+    technology = _fake_technology(name="sky130", volare_pdk="sky130", default_version=None)
+    pdk_dir = tmp_path / "sky130"
+    cmd = pdk_manager.build_volare_enable_command(technology, pdk_dir)
+    assert cmd == ["volare", "enable", "--pdk", "sky130", "--pdk-root", str(pdk_dir)]
+
+
+def test_build_volare_enable_command_version_is_positional_before_pdk_root(tmp_path):
+    technology = _fake_technology(name="gf180", volare_pdk="gf180mcu", default_version="abc123")
+    pdk_dir = tmp_path / "gf180"
+    cmd = pdk_manager.build_volare_enable_command(technology, pdk_dir)
+    assert cmd.index("abc123") < cmd.index("--pdk-root")
+    assert cmd[cmd.index("--pdk") + 2] == "abc123"  # right after --pdk <volare_pdk>
+
+
+def test_builtin_sky130_and_gf180_have_default_version():
+    from veriflow.models.technology_profile import get_technology_profile
+    for name in ("sky130", "gf180"):
+        technology = get_technology_profile(name)
+        assert technology.default_version == "0fe599b2afb6708d281543108caf8310912f54af"
+
+
+def test_builtin_ihp130_and_generic_have_no_default_version():
+    from veriflow.models.technology_profile import get_technology_profile
+    for name in ("ihp130", "generic"):
+        technology = get_technology_profile(name)
+        assert technology.default_version is None

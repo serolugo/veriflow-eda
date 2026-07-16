@@ -77,10 +77,14 @@ def test_project_run_surfaces_pdk_not_installed_warning(tmp_path):
         encoding="utf-8",
     )
 
-    with patch(
-        "veriflow.core.backends.yosys.YosysSynthesisBackend.run_synthesis",
-        return_value=("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False}),
-    ), patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path / "pdks"):
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch(
+            "veriflow.core.backends.yosys.YosysSynthesisBackend.run_synthesis",
+            return_value=("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False}),
+        ),
+        patch("veriflow.models.pdk_manager.VERIFLOW_PDK_ROOT", tmp_path / "pdks"),
+    ):
         pr = ProjectWorkflow.from_file(tmp_path / "veriflow.yaml").run()
 
     import json

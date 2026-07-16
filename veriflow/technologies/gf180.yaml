@@ -5,6 +5,7 @@ liberty: null
 synth_extra: []
 install_method: volare
 volare_pdk: gf180mcu
+default_version: "0fe599b2afb6708d281543108caf8310912f54af"
 pdk_subdir: gf180mcuD
 liberty_glob: "libs.ref/gf180mcu_fd_sc_mcu7t5v0/lib/gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib"
 install_hint: "veriflow pdk install gf180"

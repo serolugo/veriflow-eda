@@ -1005,13 +1005,14 @@ with `VF_TECHNOLOGY_UNKNOWN`.
 
 VeriFlow installs and tracks PDKs itself under `~/.veriflow/pdks/<technology
 name>/` -- no `PDK_ROOT` or liberty path environment variables to set by
-hand. Four subcommands:
+hand. Five subcommands:
 
 ```bash
 veriflow pdk list                 # table: PDK, Status, Liberty, Install hint
 veriflow pdk install <name>       # e.g. sky130, gf180, ihp130
-veriflow pdk update <name>        # re-fetch the latest version
+veriflow pdk update <name>        # re-fetch the pinned/latest version
 veriflow pdk status               # like list, plus full resolved liberty paths
+veriflow pdk versions <name>      # list remote versions available to install
 ```
 
 Status values in `pdk list`/`pdk status`:
@@ -1028,6 +1029,7 @@ installed:
 ```yaml
 install_method: volare       # "volare" | "git"
 volare_pdk: sky130           # PDK name passed to `volare enable --pdk`
+default_version: "0fe599b2afb6708d281543108caf8310912f54af"  # pinned commit hash
 pdk_subdir: sky130A          # subdirectory of the PDK root holding the actual PDK tree
 liberty_glob: "libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
 install_hint: "veriflow pdk install sky130"
@@ -1040,6 +1042,19 @@ install_hint: "veriflow pdk install sky130"
   (`git clone`/`git pull` under the hood).
 - `generic` has no `install_method` -- it's always reported `OK`, "no PDK
   required".
+- `default_version` (volare-installed technologies only) pins `pdk
+  install`/`pdk update` to a specific PDK build instead of whatever volare
+  considers "latest" -- when set, it's passed as a positional argument
+  right after `--pdk <volare_pdk>`: `volare enable --pdk sky130
+  <default_version> --pdk-root <path>`. Both built-in volare technologies
+  (`sky130`, `gf180`) currently pin the same commit hash. Omit the field to
+  fall back to volare's own "latest" resolution, unchanged from before this
+  field existed.
+- `pdk versions <name>` lists every version available to install/pin, by
+  running `volare ls-remote --pdk <volare_pdk>` under the hood -- the exact
+  same commit-hash strings usable as `default_version`. Only supported for
+  `install_method: volare` technologies; fails with
+  `VF_PDK_VERSIONS_UNSUPPORTED` for `git`-based or PDK-less technologies.
 
 `veriflow doctor`'s `[TECHNOLOGIES]` section shows the same OK/NOT INSTALLED
 status for every registered technology, alongside the existing EDA tool

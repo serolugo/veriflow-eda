@@ -20,6 +20,7 @@ Usage:
     veriflow pdk install <name>
     veriflow pdk update <name>
     veriflow pdk status
+    veriflow pdk versions <name>
 """
 
 import argparse
@@ -179,6 +180,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_pdk_update.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
 
     pdk_sub.add_parser("status", help="Show detailed PDK install status (with resolved liberty paths)")
+
+    p_pdk_versions = pdk_sub.add_parser("versions", help="List remote versions available for a PDK")
+    p_pdk_versions.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
 
     # wrap (wrapper generation namespace)
     p_wrap = sub.add_parser("wrap", help="Wrapper generation commands")
@@ -443,6 +447,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.pdk import cmd_pdk_update
                         exit_code = cmd_pdk_update(args)
+                    elif pdk_cmd == "versions":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_versions
+                        exit_code, pdk_result = cmd_pdk_versions(args)
 
                 else:
                     if json_mode:
@@ -477,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
                         result_payload = doctor_result
                     elif args.command == "pdk":
                         _pdk_cmd = getattr(args, "pdk_command", None)
-                        if _pdk_cmd in ("list", "status") and pdk_result is not None:
+                        if _pdk_cmd in ("list", "status", "versions") and pdk_result is not None:
                             result_payload = pdk_result
                         else:
                             result_payload = {

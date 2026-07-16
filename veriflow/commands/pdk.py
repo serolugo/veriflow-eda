@@ -17,7 +17,12 @@ from rich import box
 from rich.table import Table
 
 from veriflow.core import VeriFlowError
-from veriflow.models.pdk_manager import VERIFLOW_PDK_ROOT, get_liberty_path, get_pdk_path
+from veriflow.models.pdk_manager import (
+    VERIFLOW_PDK_ROOT,
+    build_volare_enable_command,
+    get_liberty_path,
+    get_pdk_path,
+)
 from veriflow.models.technology_profile import get_technology_profile, list_technology_profile_names
 from veriflow.ui.output import console, print_done, print_error, print_step
 from veriflow.ui.theme import BLUE, GREY, WHITE
@@ -154,13 +159,10 @@ def cmd_pdk_install(args: argparse.Namespace) -> int:
         if not _volare_available():
             print_error("volare required -- run: pip install veriflow-eda\\[pdks]")
             return 1
-        print_step("pdk install", f"Installing {name} (volare enable --pdk {technology.volare_pdk}) ...")
+        cmd = build_volare_enable_command(technology, pdk_dir)
+        print_step("pdk install", f"Installing {name} ({' '.join(cmd)}) ...")
         pdk_dir.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
-            ["volare", "enable", "--pdk", technology.volare_pdk, "--pdk-root", str(pdk_dir)],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise VeriFlowError(
                 f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
@@ -208,12 +210,9 @@ def cmd_pdk_update(args: argparse.Namespace) -> int:
         if not _volare_available():
             print_error("volare required -- run: pip install veriflow-eda\\[pdks]")
             return 1
-        print_step("pdk update", f"Updating {name} (volare enable --pdk {technology.volare_pdk}) ...")
-        result = subprocess.run(
-            ["volare", "enable", "--pdk", technology.volare_pdk, "--pdk-root", str(pdk_dir)],
-            capture_output=True,
-            text=True,
-        )
+        cmd = build_volare_enable_command(technology, pdk_dir)
+        print_step("pdk update", f"Updating {name} ({' '.join(cmd)}) ...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise VeriFlowError(
                 f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
@@ -240,3 +239,51 @@ def cmd_pdk_update(args: argparse.Namespace) -> int:
 
     print_done(f"{name} updated  ·  [id]{pdk_dir}[/id]")
     return 0
+
+
+# ── pdk versions ────────────────────────────────────────────────────────────
+
+def cmd_pdk_versions(args: argparse.Namespace) -> tuple[int, dict]:
+    """List remote versions available for a volare-installed PDK.
+
+    Runs `volare ls-remote --pdk <volare_pdk>` under the hood, presented as
+    plain "available versions" output -- the user never needs to know
+    volare exists to read or act on it.
+    """
+    name = args.pdk_name
+    technology = get_technology_profile(name)  # raises VF_TECHNOLOGY_UNKNOWN
+    if technology.install_method != "volare":
+        raise VeriFlowError(
+            f"{name!r} has no listable remote versions "
+            f"(install_method={technology.install_method!r}; "
+            "version listing is only available for volare-installed PDKs).",
+            code="VF_PDK_VERSIONS_UNSUPPORTED",
+            details={"name": name, "install_method": technology.install_method},
+        )
+    if not _volare_available():
+        print_error("volare required -- run: pip install veriflow-eda\\[pdks]")
+        return 1, {"status": "ERROR", "command": "pdk versions", "pdk": name, "versions": []}
+
+    result = subprocess.run(
+        ["volare", "ls-remote", "--pdk", technology.volare_pdk],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise VeriFlowError(
+            f"Listing versions failed for {name}:\n{result.stderr or result.stdout}",
+            code="VF_PDK_VERSIONS_FAILED",
+            details={"name": name, "stderr": result.stderr},
+        )
+
+    versions = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+
+    console.print(f"\n  [label]Available versions -- {name}[/label]\n")
+    if versions:
+        for version in versions:
+            console.print(f"  {version}")
+    else:
+        console.print("  [secondary](no versions returned)[/secondary]")
+    console.print()
+
+    return 0, {"status": "SUCCESS", "command": "pdk versions", "pdk": name, "versions": versions}

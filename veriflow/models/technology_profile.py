@@ -38,6 +38,7 @@ class TechnologyProfile:
     pdk_subdir: str | None = None          # subdirectory of VERIFLOW_PDK_ROOT/<name>/ holding the PDK tree
     liberty_glob: str | None = None        # glob pattern (rooted at pdk_subdir, or the PDK dir itself) for the liberty file
     install_hint: str | None = None        # human-readable hint shown when the PDK isn't installed
+    default_version: str | None = None     # pinned volare version/commit hash passed positionally to `volare enable`
 
 
 def load_technology_profile_from_file(path: Path) -> TechnologyProfile:
@@ -92,6 +93,7 @@ def load_technology_profile_from_file(path: Path) -> TechnologyProfile:
         pdk_subdir=raw.get("pdk_subdir"),
         liberty_glob=raw.get("liberty_glob"),
         install_hint=raw.get("install_hint"),
+        default_version=raw.get("default_version"),
     )
 
 
