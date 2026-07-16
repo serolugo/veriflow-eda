@@ -6,6 +6,7 @@ from veriflow.core.pipeline import PipelineStage
 from veriflow.framework.stage_input import StageInput
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
 from veriflow.models.stage_result import StageResult
+from veriflow.models.technology_profile import get_technology_profile
 
 
 class SynthesisStage(PipelineStage):
@@ -28,10 +29,12 @@ class SynthesisStage(PipelineStage):
 
         synth_log_path = ctx.synth_dir / "logs" / "synth.log"
         synth_log_path.parent.mkdir(parents=True, exist_ok=True)
+        technology = get_technology_profile(self._profile.technology_name)
         status, parsed = self._backend.run_synthesis(
             rtl_files=design.rtl_sources,
             top_module=design.top_module,
             synth_log_path=synth_log_path,
+            technology=technology,
         )
 
         log_rel = ctx.log_rel(synth_log_path)

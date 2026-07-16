@@ -1,0 +1,5 @@
+name: generic
+description: Generic technology (no PDK-specific constraints)
+synthesis_backend: yosys
+liberty: null
+synth_extra: []

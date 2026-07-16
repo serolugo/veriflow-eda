@@ -1,0 +1,5 @@
+name: ihp130
+description: IHP 130nm SG13G2 PDK (sg13g2_stdcell) -- liberty not yet vendored
+synthesis_backend: yosys
+liberty: null
+synth_extra: []

@@ -326,7 +326,7 @@ def project_import(
     validate_database(db_path)
     db_project_cfg_path = db_path / "project_config.yaml"
     db_raw = yaml.safe_load(db_project_cfg_path.read_text(encoding="utf-8")) or {}
-    db_project_config = ProjectConfig.from_dict(db_raw)
+    db_project_config = ProjectConfig.from_dict(db_raw, root=db_path)
 
     project_interface_name = results.get("interface_name")
     if project_interface_name is not None and project_interface_name != db_project_config.interface_name:

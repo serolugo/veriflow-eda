@@ -261,7 +261,7 @@ def test_results_json_log_paths_populated_when_stage_writes_a_log(tmp_path):
     from veriflow.core.backends.base import SynthesisBackend
 
     class _RealFileSynthBackend(SynthesisBackend):
-        def run_synthesis(self, *, rtl_files, top_module, synth_log_path):
+        def run_synthesis(self, *, rtl_files, top_module, synth_log_path, technology=None):
             synth_log_path.write_text("yosys ran ok\n", encoding="utf-8")
             return "PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False}
 

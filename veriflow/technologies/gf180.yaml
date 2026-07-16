@@ -1,0 +1,5 @@
+name: gf180
+description: GlobalFoundries 180nm MCU PDK (gf180mcu_fd_sc_mcu7t5v0) -- liberty not yet vendored
+synthesis_backend: yosys
+liberty: null
+synth_extra: []

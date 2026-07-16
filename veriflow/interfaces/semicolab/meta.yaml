@@ -1,0 +1,2 @@
+description: Nine-port structural contract required by the Semicolab harness.
+requires_top_module: true

@@ -9,6 +9,11 @@ from pathlib import Path
 import yaml
 
 from veriflow.core import VeriFlowError
+from veriflow.core.backends.registry import (
+    get_connectivity_tool_name,
+    get_simulation_tool_name,
+    get_synthesis_tool_name,
+)
 from veriflow.core.copier import copy_flat
 from veriflow.core.csv_store import append_record, get_tile_row, read_tile_index
 from veriflow.core.pipeline import PipelineRunner
@@ -192,7 +197,8 @@ class DatabaseWorkflow:
         project_cfg_path = self.db_path / "project_config.yaml"
         try:
             project_config = ProjectConfig.from_dict(
-                yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {}
+                yaml.safe_load(project_cfg_path.read_text(encoding="utf-8")) or {},
+                root=self.db_path,
             )
         except yaml.YAMLError as exc:
             raise VeriFlowError(
@@ -368,6 +374,7 @@ class DatabaseWorkflow:
                 iverilog_version=iverilog_version,
                 conn_log_path=conn_log_path, sim_log_path=sim_log_path,
                 synth_log_path=synth_log_path, wave_path=wave_path,
+                profile=pipeline_profile,
                 warnings=warnings,
             )
             return DatabaseRunResult(
@@ -411,6 +418,7 @@ class DatabaseWorkflow:
             iverilog_version=iverilog_version,
             conn_log_path=conn_log_path, sim_log_path=sim_log_path,
             synth_log_path=synth_log_path, wave_path=wave_path,
+            profile=pipeline_profile,
             warnings=warnings,
         )
 
@@ -643,6 +651,7 @@ def _finalize_run(
     sim_log_path: Path,
     synth_log_path: Path,
     wave_path: Path,
+    profile: ExecutionProfile,
     warnings: list[str] | None = None,
 ) -> dict:
     """Generate all documentation, update CSV, and return the run_result dict."""
@@ -677,9 +686,9 @@ def _finalize_run(
             "revision": id_revision,
         },
         "tools": {
-            "simulator": "iverilog",
+            "simulator": get_simulation_tool_name(profile.simulation_backend),
             "simulator_version": iverilog_version,
-            "synthesizer": "yosys",
+            "synthesizer": get_synthesis_tool_name(profile.synthesis_backend),
             "synthesizer_version": "",
         },
         "run": {
@@ -789,13 +798,13 @@ def _finalize_run(
             "connectivity": StageResult(
                 name="connectivity",
                 status=conn_result,
-                tool="iverilog",
+                tool=get_connectivity_tool_name(profile.connectivity_backend),
                 log_paths=conn_logs or None,
             ).to_dict(),
             "simulation": StageResult(
                 name="simulation",
                 status=sim_result,
-                tool="iverilog/vvp",
+                tool=get_simulation_tool_name(profile.simulation_backend),
                 log_paths=sim_logs or None,
                 artifacts={"wave": wave_files} if wave_files else None,
                 metrics=sim_metrics or None,
@@ -803,7 +812,7 @@ def _finalize_run(
             "synthesis": StageResult(
                 name="synthesis",
                 status=synth_result,
-                tool="yosys",
+                tool=get_synthesis_tool_name(profile.synthesis_backend),
                 log_paths=synth_logs or None,
                 metrics=synth_metrics,
             ).to_dict(),

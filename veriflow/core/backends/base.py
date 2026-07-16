@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from veriflow.models.technology_profile import TechnologyProfile
 
 
 class ConnectivityBackend(abc.ABC):
@@ -58,6 +62,7 @@ class SynthesisBackend(abc.ABC):
         rtl_files: list[Path],
         top_module: str,
         synth_log_path: Path,
+        technology: "TechnologyProfile | None" = None,
     ) -> tuple[str, dict]:
         """Returns ('PASS'|'FAIL', parsed_dict)."""
 

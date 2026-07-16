@@ -18,7 +18,7 @@ def _read_version():
 setup(
     name="veriflow-eda",
     version=_read_version(),
-    description="Lightweight RTL verification and documentation framework for multi-project ASIC flows",
+    description="Pre-Silicon Multiproject ASIC Validation Framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Roman Lugo",
@@ -31,6 +31,9 @@ setup(
         "veriflow": [
             "template/*.v",
             "core/wrapper/templates/*.j2",
+            "interfaces/*/*.v",
+            "interfaces/*/*.yaml",
+            "technologies/*.yaml",
         ],
     },
     install_requires=[

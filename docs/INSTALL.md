@@ -121,3 +121,37 @@ Expected output with both tools available:
 ```
 
 Exit code 0 indicates that all tools are available.
+
+---
+
+## Using a custom interface profile
+
+VeriFlow ships one built-in interface profile (`semicolab`), but a project
+isn't limited to it. To check RTL against your own port contract, write a
+Verilog stub with just the port list (no body needed):
+
+```verilog
+// interfaces/tinytapeout_if.v
+module tinytapeout (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out
+);
+endmodule
+```
+
+Then reference it from `veriflow.yaml` alongside `name:`:
+
+```yaml
+interface:
+  name: tinytapeout
+  definition: ./interfaces/tinytapeout_if.v  # relative to veriflow.yaml
+```
+
+`veriflow project run` registers the profile from that file and runs the
+connectivity check against it, no code changes required. See
+[MANUAL.md](MANUAL.md#146-custom-interface-profiles-interfacedefinition) for the full schema (including the
+Database Mode equivalent, `interface_definition:` in `project_config.yaml`)
+and [PROJECT_CONFIG.md](PROJECT_CONFIG.md) for the `interface` section
+reference.

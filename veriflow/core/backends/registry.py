@@ -17,6 +17,29 @@ _SYNTHESIS: dict[str, type[SynthesisBackend]] = {
     "yosys": YosysSynthesisBackend,
 }
 
+# Backend ID -> human-readable EDA tool name, for display in results.json /
+# manifest.yaml. A backend ID with no entry here falls back to itself, so a
+# future backend that forgets to register a display name still shows
+# *something* meaningful instead of raising.
+_CONNECTIVITY_TOOL_NAMES: dict[str, str] = {"icarus": "iverilog"}
+_SIMULATION_TOOL_NAMES: dict[str, str] = {"icarus": "iverilog/vvp"}
+_SYNTHESIS_TOOL_NAMES: dict[str, str] = {"yosys": "yosys"}
+
+
+def get_connectivity_tool_name(backend_id: str) -> str:
+    """Return the display name of the EDA tool behind *backend_id* (e.g.
+    "icarus" -> "iverilog"), for results.json/manifest.yaml -- NOT the
+    backend ID itself, which is an internal registry key."""
+    return _CONNECTIVITY_TOOL_NAMES.get(backend_id, backend_id)
+
+
+def get_simulation_tool_name(backend_id: str) -> str:
+    return _SIMULATION_TOOL_NAMES.get(backend_id, backend_id)
+
+
+def get_synthesis_tool_name(backend_id: str) -> str:
+    return _SYNTHESIS_TOOL_NAMES.get(backend_id, backend_id)
+
 
 def get_connectivity_backend(name: str) -> ConnectivityBackend:
     cls = _CONNECTIVITY.get(name)

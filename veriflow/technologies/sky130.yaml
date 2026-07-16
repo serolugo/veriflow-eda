@@ -1,0 +1,5 @@
+name: sky130
+description: SkyWater 130nm PDK (sky130_fd_sc_hd) -- liberty not yet vendored
+synthesis_backend: yosys
+liberty: null
+synth_extra: []

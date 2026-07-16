@@ -1845,11 +1845,9 @@ def test_technology_profile_default_values():
     p = default_technology_profile()
     assert isinstance(p, TechnologyProfile)
     assert p.name == "generic"
-    assert p.pdk is None
-    assert p.cell_library is None
+    assert p.synthesis_backend == "yosys"
     assert p.liberty is None
-    assert p.constraints is None
-    assert p.notes is None
+    assert p.synth_extra == []
 
 
 def test_technology_profile_registry_supported_names():

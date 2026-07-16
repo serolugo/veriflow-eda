@@ -31,6 +31,7 @@ here, and custom backend plugins are future work.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,13 +44,13 @@ from veriflow.core.backends.registry import (
     get_synthesis_backend,
 )
 from veriflow.models.execution_profile import default_execution_profile
-from veriflow.models.interface_profile import get_interface_profile
+from veriflow.models.interface_profile import get_interface_profile, register_interface_profile_from_file
 from veriflow.models.pipeline_config import (
     DEFAULT_PIPELINE,
     PipelineConfig,
     parse_optional_pipeline_section,
 )
-from veriflow.models.technology_profile import get_technology_profile
+from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME, get_technology_profile
 
 _EXECUTION_DEFAULTS = default_execution_profile()
 
@@ -72,7 +73,7 @@ class ProjectInterfaceConfig:
             )
 
 
-def _parse_interface_section(data: dict) -> ProjectInterfaceConfig | None:
+def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfig | None:
     if "interface_name" in data:
         raise VeriFlowError(
             "Top-level 'interface_name' is not supported in Project Mode configuration.\n"
@@ -96,11 +97,11 @@ def _parse_interface_section(data: dict) -> ProjectInterfaceConfig | None:
             details={"interface": section},
         )
 
-    unknown_keys = sorted(set(section) - {"name"})
+    unknown_keys = sorted(set(section) - {"name", "definition"})
     if unknown_keys:
         raise VeriFlowError(
             f"Unsupported keys in interface section: {', '.join(unknown_keys)}.\n"
-            "  Only 'name' is supported; custom interface definitions are not yet supported.",
+            "  Supported keys: 'name', 'definition'.",
             code="VF_INTERFACE_CONFIG_INVALID",
             details={"unknown_keys": unknown_keys},
         )
@@ -116,6 +117,7 @@ def _parse_interface_section(data: dict) -> ProjectInterfaceConfig | None:
     raw_name = section["name"]
     if raw_name is None:
         # explicit `name: null` — generic project, no interface check
+        # (a `definition:` alongside `name: null` is moot and ignored)
         return None
     if not isinstance(raw_name, str) or not raw_name.strip():
         raise VeriFlowError(
@@ -123,8 +125,32 @@ def _parse_interface_section(data: dict) -> ProjectInterfaceConfig | None:
             code="VF_INTERFACE_NAME_REQUIRED",
             details={"name": raw_name},
         )
-
     name = raw_name.strip()
+
+    raw_definition = section.get("definition")
+    if raw_definition is not None:
+        if not isinstance(raw_definition, str) or not raw_definition.strip():
+            raise VeriFlowError(
+                "interface.definition must be a non-empty string path",
+                code="VF_INTERFACE_CONFIG_INVALID",
+                details={"definition": raw_definition},
+            )
+        definition_path = (root / raw_definition.strip()).resolve()
+        # Registers the profile from the .v file; the name actually
+        # registered is the module name parsed from that file, which may
+        # differ from `name:` above.
+        registered_name = register_interface_profile_from_file(definition_path)
+        if registered_name != name:
+            warnings.warn(
+                f"interface.name {name!r} differs from the module name "
+                f"{registered_name!r} parsed from interface.definition "
+                f"({definition_path}). Using {registered_name!r}. "
+                "[VF_INTERFACE_NAME_MISMATCH]",
+                stacklevel=2,
+            )
+            name = registered_name
+        return ProjectInterfaceConfig(name=name)
+
     # Raises VF_INTERFACE_UNKNOWN for names not in the registry
     get_interface_profile(name)
     return ProjectInterfaceConfig(name=name)
@@ -160,7 +186,7 @@ class ProjectTechnologyConfig:
     ``veriflow.models.technology_profile``.
     """
 
-    name: str = "generic"
+    name: str = DEFAULT_TECHNOLOGY_NAME
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -319,7 +345,7 @@ class ProjectWorkflowConfig:
         raw_tb = design.get("tb_sources") or []
         tb_sources = [root / p for p in raw_tb]
 
-        interface = _parse_interface_section(data)
+        interface = _parse_interface_section(data, root=root)
         execution = _parse_execution_section(data)
         technology = _parse_technology_section(data)
         pipeline = _parse_pipeline_section(data)

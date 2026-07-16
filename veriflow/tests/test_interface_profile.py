@@ -127,7 +127,10 @@ def test_semicolab_requires_top_module():
 def test_semicolab_tb_template():
     profile = get_interface_profile("semicolab")
     assert profile is not None
-    assert profile.tb_template == "tb_semicolab_template.v"
+    assert profile.tb_template is not None
+    assert profile.tb_template.endswith("tb_template.v")
+    from pathlib import Path
+    assert Path(profile.tb_template).exists()
 
 
 def test_profile_scaffold_fields_are_frozen():

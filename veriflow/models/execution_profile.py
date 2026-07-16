@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME
+
 
 @dataclass
 class ExecutionProfile:
@@ -14,8 +16,8 @@ class ExecutionProfile:
     connectivity_backend: str = "icarus"
     simulation_backend: str = "icarus"
     synthesis_backend: str = "yosys"
-    # Technology target name — resolved via get_technology_profile(); not wired into synthesis yet
-    technology_name: str = "generic"
+    # Technology target name — resolved via get_technology_profile()
+    technology_name: str = DEFAULT_TECHNOLOGY_NAME
 
 
 def default_execution_profile() -> ExecutionProfile:

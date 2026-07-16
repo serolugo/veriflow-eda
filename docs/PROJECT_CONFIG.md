@@ -116,8 +116,32 @@ that `top_module` exposes the profile's port contract.
 - Available interface names are discoverable programmatically through the registry APIs in
   `veriflow.models.interface_profile` (`list_interface_profile_names()`,
   `list_interface_profiles()`, `has_interface_profile()`).
-- An unknown name fails with `VF_INTERFACE_UNKNOWN`. Keys other than `name` are rejected —
-  custom YAML-defined interface definitions are future work.
+- An unknown name fails with `VF_INTERFACE_UNKNOWN`. The only other supported key is
+  `definition` (below); anything else is rejected with `VF_INTERFACE_CONFIG_INVALID`.
+
+#### `interface.definition` — external interface profiles
+
+```yaml
+interface:
+  name: tinytapeout
+  definition: ./interfaces/tinytapeout_if.v
+```
+
+`definition` points at a Verilog stub (a `module <name> (...); endmodule` port-list
+declaration, no body needed) that doesn't have to be one of VeriFlow's built-ins. The path is
+resolved relative to the directory containing `veriflow.yaml`. VeriFlow registers the profile
+from that file (ports parsed the same way `wrap init` auto-detects RTL ports) before the
+connectivity stage runs.
+
+The registered profile's name is the **module name parsed from the file**, not `name:` above —
+if they differ, VeriFlow uses the parsed module name and emits a `UserWarning`
+(`VF_INTERFACE_NAME_MISMATCH`) rather than failing. Registering a name that collides with an
+already-registered profile (including a built-in one) overwrites it for the rest of the process,
+with its own `UserWarning` (`VF_INTERFACE_PROFILE_OVERWRITTEN`).
+
+Omitting `definition` is unchanged from before: `name` must then refer to an
+already-registered (built-in) profile. See `veriflow/interfaces/semicolab/` for the on-disk
+shape of a built-in profile (`interface.v` + optional `tb_template.v` + optional `meta.yaml`).
 
 ### `execution` (optional)
 
@@ -205,11 +229,27 @@ Names the technology target for the run. Omitting the section, `technology: null
 `name: null` means `generic`.
 
 Registered names (see `veriflow.models.technology_profile`): `generic`, `sky130`, `gf180`,
-`ihp130`. An unknown name fails with `VF_TECHNOLOGY_UNKNOWN`.
+`ihp130` — each loaded from its own `veriflow/technologies/<name>.yaml` file. An unknown name
+fails with `VF_TECHNOLOGY_UNKNOWN`.
 
-The technology name is currently carried as profile metadata only — the non-generic entries are
-PDK/cell-library placeholders and are **not** wired into synthesis. Technology-aware synthesis
-(PDK paths, liberty files, constraints) is future work.
+Each `technology.yaml` has:
+
+| Field | Description |
+|---|---|
+| `name` | Required. Must match the filename's technology (used as the registry key). |
+| `description` | Free text, informational only. |
+| `synthesis_backend` | Informational today; synthesis always uses `yosys` regardless of this value. |
+| `liberty` | Path to a `.lib` file, or `null`. When set, `abc -liberty <path>` is appended to the yosys script right after `synth`, performing real cell-library technology mapping. |
+| `synth_extra` | List of extra yosys script lines, appended after the `liberty` line (before `check`/`stat`) — e.g. `["-flatten"]`. |
+
+None of the four built-in technologies vendor a real `liberty` file yet (`sky130`/`gf180`/`ihp130`
+all ship `liberty: null` — only naming/metadata is populated, no PDK is bundled), so in practice
+every built-in technology produces the same generic synthesis script today. `liberty`/`synth_extra`
+are real, tested wiring, not placeholders: editing a `technology.yaml` under `veriflow/technologies/`
+(they're plain files in the installed package) to set a real `liberty` path takes effect
+immediately, no code change. There is currently no `veriflow.yaml`-level equivalent of
+`interface.definition` for registering a project-local technology file from outside that
+directory — every technology is a built-in today.
 
 ### `simulation` (optional, required with `tb_sources`)
 

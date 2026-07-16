@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
+from pathlib import Path
 
 from veriflow.core import VeriFlowError
 from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipeline_section
@@ -22,7 +24,10 @@ class ProjectConfig:
     pipeline: PipelineConfig | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ProjectConfig":
+    def from_dict(cls, data: dict, *, root: Path | None = None) -> "ProjectConfig":
+        """root: directory `interface_definition:` paths resolve relative to
+        (the database directory containing this project_config.yaml). Only
+        required when `interface_definition:` is actually present in *data*."""
         has_legacy = "semicolab" in data
         has_interface = "interface_name" in data
 
@@ -50,6 +55,34 @@ class ProjectConfig:
         raw_name = data.get("interface_name", None)
         if isinstance(raw_name, str):
             raw_name = raw_name.strip() or None
+
+        raw_definition = data.get("interface_definition")
+        if raw_name is not None and raw_definition is not None:
+            if not isinstance(raw_definition, str) or not raw_definition.strip():
+                raise VeriFlowError(
+                    "interface_definition must be a non-empty string path",
+                    code="VF_PROJECT_INTERFACE_CONFIG_INVALID",
+                    details={"interface_definition": raw_definition},
+                )
+            if root is None:
+                raise VeriFlowError(
+                    "interface_definition requires a config root to resolve against "
+                    "(internal error: ProjectConfig.from_dict called without root=)",
+                    code="VF_PROJECT_INTERFACE_CONFIG_INVALID",
+                )
+            from veriflow.models.interface_profile import register_interface_profile_from_file
+
+            definition_path = (Path(root) / raw_definition.strip()).resolve()
+            registered_name = register_interface_profile_from_file(definition_path)
+            if registered_name != raw_name:
+                warnings.warn(
+                    f"interface_name {raw_name!r} differs from the module name "
+                    f"{registered_name!r} parsed from interface_definition "
+                    f"({definition_path}). Using {registered_name!r}. "
+                    "[VF_INTERFACE_NAME_MISMATCH]",
+                    stacklevel=2,
+                )
+                raw_name = registered_name
 
         raw_id_format = data.get("id_format")
         id_format = (

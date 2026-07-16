@@ -95,6 +95,18 @@ The `id_prefix` field is required — tiles cannot be created without it.
 
 Semicolab is an interface profile (a named port contract), not a boolean mode. An unknown name fails with `VF_INTERFACE_UNKNOWN`.
 
+To use a profile that isn't one of VeriFlow's built-ins, add `interface_definition:`
+pointing at a Verilog port-contract stub (relative to the database directory):
+
+```yaml
+interface_name: tinytapeout
+interface_definition: ./interfaces/tinytapeout_if.v
+```
+
+See [14.6](#146-custom-interface-profiles-interfacedefinition) for the full
+explanation (written from Project Mode's `veriflow.yaml`, but the mechanism —
+and the `.v` stub format — is identical for both modes).
+
 ### 4.3 Customize the tile ID format (`id_format`)
 
 By default, `create-tile` generates tile IDs in the fixed layout used since the project's
@@ -900,3 +912,89 @@ an optional per-stage `backend:` override. Omitting the section keeps the curren
 (all three stages, connectivity/simulation still gated on `interface`/`tb_sources` being
 configured). See [PROJECT_CONFIG.md](PROJECT_CONFIG.md#pipeline-optional) for the full schema,
 examples, and validation error codes (`VF_PIPELINE_CONFIG_INVALID`, `VF_PIPELINE_STAGE_UNKNOWN`).
+
+### 14.6 Custom interface profiles (`interface.definition`)
+
+Built-in interface profiles (currently just `semicolab`) live under
+`veriflow/interfaces/<name>/` inside the installed package — each is a folder with:
+
+| File | Required | Contents |
+|---|---|---|
+| `interface.v` | yes | A Verilog module stub declaring only the port list (name, direction, width). No body needed — an empty `endmodule` is enough. |
+| `tb_template.v` | no | A testbench scaffold copied into `src/tb/tb_tile.v` by `db create-tile` when this profile is selected. |
+| `meta.yaml` | no | `description:` and `requires_top_module:` — the two profile attributes that can't be expressed in a `.v` file. Both default to empty/`false` when this file is absent. |
+
+The port contract itself is parsed from `interface.v` with the same
+regex-based extractor used for RTL auto-detection in `wrap init` — the
+profile's name is the parsed **module name**, not the directory name.
+
+To use a profile that isn't built in, add `definition:` alongside `name:` in
+the `interface` section, pointing at your own `.v` stub (path relative to
+`veriflow.yaml`):
+
+```yaml
+interface:
+  name: tinytapeout
+  definition: ./interfaces/tinytapeout_if.v
+```
+
+```verilog
+// interfaces/tinytapeout_if.v
+module tinytapeout (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out
+);
+endmodule
+```
+
+`project run` registers the profile from that file before the connectivity
+stage runs, so `interface.name` becomes available immediately — no code
+change, no restart. If `name:` doesn't match the module name actually
+declared in the `.v` file, VeriFlow uses the module name and emits a
+`UserWarning` (`VF_INTERFACE_NAME_MISMATCH`) rather than failing. Registering
+a name that collides with an existing profile (including a built-in one)
+overwrites it for the rest of the process, with its own warning
+(`VF_INTERFACE_PROFILE_OVERWRITTEN`) — useful for locally testing a
+different revision of a profile without renaming it.
+
+Database Mode's `project_config.yaml` supports the identical mechanism under
+a differently-named key (see 4.2): `interface_name:` + `interface_definition:`,
+resolved relative to the database directory instead of `veriflow.yaml`.
+
+Omitting `definition:` entirely is unchanged from before — `name:` must then
+refer to an already-registered (built-in) profile, exactly as today.
+
+### 14.7 Technology profiles (`technology.yaml`)
+
+Built-in technology profiles (`generic`, `sky130`, `gf180`, `ihp130`) live as
+individual `.yaml` files under `veriflow/technologies/` inside the installed
+package — one file per technology, keyed by its own `name:` field (not the
+filename). Schema:
+
+```yaml
+name: sky130                # required
+description: "SkyWater 130nm PDK -- liberty not yet vendored"
+synthesis_backend: yosys    # informational today; synthesis always uses yosys
+liberty: null                # path to a .lib file, or null
+synth_extra: []              # extra yosys script lines, appended after `synth`
+```
+
+`liberty` and `synth_extra` are the two fields that actually change synthesis
+behavior, wired into `core/synth_runner.py`:
+
+- When `liberty` is set, `abc -liberty <path>` is appended to the yosys
+  script right after `synth`, performing real cell-library technology
+  mapping.
+- Every line in `synth_extra` is appended after that (and before
+  `check`/`stat`) — e.g. `synth_extra: ["-flatten"]` for a flattened
+  netlist, with no code change required.
+
+None of the four built-in technologies vendor a real `liberty` file yet
+(`sky130.yaml`/`gf180.yaml`/`ihp130.yaml` all ship `liberty: null` — only
+`pdk`/`cell_library` naming is documented today, no PDK is bundled), so in
+practice every built-in technology still produces the same generic synthesis
+script as before this field existed. Set `technology.name` in `veriflow.yaml` (or `project_config.yaml`'s
+`technology:` section — see the `{technology}` placeholder in 4.3) to select
+one; an unregistered name fails with `VF_TECHNOLOGY_UNKNOWN`.

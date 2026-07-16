@@ -11,6 +11,7 @@ from veriflow.core.validator import validate_database, validate_project_config
 from veriflow.generators.readme import generate_readme
 from veriflow.models.interface_profile import InterfaceProfile, get_interface_profile
 from veriflow.models.project_config import ProjectConfig
+from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME
 from veriflow.models.tile_config import DEFAULT_TB_TOP_MODULE, TileConfig
 from veriflow.ui.output import console, print_done, print_step, print_warn
 
@@ -105,7 +106,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
             code="VF_TILE_CONFIG_YAML_ERROR",
             details={"path": str(project_cfg_path)},
         ) from exc
-    project_config = ProjectConfig.from_dict(raw)
+    project_config = ProjectConfig.from_dict(raw, root=db)
     validate_project_config(project_config)
 
     # 2. Resolve interface and validate top_module early — before any filesystem writes
@@ -154,7 +155,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
         "revision": f"{id_revision:02d}",
         "shuttle_name": project_config.shuttle_name,
         "interface": interface_name or "",
-        "technology": project_config.technology_name or "generic",
+        "technology": project_config.technology_name or DEFAULT_TECHNOLOGY_NAME,
         "author_initials": compute_initials(tile_author),
         "short_hash": "000000",
     }
@@ -185,8 +186,10 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
         (d / ".gitkeep").touch()
 
     tb_dir = config_tile_dir / "src" / "tb"
-    tb_template_name = profile.tb_template if profile and profile.tb_template else "tb_universal_template.v"
-    tb_template_path = template_dir / tb_template_name
+    if profile and profile.tb_template:
+        tb_template_path = Path(profile.tb_template)
+    else:
+        tb_template_path = template_dir / "tb_universal_template.v"
     if tb_template_path.exists():
         content = tb_template_path.read_text(encoding="utf-8")
         if top_module:
