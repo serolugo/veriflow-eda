@@ -41,7 +41,8 @@ def cmd_wrap_init(args: argparse.Namespace) -> int:
         metadata=metadata or None,
     )
 
-    ip_ports = config.pop("_ip_ports")
+    detected_ports = config.pop("detected_ports")
+    ip_ports = [(p["name"], p["direction"], p["width"]) for p in detected_ports]
     top_module = config["design"]["top_module"]
     interface_profile = get_interface_profile(args.interface)
 

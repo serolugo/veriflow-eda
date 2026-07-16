@@ -140,24 +140,32 @@ def test_wrap_init_metadata_custom(dut_dir):
     assert meta["description"] == ""
 
 
-def test_wrap_init_private_ip_ports(dut_dir):
+def test_wrap_init_no_private_ip_ports_key(dut_dir):
+    """_ip_ports was a private leak of implementation detail into the public
+    dict -- replaced by the public "detected_ports" key (2026-07-15 MCP API
+    cleanup, dev-docs/MCP_API_AUDIT.md)."""
     result = _call_init(dut_dir)
-    assert "_ip_ports" in result
-    assert len(result["_ip_ports"]) == 4
-    names = [p[0] for p in result["_ip_ports"]]
+    assert "_ip_ports" not in result
+
+
+def test_wrap_init_detected_ports_present(dut_dir):
+    result = _call_init(dut_dir)
+    assert "detected_ports" in result
+    assert len(result["detected_ports"]) == 4
+    names = [p["name"] for p in result["detected_ports"]]
     assert "clk_i" in names
     assert "result_o" in names
 
 
-def test_wrap_init_ip_ports_are_3tuples(dut_dir):
+def test_wrap_init_detected_ports_are_clean_dicts(dut_dir):
     result = _call_init(dut_dir)
-    for entry in result["_ip_ports"]:
-        assert len(entry) == 3
+    for entry in result["detected_ports"]:
+        assert set(entry.keys()) == {"name", "direction", "width"}
 
 
-def test_wrap_init_ip_ports_widths(dut_dir):
+def test_wrap_init_detected_ports_widths(dut_dir):
     result = _call_init(dut_dir)
-    by_name = {p[0]: p[2] for p in result["_ip_ports"]}
+    by_name = {p["name"]: p["width"] for p in result["detected_ports"]}
     assert by_name["clk_i"] == 1
     assert by_name["data_i"] == 16
     assert by_name["result_o"] == 8
@@ -212,9 +220,13 @@ def test_wrap_init_unknown_interface(dut_dir):
 
 # ── render_wrapper_config_yaml ────────────────────────────────────────────────
 
+def _to_tuples(detected_ports: list[dict]) -> list[tuple[str, str, int | None]]:
+    return [(p["name"], p["direction"], p["width"]) for p in detected_ports]
+
+
 def _render(dut_dir: Path) -> str:
     config = _call_init(dut_dir)
-    ip_ports = config.pop("_ip_ports")
+    ip_ports = _to_tuples(config.pop("detected_ports"))
     iface = get_interface_profile("semicolab")
     return render_wrapper_config_yaml(config, iface, ip_ports)
 
@@ -308,7 +320,7 @@ def test_render_metadata_author_empty_quoted(dut_dir):
 
 def test_render_version_preserved(dut_dir):
     config = _call_init(dut_dir, metadata={"version": "2.3.1"})
-    ip_ports = config.pop("_ip_ports")
+    ip_ports = _to_tuples(config.pop("detected_ports"))
     iface = get_interface_profile("semicolab")
     src = render_wrapper_config_yaml(config, iface, ip_ports)
     doc = yaml.safe_load(src)
@@ -318,7 +330,7 @@ def test_render_version_preserved(dut_dir):
 def test_render_rtl_sources_preserved(dut_dir):
     src_path = str(dut_dir / "my_dut.v")
     config = wrap_init("semicolab", src_path)
-    ip_ports = config.pop("_ip_ports")
+    ip_ports = _to_tuples(config.pop("detected_ports"))
     iface = get_interface_profile("semicolab")
     src = render_wrapper_config_yaml(config, iface, ip_ports)
     doc = yaml.safe_load(src)
@@ -328,7 +340,7 @@ def test_render_rtl_sources_preserved(dut_dir):
 def test_render_no_ip_ports_section(dut_dir):
     """When ip_ports is empty, the ports section has a comment placeholder."""
     config = _call_init(dut_dir)
-    config.pop("_ip_ports")
+    config.pop("detected_ports")
     iface = get_interface_profile("semicolab")
     src = render_wrapper_config_yaml(config, iface, [])
     assert "# (no ports detected" in src
@@ -458,7 +470,7 @@ def test_cli_init_multiple_modules_found_propagates(two_mods_file, tmp_path):
 def test_render_filled_ports_appear_as_values(dut_dir):
     """When config['ports'][name] is non-None, the value appears in the YAML output."""
     config = _call_init(dut_dir)
-    ip_ports = config.pop("_ip_ports")
+    ip_ports = _to_tuples(config.pop("detected_ports"))
     config["ports"]["clk_i"] = "clk"
     config["ports"]["data_i"] = "csr_in[15:0]"
     iface = get_interface_profile("semicolab")
@@ -473,7 +485,7 @@ def test_render_filled_ports_appear_as_values(dut_dir):
 def test_render_all_filled_ports_parseable(dut_dir):
     """YAML with all ports filled is parseable and WrapperConfig.from_dict succeeds."""
     config = _call_init(dut_dir)
-    ip_ports = config.pop("_ip_ports")
+    ip_ports = _to_tuples(config.pop("detected_ports"))
     config["ports"] = {
         "clk_i":    "clk",
         "rst_ni":   "arst_n",

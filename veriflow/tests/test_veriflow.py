@@ -1006,18 +1006,50 @@ def test_api_run_tile_propagates_veriflow_error():
         shutil.rmtree(tmp)
 
 
-def test_api_run_tile_rejects_waves_non_interactive():
-    """api.run_tile raises VF_NON_INTERACTIVE_VIEWER_DISABLED when waves=True and non_interactive=True."""
+def test_api_run_tile_forces_waves_false_when_non_interactive():
+    """api.run_tile silently forces waves=False when non_interactive=True,
+    rather than raising VF_NON_INTERACTIVE_VIEWER_DISABLED (2026-07-15 MCP
+    API cleanup, dev-docs/MCP_API_AUDIT.md) -- unlike the CLI's
+    `db run --waves --non-interactive`, which still raises for a human who
+    typed conflicting flags on purpose, an automated caller passing
+    non_interactive=True as a blanket safety default shouldn't have to
+    reason about this interaction."""
+    from unittest.mock import patch
+    from veriflow import api
+    with patch("veriflow.commands.run.cmd_run", return_value={"status": "PASS"}) as mock_run:
+        api.run_tile(
+            "./fake", "0001",
+            waves=True, non_interactive=True,
+            skip_connectivity=True, skip_sim=True, skip_synth=True,
+        )
+    assert mock_run.call_args.kwargs["waves"] is False
+
+
+def test_api_run_tile_invalid_tile_number_raises():
+    """api.run_tile validates tile is numeric before touching the database,
+    raising VF_TILE_NUMBER_INVALID -- previously a bare (non-numeric) tile
+    string reached int(tile_number) deep inside DatabaseWorkflow and raised
+    an unwrapped ValueError instead of VeriFlowError (dev-docs/MCP_API_AUDIT.md)."""
     from veriflow import api
     from veriflow.core import VeriFlowError
     raised = False
     try:
-        api.run_tile("./fake", "0001", waves=True, non_interactive=True)
+        api.run_tile("./fake", "abc")
     except VeriFlowError as e:
         raised = True
-        assert e.code == "VF_NON_INTERACTIVE_VIEWER_DISABLED"
-        assert e.exit_code == 2
-    assert raised, "Expected VF_NON_INTERACTIVE_VIEWER_DISABLED"
+        assert e.code == "VF_TILE_NUMBER_INVALID"
+    assert raised, "Expected VeriFlowError(VF_TILE_NUMBER_INVALID)"
+
+
+def test_api_run_tile_invalid_tile_number_not_a_bare_value_error():
+    """The non-numeric-tile case must never surface a raw ValueError."""
+    from veriflow import api
+    try:
+        api.run_tile("./fake", "abc")
+    except ValueError as e:
+        assert False, f"Expected VeriFlowError, got bare ValueError: {e}"
+    except Exception:
+        pass
 
 
 # ── registry ──────────────────────────────────────────────────────────────────
@@ -3753,7 +3785,9 @@ ALL_TESTS = [
     ("connectivity_fail_still_finalizes_run",                  test_connectivity_fail_still_finalizes_run),
     ("api_run_tile_returns_dict",                         test_api_run_tile_returns_dict),
     ("api_run_tile_propagates_veriflow_error",            test_api_run_tile_propagates_veriflow_error),
-    ("api_run_tile_rejects_waves_non_interactive",        test_api_run_tile_rejects_waves_non_interactive),
+    ("api_run_tile_forces_waves_false_when_non_interactive", test_api_run_tile_forces_waves_false_when_non_interactive),
+    ("api_run_tile_invalid_tile_number_raises",           test_api_run_tile_invalid_tile_number_raises),
+    ("api_run_tile_invalid_tile_number_not_a_bare_value_error", test_api_run_tile_invalid_tile_number_not_a_bare_value_error),
     ("default_execution_profile_values",                  test_default_execution_profile_values),
     ("execution_profile_is_dataclass",                    test_execution_profile_is_dataclass),
     ("build_default_pipeline_accepts_profile",            test_build_default_pipeline_accepts_profile),

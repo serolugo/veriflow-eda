@@ -312,3 +312,18 @@ def test_get_project_run_result_raises_not_found(tmp_path):
     with pytest.raises(VeriFlowError) as exc_info:
         get_project_run_result(missing)
     assert exc_info.value.code == "VF_PROJECT_RUN_RESULT_NOT_FOUND"
+
+
+def test_get_project_run_result_raises_corrupt_on_bad_json(tmp_path):
+    """A results.json that exists but isn't valid JSON (e.g. a run
+    interrupted mid-write) raises VF_PROJECT_RUN_RESULT_CORRUPT rather than
+    a bare json.JSONDecodeError (dev-docs/MCP_API_AUDIT.md)."""
+    from veriflow.api import get_project_run_result
+
+    run_dir = tmp_path / "runs" / "run-001"
+    run_dir.mkdir(parents=True)
+    (run_dir / "results.json").write_text("{not valid json", encoding="utf-8")
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        get_project_run_result(run_dir)
+    assert exc_info.value.code == "VF_PROJECT_RUN_RESULT_CORRUPT"

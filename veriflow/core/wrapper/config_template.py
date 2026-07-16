@@ -38,8 +38,8 @@ def render_wrapper_config_yaml(
     Parameters
     ----------
     config
-        Dict as returned by api.wrap_init (schema keys only; _ip_ports key
-        is ignored if present).
+        Dict as returned by api.wrap_init (schema keys only; "detected_ports"
+        key is ignored if present).
     interface_profile
         The resolved InterfaceProfile for the interface declared in config.
     ip_ports

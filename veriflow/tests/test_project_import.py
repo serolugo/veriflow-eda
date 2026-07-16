@@ -282,6 +282,40 @@ def test_import_interface_mismatch_raises(tmp_path):
     assert "semicolab" in str(exc_info.value)
 
 
+def test_import_invalid_db_yaml_raises(tmp_path):
+    """A malformed project_config.yaml in the destination database raises a
+    VeriFlowError (VF_DATABASE_CONFIG_YAML_ERROR), not a bare
+    yaml.YAMLError (dev-docs/MCP_API_AUDIT.md)."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+    # Corrupt the destination db's project_config.yaml with invalid YAML
+    (db_path / "project_config.yaml").write_text(
+        "id_prefix: [unterminated\n", encoding="utf-8"
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_DATABASE_CONFIG_YAML_ERROR"
+
+
+def test_import_missing_rtl_source_raises(tmp_path):
+    """An RTL source recorded in results.json but deleted from disk after
+    the run raises VF_IMPORT_RTL_SOURCE_MISSING, not a bare
+    FileNotFoundError (dev-docs/MCP_API_AUDIT.md)."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    # Delete the RTL source recorded in the run's results.json
+    (config_path.parent / "rtl" / "top.v").unlink()
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_IMPORT_RTL_SOURCE_MISSING"
+    assert "top.v" in str(exc_info.value)
+
+
 def test_import_interface_none_in_project_never_mismatches(tmp_path):
     """A generic (no-interface) project can be imported into any database,
     including one that declares an interface -- only a *declared* mismatch
