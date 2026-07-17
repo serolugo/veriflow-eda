@@ -8,10 +8,10 @@ script, or agent without depending on cli.py internals or subprocess.
     result = run_tile("./database", "0001", skip_sim=True, skip_synth=True)
 
 Covers both operating modes (Database Mode: run_tile/db_list_tiles/
-db_list_runs/db_get_run/project_import; Project Mode: project_run/
-get_project_run_result) plus read-only registry lookups an agent needs to
-choose valid config values before writing a project config
-(list_interface_profiles/list_technology_profiles/list_pdks).
+db_list_runs/db_get_run/project_import/db_set/db_tile_set; Project Mode:
+project_run/get_project_run_result/project_set) plus read-only registry
+lookups an agent needs to choose valid config values before writing a
+project config (list_interface_profiles/list_technology_profiles/list_pdks).
 
 VeriFlowError is re-raised directly; callers should import it from
 veriflow.core if they need to catch it. Business-logic outcomes (a run that
@@ -646,3 +646,54 @@ def db_get_run(db_path: str | Path, tile: str | int, run: str | int) -> dict:
         tile_number=tile_number, run_id=str(run)
     )
     return result.to_dict()
+
+
+def project_set(config_path: str | Path, key: str, value: str) -> dict:
+    """Modify a field in veriflow.yaml (Project Mode) without hand-editing
+    YAML -- comments and formatting elsewhere in the file are preserved.
+
+    Returns {"key": key, "value": value, "config": str(config_path)}.
+
+    Supported keys: interface, technology, top-module, pipeline, runs-dir.
+    Raises VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported key,
+    VeriFlowError(VF_SET_INTERFACE_INVALID) / VF_TECHNOLOGY_UNKNOWN /
+    VF_PIPELINE_STAGE_UNKNOWN for an invalid value, or
+    VeriFlowError(VF_PROJECT_CONFIG_NOT_FOUND) if config_path doesn't exist.
+    """
+    from veriflow.commands.set_config import project_set_config
+
+    return project_set_config(_normalize_path(config_path), key, value)
+
+
+def db_set(db_path: str | Path, key: str, value: str) -> dict:
+    """Modify a field in db_path/project_config.yaml (Database Mode)
+    without hand-editing YAML -- comments and formatting are preserved.
+
+    Returns {"key": key, "value": value, "config": str(config_path)}.
+
+    Supported keys: interface, technology, id-format, prefix, shuttle,
+    pipeline. Raises VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported
+    key, or a value-specific code (VF_SET_INTERFACE_INVALID,
+    VF_TECHNOLOGY_UNKNOWN, VF_ID_FORMAT_INVALID, VF_PIPELINE_STAGE_UNKNOWN)
+    for an invalid value.
+    """
+    from veriflow.commands.set_config import db_set_config
+
+    return db_set_config(_normalize_path(db_path), key, value)
+
+
+def db_tile_set(db_path: str | Path, tile: str | int, key: str, value: str) -> dict:
+    """Modify a field in a tile's tile_config.yaml (Database Mode) without
+    hand-editing YAML -- comments and formatting are preserved.
+
+    Returns {"key": key, "value": value, "tile": tile_number_str, "config": ...}.
+
+    Supported keys: top-module, tb-top, name, author, description, tags,
+    objective, pipeline. Raises VeriFlowError(VF_TILE_NUMBER_INVALID) if
+    *tile* isn't numeric, VeriFlowError(VF_TILE_CONFIG_NOT_FOUND) if the
+    tile doesn't exist, VeriFlowError(VF_SET_KEY_UNKNOWN) for an
+    unsupported key.
+    """
+    from veriflow.commands.set_config import db_tile_set_config
+
+    return db_tile_set_config(_normalize_path(db_path), tile, key, value)

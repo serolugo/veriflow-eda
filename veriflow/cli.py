@@ -104,6 +104,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Specific run to import (default: latest run with status PASS)",
     )
 
+    p_project_set = project_sub.add_parser(
+        "set", help="Modify a field in veriflow.yaml (comments/formatting preserved)"
+    )
+    p_project_set.add_argument("key", help="interface | technology | top-module | pipeline | runs-dir")
+    p_project_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
+    p_project_set.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Path to project config file (default: veriflow.yaml)")
+
     # db (Database Mode namespace)
     p_db = sub.add_parser("db", help="Database Mode commands")
     db_sub = p_db.add_subparsers(dest="db_command")
@@ -164,6 +171,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_sr.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_db_sr.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
     p_db_sr.add_argument("--run", required=True, metavar="run-NNN", help="Run ID (e.g. run-001)")
+
+    p_db_set = db_sub.add_parser(
+        "set", help="Modify a field in project_config.yaml (comments/formatting preserved)"
+    )
+    p_db_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_db_set.add_argument("key", help="interface | technology | id-format | prefix | shuttle | pipeline")
+    p_db_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
+
+    # db tile (per-tile config namespace)
+    p_db_tile = db_sub.add_parser("tile", help="Per-tile config commands")
+    db_tile_sub = p_db_tile.add_subparsers(dest="db_tile_command")
+
+    p_db_tile_set = db_tile_sub.add_parser(
+        "set", help="Modify a field in a tile's tile_config.yaml (comments/formatting preserved)"
+    )
+    p_db_tile_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_db_tile_set.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
+    p_db_tile_set.add_argument(
+        "key", help="top-module | tb-top | name | author | description | tags | objective | pipeline"
+    )
+    p_db_tile_set.add_argument("value", help="New value")
 
     # doctor (tool availability check)
     sub.add_parser("doctor", help="Check EDA tool availability for all backends")
@@ -297,6 +325,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.import_project import cmd_import_project
                         exit_code = cmd_import_project(args)
+                    elif project_cmd == "set":
+                        dispatched = True
+                        from veriflow.commands.set_config import cmd_project_set
+                        exit_code = cmd_project_set(args)
                     else:
                         if json_mode:
                             error_payload = {
@@ -324,6 +356,24 @@ def main(argv: list[str] | None = None) -> int:
                         else:
                             parser.print_help()
                         exit_code = 1
+                    elif db_cmd == "tile":
+                        db_tile_cmd = getattr(args, "db_tile_command", None)
+                        if db_tile_cmd == "set":
+                            dispatched = True
+                            from veriflow.commands.set_config import cmd_db_tile_set
+                            exit_code = cmd_db_tile_set(args)
+                        else:
+                            if json_mode:
+                                error_payload = {
+                                    "status": "ERROR",
+                                    "error": {
+                                        "code": "VF_UNKNOWN_COMMAND",
+                                        "message": "No db tile subcommand specified",
+                                    },
+                                }
+                            else:
+                                parser.print_help()
+                            exit_code = 1
                     else:
                         db = Path(args.db).resolve()
 
@@ -396,6 +446,11 @@ def main(argv: list[str] | None = None) -> int:
                             from veriflow.commands.db_read import cmd_db_show_run
                             _show = cmd_db_show_run(db, run_id=args.run, tile=args.tile)
                             db_read_result = {"run": _show.to_dict()}
+
+                        elif db_cmd == "set":
+                            dispatched = True
+                            from veriflow.commands.set_config import cmd_db_set
+                            exit_code = cmd_db_set(args)
 
                 elif args.command == "wrap":
                     wrap_cmd = getattr(args, "wrap_command", None)
@@ -497,7 +552,11 @@ def main(argv: list[str] | None = None) -> int:
                         }
                     elif args.command == "db":
                         _db_cmd = getattr(args, "db_command", None)
-                        result_payload = {"status": "SUCCESS", "command": f"db {_db_cmd}"}
+                        if _db_cmd == "tile":
+                            _db_tile_cmd = getattr(args, "db_tile_command", None)
+                            result_payload = {"status": "SUCCESS", "command": f"db tile {_db_tile_cmd}"}
+                        else:
+                            result_payload = {"status": "SUCCESS", "command": f"db {_db_cmd}"}
                         if _db_cmd == "run" and run_result is not None:
                             result_payload["run_result"] = run_result
                         elif db_read_result is not None:

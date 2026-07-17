@@ -45,6 +45,10 @@ setup(
     "docs": ["mkdocs>=1.6", "mkdocs-material>=9.5"],
     "dev": ["pytest"],
     "pdks": ["volare"],
+    # Comment-preserving YAML round-trip editing for `project set` /
+    # `db set` / `db tile set` (veriflow/core/yaml_config_editor.py).
+    # Without it, those commands fall back to a line-based text patch.
+    "yaml-edit": ["ruamel.yaml"],
     },
     entry_points={
         "console_scripts": [
