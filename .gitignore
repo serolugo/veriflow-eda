@@ -12,5 +12,9 @@ build/
 *.swp
 
 /database/
+/runs/
+/wrap_out/
+/veriflow.yaml
+/wrapper_config.yaml
 
 dev-docs/

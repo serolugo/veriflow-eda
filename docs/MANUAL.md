@@ -643,6 +643,14 @@ Every `db run` command writes `results.json` to the run directory alongside `man
 | `artifacts` | Relative paths to all generated output files |
 | `error` | `null` on success; error object if the run was aborted |
 
+The `synthesis` stage entry additionally includes `technology` (name) and
+`technology_version` (installed PDK version/commit hash, untruncated) when
+the run actually used PDK-mapped synthesis -- both are absent for
+`technology: generic` and for a run whose PDK isn't installed (which falls
+back to generic mapping with a `VF_TECHNOLOGY_PDK_NOT_INSTALLED` warning
+instead, see 14.8). This is the traceability snapshot: it records exactly
+which PDK build produced a given synthesis result.
+
 **Example:**
 
 ```json
@@ -872,7 +880,7 @@ Every `project run` writes `results.json` to the run directory. Unlike Database 
 | `top_module` | RTL top module name |
 | `rtl_sources` / `tb_sources` | Relative paths to the RTL/TB files used |
 | `technology` | Technology target name (`"generic"` by default) |
-| `stages` | Per-stage results (`connectivity`, `simulation`, `synthesis`); a stage absent from the pipeline reports `"status": "SKIPPED"` |
+| `stages` | Per-stage results (`connectivity`, `simulation`, `synthesis`); a stage absent from the pipeline reports `"status": "SKIPPED"`. The `synthesis` entry additionally carries `technology`/`technology_version` (installed PDK version, untruncated) when synthesis was actually PDK-mapped -- see 13.4 for the same field on Database Mode's schema |
 | `rtl_hash` | `{filename: sha256}` for each RTL source, snapshotted at run time |
 | `veriflow_version` | VeriFlow version that produced this run |
 | `timestamp` | ISO 8601 UTC timestamp |
@@ -1005,15 +1013,39 @@ with `VF_TECHNOLOGY_UNKNOWN`.
 
 VeriFlow installs and tracks PDKs itself under `~/.veriflow/pdks/<technology
 name>/` -- no `PDK_ROOT` or liberty path environment variables to set by
-hand. Five subcommands:
+hand. Six subcommands:
 
 ```bash
-veriflow pdk list                 # table: PDK, Status, Liberty, Install hint
-veriflow pdk install <name>       # e.g. sky130, gf180, ihp130
-veriflow pdk update <name>        # re-fetch the pinned/latest version
-veriflow pdk status               # like list, plus full resolved liberty paths
-veriflow pdk versions <name>      # list remote versions available to install
+veriflow pdk list                          # table: PDK, Status, Version, Liberty, Install hint
+veriflow pdk install <name> [--version H]  # e.g. sky130, gf180, ihp130
+veriflow pdk update <name> [--version H]   # re-fetch the pinned/latest (or a specific) version
+veriflow pdk status                        # like list, plus full resolved liberty paths
+veriflow pdk versions <name>               # list remote versions available to install
+veriflow pdk remove <name> [--dry-run]     # delete an installed PDK entirely
 ```
+
+`pdk list`/`pdk status` show the active installed version (an 8-char hash)
+next to `[OK]` entries -- the same value (untruncated) shows up in
+`results.json`'s synthesis stage as `technology_version` (14.4/13.4) for
+runs that actually used a PDK-mapped synthesis.
+
+`pdk remove <name>` deletes `~/.veriflow/pdks/<name>/` entirely. Like
+`install`/`update`, it does **not** prompt for interactive confirmation
+(safe for `--non-interactive`/CI use) -- pass `--dry-run` first to see the
+path and computed size without deleting anything:
+
+```bash
+veriflow pdk remove sky130 --dry-run
+#   Would remove  ~/.veriflow/pdks/sky130  (2.1 GB)
+```
+
+`--version <hash>` on `install`/`update` overrides the pinned
+`default_version` for that one run. Installing/updating to the same
+version already installed is a no-op ("already installed at version
+`<hash>`"); a different version prints a clear message and proceeds
+(replaces the active installation -- for `sky130`/`gf180`, volare's own
+`versions/<hash>/` layout keeps the previous version's files on disk, it
+just re-points which one is active).
 
 Status values in `pdk list`/`pdk status`:
 

@@ -228,3 +228,78 @@ def test_create_pdk_link_posix_symlink_failure_reraises_without_mklink(tmp_path)
         with pytest.raises(OSError, match="permission denied"):
             pdk_manager._create_pdk_link(src, dst)
     mock_run.assert_not_called()
+
+
+# ── get_installed_pdk_version ─────────────────────────────────────────────────
+
+def test_get_installed_pdk_version_none_when_not_installed(tmp_path):
+    with _patch_pdk_root(tmp_path):
+        assert pdk_manager.get_installed_pdk_version("sky130") is None
+
+
+def test_get_installed_pdk_version_unknown_technology_raises():
+    with pytest.raises(VeriFlowError) as exc_info:
+        pdk_manager.get_installed_pdk_version("notapdkname")
+    assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_get_installed_pdk_version_generic_returns_none(tmp_path):
+    with _patch_pdk_root(tmp_path):
+        assert pdk_manager.get_installed_pdk_version("generic") is None
+
+
+def test_get_installed_pdk_version_volare_resolves_hash_from_link_target(tmp_path):
+    """Uses the real _create_pdk_link mechanism to set up the link (real
+    symlink on POSIX, junction-point fallback on Windows without Developer
+    Mode) -- exercises the same resolution path production code relies on,
+    not a mocked stand-in for it."""
+    pdk_dir = tmp_path / "sky130"
+    version_hash = "0fe599b2afb6708d281543108caf8310912f54af"
+    src = pdk_dir / "volare" / "sky130" / "versions" / version_hash / "sky130A"
+    src.mkdir(parents=True)
+    link = pdk_dir / "sky130A"
+    pdk_manager._create_pdk_link(src, link)
+
+    with _patch_pdk_root(tmp_path):
+        version = pdk_manager.get_installed_pdk_version("sky130")
+    assert version == version_hash
+
+
+def test_get_installed_pdk_version_volare_none_when_link_missing(tmp_path):
+    """PDK directory exists but the top-level pdk_subdir link was never
+    created (or the fallback hasn't run yet) -- can't determine a version."""
+    (tmp_path / "sky130").mkdir()
+    with _patch_pdk_root(tmp_path):
+        assert pdk_manager.get_installed_pdk_version("sky130") is None
+
+
+def test_get_installed_pdk_version_git_returns_short_hash(tmp_path):
+    pdk_dir = tmp_path / "ihp130"
+    pdk_dir.mkdir()
+    fake_result = MagicMock(returncode=0, stdout="a3f1c2d4\n", stderr="")
+    with _patch_pdk_root(tmp_path), \
+         patch("veriflow.models.pdk_manager.subprocess.run", return_value=fake_result) as mock_run:
+        version = pdk_manager.get_installed_pdk_version("ihp130")
+    assert version == "a3f1c2d4"
+    args = mock_run.call_args.args[0]
+    assert args[:3] == ["git", "-C", str(pdk_dir)]
+    assert "rev-parse" in args
+    assert "--short" in args
+    assert "HEAD" in args
+
+
+def test_get_installed_pdk_version_git_none_when_command_fails(tmp_path):
+    pdk_dir = tmp_path / "ihp130"
+    pdk_dir.mkdir()
+    fake_result = MagicMock(returncode=128, stdout="", stderr="fatal: not a git repository")
+    with _patch_pdk_root(tmp_path), \
+         patch("veriflow.models.pdk_manager.subprocess.run", return_value=fake_result):
+        assert pdk_manager.get_installed_pdk_version("ihp130") is None
+
+
+def test_get_installed_pdk_version_git_none_when_git_missing(tmp_path):
+    pdk_dir = tmp_path / "ihp130"
+    pdk_dir.mkdir()
+    with _patch_pdk_root(tmp_path), \
+         patch("veriflow.models.pdk_manager.subprocess.run", side_effect=OSError("git not found")):
+        assert pdk_manager.get_installed_pdk_version("ihp130") is None

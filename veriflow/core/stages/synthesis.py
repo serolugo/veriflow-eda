@@ -7,7 +7,7 @@ from veriflow.core.backends.yosys import YosysSynthesisBackend
 from veriflow.core.pipeline import PipelineStage
 from veriflow.framework.stage_input import StageInput
 from veriflow.models.execution_profile import ExecutionProfile, default_execution_profile
-from veriflow.models.pdk_manager import get_liberty_path
+from veriflow.models.pdk_manager import get_installed_pdk_version, get_liberty_path
 from veriflow.models.stage_result import StageResult
 from veriflow.models.technology_profile import DEFAULT_TECHNOLOGY_NAME, get_technology_profile
 
@@ -49,6 +49,17 @@ class SynthesisStage(PipelineStage):
                     "[VF_TECHNOLOGY_PDK_NOT_INSTALLED]"
                 )
 
+        # Traceability snapshot: only meaningful once synthesis is actually
+        # PDK-mapped (liberty resolved above, either from an installed PDK
+        # or an explicit technology.definition) -- "generic" and
+        # missing-PDK-fallback runs report neither field, since there's no
+        # specific PDK build to attribute the run to.
+        technology_field: str | None = None
+        technology_version_field: str | None = None
+        if technology.name != DEFAULT_TECHNOLOGY_NAME and technology.liberty:
+            technology_field = technology.name
+            technology_version_field = get_installed_pdk_version(technology.name)
+
         status, parsed = self._backend.run_synthesis(
             rtl_files=design.rtl_sources,
             top_module=design.top_module,
@@ -72,4 +83,6 @@ class SynthesisStage(PipelineStage):
             log_paths=[log_rel] if synth_log_path.exists() else None,
             metrics=metrics,
             warnings=stage_warnings or None,
+            technology=technology_field,
+            technology_version=technology_version_field,
         )

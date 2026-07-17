@@ -46,6 +46,66 @@ def get_liberty_path(pdk_name: str) -> Path | None:
     return matches[0] if matches else None
 
 
+def get_installed_pdk_version(pdk_name: str) -> str | None:
+    """Return the currently-active installed version/commit hash for
+    *pdk_name*, or None if it can't be determined (not installed, unknown
+    technology, tool unavailable, etc.).
+
+    volare-installed technologies (sky130/gf180): resolves
+    `pdk_root/<pdk_subdir>` (a symlink, or -- on Windows without Developer
+    Mode -- a junction point created by `_create_pdk_link`'s fallback) to
+    its real target under `pdk_root/volare/<volare_pdk>/versions/<hash>/`
+    and extracts `<hash>`. Deliberately does NOT read volare's own
+    `<volare_dir>/current` bookkeeping file: `volare.manage.enable()` only
+    writes that file *after* the symlink-creation step succeeds, so on a
+    machine where that step failed and VeriFlow's junction-point fallback
+    had to run, `current` is never written at all -- confirmed empirically
+    on a real Windows install fixed by that exact fallback. Resolving the
+    directory link itself works regardless of which mechanism created it.
+
+    git-installed technologies (ihp130): `git -C <pdk_path> rev-parse
+    --short HEAD`.
+
+    Returns the full resolved value (a full 40-char hash for volare;
+    git's own short hash, already short, for git) -- callers that need a
+    shorter display string (e.g. `pdk list`'s table) truncate it
+    themselves.
+    """
+    technology = get_technology_profile(pdk_name)  # raises VF_TECHNOLOGY_UNKNOWN
+    pdk_path = get_pdk_path(pdk_name)
+    if pdk_path is None:
+        return None
+
+    if technology.install_method == "volare":
+        if not technology.pdk_subdir or not technology.volare_pdk:
+            return None
+        link = pdk_path / technology.pdk_subdir
+        if not link.exists():
+            return None
+        versions_dir = pdk_path / "volare" / technology.volare_pdk / "versions"
+        try:
+            relative = link.resolve().relative_to(versions_dir.resolve())
+        except (OSError, ValueError):
+            return None
+        return relative.parts[0] if relative.parts else None
+
+    if technology.install_method == "git":
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(pdk_path), "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return None
+        if result.returncode != 0:
+            return None
+        version = (result.stdout or "").strip()
+        return version or None
+
+    return None
+
+
 def build_volare_enable_command(technology: TechnologyProfile, pdk_dir: Path) -> list[str]:
     """Build the `volare enable` argv for installing/updating *technology*
     into *pdk_dir*.

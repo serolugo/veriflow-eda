@@ -39,6 +39,7 @@ class TechnologyProfile:
     liberty_glob: str | None = None        # glob pattern (rooted at pdk_subdir, or the PDK dir itself) for the liberty file
     install_hint: str | None = None        # human-readable hint shown when the PDK isn't installed
     default_version: str | None = None     # pinned volare version/commit hash passed positionally to `volare enable`
+    installed_version: str | None = None   # runtime-only: resolved via pdk_manager.get_installed_pdk_version(); never loaded from yaml
 
 
 def load_technology_profile_from_file(path: Path) -> TechnologyProfile:

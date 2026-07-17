@@ -72,6 +72,12 @@ def _stage_entry(
             waves = _rel_to_root(run_dir / sr.artifacts["wave"][0], root)
         entry["waves"] = waves
 
+    if name == "synthesis":
+        if sr.technology is not None:
+            entry["technology"] = sr.technology
+        if sr.technology_version is not None:
+            entry["technology_version"] = sr.technology_version
+
     return entry
 
 

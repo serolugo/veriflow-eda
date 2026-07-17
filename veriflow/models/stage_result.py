@@ -13,6 +13,8 @@ class StageResult:
     metrics: dict | None = None
     error: dict | None = None
     warnings: list[str] | None = None
+    technology: str | None = None            # synthesis only: technology name actually used for PDK-mapped synthesis
+    technology_version: str | None = None     # synthesis only: installed PDK version/commit hash, for traceability
 
     def to_dict(self) -> dict:
         d: dict = {}
@@ -29,4 +31,8 @@ class StageResult:
             d["error"] = self.error
         if self.warnings:
             d["warnings"] = self.warnings
+        if self.technology is not None:
+            d["technology"] = self.technology
+        if self.technology_version is not None:
+            d["technology_version"] = self.technology_version
         return d

@@ -9,6 +9,7 @@ both consistently.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import json
 from pathlib import Path
@@ -38,11 +39,16 @@ def test_pdk_list_shows_all_registered_technologies(tmp_path, capsys):
         assert name in out
 
 
-def test_pdk_list_marks_generic_ok_no_pdk_required(tmp_path, capsys):
+def test_pdk_list_marks_generic_ok_no_pdk_required(tmp_path):
+    """Checked via the returned dict, not the printed table -- the extra
+    Version column narrows other columns enough that Rich wraps "no PDK
+    required" across two table cell lines on a standard-width console."""
     with patched_pdk_root(tmp_path):
-        main(["pdk", "list"])
-    out = capsys.readouterr().out
-    assert "no PDK required" in out
+        rc, result = _run_pdk_list()
+    assert rc == 0
+    row = next(r for r in result["pdks"] if r["name"] == "generic")
+    assert row["status"] == "OK"
+    assert row["note"] == "no PDK required"
 
 
 def test_pdk_list_marks_uninstalled_pdk_not_installed(tmp_path, capsys):
@@ -51,7 +57,7 @@ def test_pdk_list_marks_uninstalled_pdk_not_installed(tmp_path, capsys):
     assert rc == 0
     row = next(r for r in result["pdks"] if r["name"] == "sky130")
     assert row["status"] == "NOT INSTALLED"
-    assert row["install_hint"] == "veriflow pdk install sky130"
+    assert row["action"] == "pdk install sky130"
 
 
 def test_pdk_list_marks_installed_pdk_with_liberty_ok(tmp_path):
@@ -80,6 +86,94 @@ def _run_pdk_list():
     from veriflow.commands.pdk import cmd_pdk_list
     import argparse
     return cmd_pdk_list(argparse.Namespace())
+
+
+# ── pdk list: "Action" column (install vs. update hint per status) ────────────
+
+def test_pdk_list_action_shows_install_for_not_installed(tmp_path):
+    with patched_pdk_root(tmp_path):
+        rc, result = _run_pdk_list()
+    assert rc == 0
+    row = next(r for r in result["pdks"] if r["name"] == "sky130")
+    assert row["status"] == "NOT INSTALLED"
+    assert row["action"] == "pdk install sky130"
+
+
+def test_pdk_list_action_shows_install_for_installed_no_liberty(tmp_path):
+    (tmp_path / "sky130").mkdir()
+    with patched_pdk_root(tmp_path):
+        rc, result = _run_pdk_list()
+    assert rc == 0
+    row = next(r for r in result["pdks"] if r["name"] == "sky130")
+    assert row["status"] == "INSTALLED, NO LIBERTY"
+    assert row["action"] == "pdk install sky130"
+
+
+def test_pdk_list_action_shows_update_for_ok(tmp_path):
+    lib_dir = tmp_path / "sky130" / "sky130A" / "libs.ref" / "sky130_fd_sc_hd" / "lib"
+    lib_dir.mkdir(parents=True)
+    (lib_dir / "sky130_fd_sc_hd__tt_025C_1v80.lib").write_text("", encoding="utf-8")
+    with patched_pdk_root(tmp_path):
+        rc, result = _run_pdk_list()
+    assert rc == 0
+    row = next(r for r in result["pdks"] if r["name"] == "sky130")
+    assert row["status"] == "OK"
+    assert row["action"] == "pdk update sky130"
+
+
+def test_pdk_list_action_none_for_generic_no_pdk_required(tmp_path):
+    """generic has no installable PDK at all -- no install/update action
+    makes sense, unlike a genuinely-installed [OK] PDK."""
+    with patched_pdk_root(tmp_path):
+        rc, result = _run_pdk_list()
+    assert rc == 0
+    row = next(r for r in result["pdks"] if r["name"] == "generic")
+    assert row["action"] is None
+
+
+def test_pdk_list_table_header_is_action_not_install_hint(tmp_path, capsys):
+    with patched_pdk_root(tmp_path):
+        rc, _ = _run_pdk_list()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Action" in out
+    assert "Install hint" not in out
+
+
+# ── pdk list: home directory abbreviated with ~ ────────────────────────────────
+
+def test_abbreviate_home_replaces_home_prefix():
+    from veriflow.commands.pdk import _abbreviate_home
+    full = str(Path.home() / ".veriflow" / "pdks" / "sky130" / "sky130A" / "lib.lib")
+    result = _abbreviate_home(full)
+    assert result.startswith("~")
+    assert str(Path.home()) not in result
+
+
+def test_abbreviate_home_exact_home_dir_becomes_tilde():
+    from veriflow.commands.pdk import _abbreviate_home
+    assert _abbreviate_home(str(Path.home())) == "~"
+
+
+def test_abbreviate_home_leaves_unrelated_path_unchanged():
+    from veriflow.commands.pdk import _abbreviate_home
+    unrelated = str(Path("some") / "other" / "path" / "file.lib")
+    assert _abbreviate_home(unrelated) == unrelated
+
+
+def test_pdk_list_table_shows_tilde_for_home_rooted_liberty_path(tmp_path, capsys):
+    """Integration check that _print_table actually applies the ~
+    abbreviation -- the returned dict itself keeps the full path (see
+    test_pdk_list_marks_installed_pdk_with_liberty_ok), only the rendered
+    table is abbreviated."""
+    lib_dir = tmp_path / "sky130" / "sky130A" / "libs.ref" / "sky130_fd_sc_hd" / "lib"
+    lib_dir.mkdir(parents=True)
+    (lib_dir / "sky130_fd_sc_hd__tt_025C_1v80.lib").write_text("", encoding="utf-8")
+    with patched_pdk_root(tmp_path), patch("veriflow.commands.pdk.Path.home", return_value=tmp_path):
+        rc, _ = _run_pdk_list()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "~" in out
 
 
 def test_pdk_list_json_mode(tmp_path, capsys):
@@ -552,6 +646,123 @@ def test_pdk_update_recovers_from_symlink_failure_when_files_extracted(tmp_path)
     mock_link.assert_called_once_with(src_dir, tmp_path / "sky130" / "sky130A")
 
 
+# ── volare tarball-cleanup failure recovery (_recover_from_volare_tarball_cleanup_failure) ──
+#
+# Discovered by reproducing a genuine, locked-file PermissionError with a
+# real tempfile.TemporaryDirectory on this Windows machine, then reading
+# the installed `volare` package's source (`manage.py`): `fetch()`
+# downloads every requested library sequentially, then deletes each
+# downloaded `*.tar.zst` in a `finally:` block via a bare
+# `os.unlink(path)` that only catches FileNotFoundError -- not
+# PermissionError. sky130 downloads several large libraries (~3 GB total)
+# vs. gf180's few/smaller ones, making a still-locked archive (e.g. still
+# being scanned by antivirus) far more likely for sky130 specifically.
+# This is a genuine in-band exception -- not the `weakref.finalize`
+# GC-cleanup traceback `_is_volare_cleanup_noise` already handles -- so it
+# has no "Exception ignored in:" header, aborts `enable()` with a
+# non-zero returncode, and previously leaked straight through the raw,
+# unfiltered `raise VeriFlowError(...:\n{result.stderr or result.stdout}")`
+# on that failure branch.
+
+_TARBALL_CLEANUP_MESSAGE = (
+    "[red][WinError 32] El proceso no tiene acceso al archivo porque "
+    "est� siendo utilizado por otro proceso: "
+    "'C:\\\\Users\\\\Roman\\\\AppData\\\\Local\\\\Temp\\\\tmp4u6on054.volare\\\\sky130_fd_sc_hd.tar.zst'"
+)
+
+
+def test_is_volare_tarball_cleanup_failure_true_for_realistic_message():
+    from veriflow.commands.pdk import _is_volare_tarball_cleanup_failure
+    assert _is_volare_tarball_cleanup_failure(_TARBALL_CLEANUP_MESSAGE) is True
+
+
+def test_is_volare_tarball_cleanup_failure_false_for_unrelated_permission_error():
+    from veriflow.commands.pdk import _is_volare_tarball_cleanup_failure
+    unrelated = "[red][WinError 32] The process cannot access the file: 'C:\\\\some\\\\other\\\\file.txt'"
+    assert _is_volare_tarball_cleanup_failure(unrelated) is False
+
+
+def test_is_volare_tarball_cleanup_failure_false_for_unrelated_failure():
+    from veriflow.commands.pdk import _is_volare_tarball_cleanup_failure
+    assert _is_volare_tarball_cleanup_failure("fatal: network error") is False
+
+
+def test_recover_from_volare_tarball_cleanup_failure_ignores_unrelated_failure(tmp_path):
+    from veriflow.commands.pdk import _recover_from_volare_tarball_cleanup_failure
+    technology = _fake_sky130_technology()
+    fake_result = MagicMock(returncode=1, stdout="", stderr="fatal: network error")
+    with patch("veriflow.commands.pdk._ensure_pdk_subdir_link") as mock_ensure:
+        recovered = _recover_from_volare_tarball_cleanup_failure(
+            technology, tmp_path, fake_result, step_label="pdk install"
+        )
+    assert recovered is False
+    mock_ensure.assert_not_called()
+
+
+def test_recover_from_volare_tarball_cleanup_failure_detects_error_in_stdout(tmp_path):
+    """The real-world case: volare's Console() defaults to stdout, so the
+    error text lands there, not in stderr (same as the symlink-privilege
+    failure's presentation)."""
+    from veriflow.commands.pdk import _recover_from_volare_tarball_cleanup_failure
+    technology = _fake_sky130_technology()
+    fake_result = MagicMock(returncode=1, stdout=_TARBALL_CLEANUP_MESSAGE, stderr="")
+    with patch("veriflow.commands.pdk._ensure_pdk_subdir_link") as mock_ensure:
+        recovered = _recover_from_volare_tarball_cleanup_failure(
+            technology, tmp_path, fake_result, step_label="pdk install"
+        )
+    assert recovered is True
+    mock_ensure.assert_called_once_with(technology, tmp_path, step_label="pdk install")
+
+
+def test_pdk_install_recovers_from_tarball_cleanup_failure_when_files_extracted(tmp_path, capsys):
+    """End-to-end: volare exits non-zero because it couldn't delete a
+    locked temp tarball, but the library files it already extracted are on
+    disk -- install must still succeed (rc == 0), not report
+    VF_PDK_INSTALL_FAILED, and the raw PermissionError text must not reach
+    the user unfiltered."""
+    src_dir = tmp_path / "sky130" / "volare" / "sky130" / "versions" / _SKY130_VERSION / "sky130A"
+    src_dir.mkdir(parents=True)
+    fake_result = MagicMock(returncode=1, stderr="", stdout=_TARBALL_CLEANUP_MESSAGE)
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk._create_pdk_link") as mock_link:
+        rc = main(["--non-interactive", "pdk", "install", "sky130"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "installed" in out
+    assert "WinError 32" not in out
+    mock_link.assert_called_once_with(src_dir, tmp_path / "sky130" / "sky130A")
+
+
+def test_pdk_install_tarball_cleanup_recovery_still_fails_when_files_missing(tmp_path):
+    """Same failure signature, but the files genuinely aren't on disk
+    either -- must still raise (VF_PDK_INSTALL_INCOMPLETE), not silently
+    report success."""
+    fake_result = MagicMock(returncode=1, stderr="", stdout=_TARBALL_CLEANUP_MESSAGE)
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result):
+        from veriflow.commands.pdk import cmd_pdk_install
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_install(argparse.Namespace(pdk_name="sky130", non_interactive=True))
+    assert exc_info.value.code == "VF_PDK_INSTALL_INCOMPLETE"
+
+
+def test_pdk_update_recovers_from_tarball_cleanup_failure_when_files_extracted(tmp_path):
+    (tmp_path / "sky130").mkdir()
+    src_dir = tmp_path / "sky130" / "volare" / "sky130" / "versions" / _SKY130_VERSION / "sky130A"
+    src_dir.mkdir(parents=True)
+    fake_result = MagicMock(returncode=1, stderr="", stdout=_TARBALL_CLEANUP_MESSAGE)
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk._create_pdk_link") as mock_link:
+        rc = main(["--non-interactive", "pdk", "update", "sky130"])
+    assert rc == 0
+    mock_link.assert_called_once_with(src_dir, tmp_path / "sky130" / "sky130A")
+
+
 # ── pdk update ────────────────────────────────────────────────────────────────
 
 def test_pdk_update_not_installed_prints_message_and_exits_1(tmp_path, capsys):
@@ -651,6 +862,141 @@ def test_warn_on_stderr_whitespace_only_is_silent():
     with patch("veriflow.commands.pdk.print_warn") as mock_warn:
         _warn_on_stderr(fake_result)
     mock_warn.assert_not_called()
+
+
+# ── volare temp-file cleanup noise filtering ──────────────────────────────────
+#
+# On Windows, a `tempfile.py` finalizer can fail with PermissionError
+# [WinError 32] trying to delete a `*.tar.zst` under a `*.volare` temp dir
+# because the OS hasn't released the file handle yet by the time garbage
+# collection runs the finalizer -- the install has already succeeded by
+# then. CPython prints this as an "Exception ignored in: <finalize
+# object ...>" traceback on stderr; it's pure noise, not an install error.
+
+_CLEANUP_TRACEBACK = (
+    "Exception ignored in: <finalize object at 0x0000020F12345678; dead>\n"
+    "Traceback (most recent call last):\n"
+    '  File "C:\\Python313\\Lib\\tempfile.py", line 900, in _cleanup\n'
+    "    cls._rmtree(name, ignore_errors=ignore_errors)\n"
+    '  File "C:\\Python313\\Lib\\tempfile.py", line 880, in _rmtree\n'
+    "    _shutil.rmtree(name, onexc=onexc)\n"
+    "PermissionError: [WinError 32] The process cannot access the file "
+    "because it is being used by another process: "
+    "'C:\\\\Users\\\\Roman\\\\AppData\\\\Local\\\\Temp\\\\tmp1a2b3c4d.volare\\\\sky130.tar.zst'\n"
+)
+
+_REAL_ERROR_LINE = "Error: could not resolve PDK version 'bogus-hash' for sky130\n"
+
+
+def test_is_volare_cleanup_noise_true_for_pure_traceback():
+    from veriflow.commands.pdk import _is_volare_cleanup_noise
+    assert _is_volare_cleanup_noise(_CLEANUP_TRACEBACK) is True
+
+
+def test_is_volare_cleanup_noise_true_for_empty_or_whitespace():
+    from veriflow.commands.pdk import _is_volare_cleanup_noise
+    assert _is_volare_cleanup_noise("") is True
+    assert _is_volare_cleanup_noise("   \n  ") is True
+
+
+def test_is_volare_cleanup_noise_false_for_real_error():
+    from veriflow.commands.pdk import _is_volare_cleanup_noise
+    assert _is_volare_cleanup_noise(_REAL_ERROR_LINE) is False
+
+
+def test_is_volare_cleanup_noise_false_when_mixed_with_real_error():
+    """Not PURELY the cleanup traceback -- must not be classified as noise,
+    so mixed content is never silently swallowed whole."""
+    from veriflow.commands.pdk import _is_volare_cleanup_noise
+    assert _is_volare_cleanup_noise(_CLEANUP_TRACEBACK + _REAL_ERROR_LINE) is False
+
+
+def test_is_volare_cleanup_noise_false_for_unrelated_permission_error():
+    """Same WinError 32 code, but not a volare temp .tar.zst -- must not be
+    misclassified as the known-harmless case."""
+    from veriflow.commands.pdk import _is_volare_cleanup_noise
+    unrelated = (
+        "Exception ignored in: <finalize object at 0x1; dead>\n"
+        "Traceback (most recent call last):\n"
+        '  File "tempfile.py", line 1, in _cleanup\n'
+        "PermissionError: [WinError 32] The process cannot access the file "
+        "because it is being used by another process: 'C:\\\\some\\\\other\\\\file.txt'\n"
+    )
+    assert _is_volare_cleanup_noise(unrelated) is False
+
+
+def test_filter_volare_cleanup_noise_removes_pure_traceback():
+    from veriflow.commands.pdk import _filter_volare_cleanup_noise
+    assert _filter_volare_cleanup_noise(_CLEANUP_TRACEBACK) == ""
+
+
+def test_filter_volare_cleanup_noise_empty_stays_empty():
+    from veriflow.commands.pdk import _filter_volare_cleanup_noise
+    assert _filter_volare_cleanup_noise("") == ""
+    assert _filter_volare_cleanup_noise("   \n  ") == ""
+
+
+def test_filter_volare_cleanup_noise_keeps_real_error_unchanged():
+    from veriflow.commands.pdk import _filter_volare_cleanup_noise
+    assert _filter_volare_cleanup_noise(_REAL_ERROR_LINE) == _REAL_ERROR_LINE.strip()
+
+
+def test_filter_volare_cleanup_noise_strips_traceback_keeps_real_error():
+    """Mixed stderr: cleanup traceback + a real error -- only the real
+    error should survive filtering."""
+    from veriflow.commands.pdk import _filter_volare_cleanup_noise
+    mixed = _CLEANUP_TRACEBACK + _REAL_ERROR_LINE
+    result = _filter_volare_cleanup_noise(mixed)
+    assert result == _REAL_ERROR_LINE.strip()
+    assert "Exception ignored in" not in result
+    assert "tempfile.py" not in result
+
+
+def test_filter_volare_cleanup_noise_real_error_before_traceback():
+    """Order shouldn't matter -- real error first, cleanup traceback after."""
+    from veriflow.commands.pdk import _filter_volare_cleanup_noise
+    mixed = _REAL_ERROR_LINE + _CLEANUP_TRACEBACK
+    result = _filter_volare_cleanup_noise(mixed)
+    assert result == _REAL_ERROR_LINE.strip()
+
+
+def test_warn_on_stderr_pure_cleanup_noise_is_suppressed():
+    from veriflow.commands.pdk import _warn_on_stderr
+    fake_result = MagicMock(returncode=0, stderr=_CLEANUP_TRACEBACK)
+    with patch("veriflow.commands.pdk.print_warn") as mock_warn:
+        _warn_on_stderr(fake_result)
+    mock_warn.assert_not_called()
+
+
+def test_warn_on_stderr_mixed_shows_only_real_error():
+    from veriflow.commands.pdk import _warn_on_stderr
+    fake_result = MagicMock(returncode=0, stderr=_CLEANUP_TRACEBACK + _REAL_ERROR_LINE)
+    with patch("veriflow.commands.pdk.print_warn") as mock_warn:
+        _warn_on_stderr(fake_result)
+    mock_warn.assert_called_once_with(_REAL_ERROR_LINE.strip())
+
+
+def test_warn_on_stderr_real_error_without_cleanup_shown_normally():
+    from veriflow.commands.pdk import _warn_on_stderr
+    fake_result = MagicMock(returncode=0, stderr=_REAL_ERROR_LINE)
+    with patch("veriflow.commands.pdk.print_warn") as mock_warn:
+        _warn_on_stderr(fake_result)
+    mock_warn.assert_called_once_with(_REAL_ERROR_LINE.strip())
+
+
+def test_pdk_install_suppresses_cleanup_noise_end_to_end(tmp_path, capsys):
+    """End-to-end: volare exits 0 with only cleanup-traceback stderr --
+    install reports success with no warning noise shown to the user."""
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    fake_result = MagicMock(returncode=0, stdout="", stderr=_CLEANUP_TRACEBACK)
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result):
+        rc = main(["pdk", "install", "sky130"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Exception ignored in" not in out
+    assert "tempfile.py" not in out
 
 
 # ── pdk versions ──────────────────────────────────────────────────────────────
@@ -753,6 +1099,245 @@ def test_pdk_versions_parses():
     assert args.pdk_name == "sky130"
 
 
+# ── pdk remove ────────────────────────────────────────────────────────────────
+
+def test_pdk_remove_not_installed_prints_error_and_exits_1(tmp_path):
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "remove", "sky130"])
+    assert rc == 1
+
+
+def test_pdk_remove_unknown_technology_raises(tmp_path):
+    from veriflow.commands.pdk import cmd_pdk_remove
+    with patched_pdk_root(tmp_path):
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_remove(argparse.Namespace(pdk_name="notapdkname", dry_run=False))
+    assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_pdk_remove_deletes_installed_pdk(tmp_path, capsys):
+    pdk_dir = tmp_path / "sky130"
+    (pdk_dir / "sky130A" / "libs.ref").mkdir(parents=True)
+    (pdk_dir / "sky130A" / "libs.ref" / "cells.lib").write_text("x" * 1000, encoding="utf-8")
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "remove", "sky130"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert not pdk_dir.exists()
+    assert "removed" in out
+
+
+def test_pdk_remove_deletes_readonly_files(tmp_path, capsys):
+    """Regression test for a real bug found via manual verification: git
+    marks files under .git/objects/pack/ read-only on Windows, and plain
+    shutil.rmtree raises PermissionError: [WinError 5] Access is denied on
+    them. Reproduced for real against an actual git-installed PDK (ihp130)
+    on this machine; cmd_pdk_remove must clear the read-only bit and retry."""
+    import os
+    import stat
+
+    pdk_dir = tmp_path / "ihp130"
+    pack_dir = pdk_dir / ".git" / "objects" / "pack"
+    pack_dir.mkdir(parents=True)
+    readonly_file = pack_dir / "pack-abc123.idx"
+    readonly_file.write_bytes(b"fake pack data")
+    os.chmod(readonly_file, stat.S_IREAD)
+
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "remove", "ihp130"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert not pdk_dir.exists()
+    assert "removed" in out
+
+
+def test_pdk_remove_dry_run_does_not_delete(tmp_path, capsys):
+    pdk_dir = tmp_path / "sky130"
+    (pdk_dir / "sky130A" / "libs.ref").mkdir(parents=True)
+    (pdk_dir / "sky130A" / "libs.ref" / "cells.lib").write_text("x" * (2 * 1024 * 1024), encoding="utf-8")
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "remove", "sky130", "--dry-run"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert pdk_dir.exists()  # nothing deleted
+    assert "Would remove" in out
+    assert "MB" in out or "GB" in out
+    assert "sky130" in out
+
+
+def test_pdk_remove_dry_run_shows_correct_size(tmp_path):
+    from veriflow.commands.pdk import cmd_pdk_remove
+    pdk_dir = tmp_path / "sky130"
+    (pdk_dir / "sky130A").mkdir(parents=True)
+    (pdk_dir / "sky130A" / "a.lib").write_bytes(b"x" * 500_000)
+    (pdk_dir / "sky130A" / "b.lib").write_bytes(b"x" * 500_000)
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk.shutil.rmtree") as mock_rmtree:
+        rc = cmd_pdk_remove(argparse.Namespace(pdk_name="sky130", dry_run=True))
+    assert rc == 0
+    mock_rmtree.assert_not_called()
+
+
+def test_format_size_mb_and_gb():
+    from veriflow.commands.pdk import _format_size
+    assert _format_size(500 * 1024 * 1024) == "500.0 MB"
+    assert _format_size(int(2.5 * 1024 * 1024 * 1024)) == "2.50 GB"
+
+
+def test_dir_size_bytes_sums_files_recursively(tmp_path):
+    from veriflow.commands.pdk import _dir_size_bytes
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"1" * 100)
+    (tmp_path / "sub" / "b.txt").write_bytes(b"2" * 200)
+    assert _dir_size_bytes(tmp_path) == 300
+
+
+# ── pdk install/update --version ───────────────────────────────────────────────
+
+def test_pdk_install_version_passed_positionally_to_volare(tmp_path):
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run, \
+         patch("veriflow.commands.pdk._ensure_pdk_subdir_link"):
+        rc = main(["pdk", "install", "sky130", "--version", "deadbeef00"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    assert "deadbeef00" in args
+    assert args[args.index("--pdk") + 2] == "deadbeef00"
+    # overrides the yaml-pinned default_version, not appended alongside it
+    assert "0fe599b2afb6708d281543108caf8310912f54af" not in args
+
+
+def test_pdk_install_no_version_flag_uses_pinned_default(tmp_path):
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run, \
+         patch("veriflow.commands.pdk._ensure_pdk_subdir_link"):
+        rc = main(["pdk", "install", "sky130"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    assert "0fe599b2afb6708d281543108caf8310912f54af" in args
+
+
+def test_pdk_install_same_version_reports_already_installed(tmp_path, capsys):
+    lib_dir = tmp_path / "sky130" / "sky130A" / "libs.ref" / "sky130_fd_sc_hd" / "lib"
+    lib_dir.mkdir(parents=True)
+    (lib_dir / "sky130_fd_sc_hd__tt_025C_1v80.lib").write_text("", encoding="utf-8")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk.get_installed_pdk_version", return_value="abc123"), \
+         patch("veriflow.commands.pdk.subprocess.run") as mock_run:
+        rc = main(["pdk", "install", "sky130", "--version", "abc123"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "already installed" in out
+    assert "abc123" in out
+    mock_run.assert_not_called()
+
+
+def test_pdk_install_different_version_shows_message_and_proceeds(tmp_path, capsys):
+    lib_dir = tmp_path / "sky130" / "sky130A" / "libs.ref" / "sky130_fd_sc_hd" / "lib"
+    lib_dir.mkdir(parents=True)
+    (lib_dir / "sky130_fd_sc_hd__tt_025C_1v80.lib").write_text("", encoding="utf-8")
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk.get_installed_pdk_version", return_value="old_hash"), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run, \
+         patch("veriflow.commands.pdk._ensure_pdk_subdir_link"):
+        rc = main(["pdk", "install", "sky130", "--version", "new_hash"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "old_hash" in out
+    assert "--version new_hash" in out
+    assert "replace" in out
+    assert "installation" in out
+    # proceeded with the (re)install rather than stopping
+    mock_run.assert_called_once()
+    args = mock_run.call_args.args[0]
+    assert "new_hash" in args
+
+
+def test_pdk_update_version_flag_fetches_and_checks_out_volare(tmp_path):
+    """volare technologies route --version through build_volare_enable_command
+    (same as install) -- no separate fetch/checkout needed for volare."""
+    (tmp_path / "sky130").mkdir()
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run, \
+         patch("veriflow.commands.pdk._ensure_pdk_subdir_link"):
+        rc = main(["pdk", "update", "sky130", "--version", "cafef00d"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    assert "cafef00d" in args
+
+
+def test_pdk_install_git_version_checks_out_after_clone(tmp_path):
+    fake_clone = MagicMock(returncode=0, stdout="", stderr="")
+    fake_checkout = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._git_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", side_effect=[fake_clone, fake_checkout]) as mock_run:
+        rc = main(["pdk", "install", "ihp130", "--version", "22f2a25f"])
+    assert rc == 0
+    assert mock_run.call_count == 2
+    clone_args = mock_run.call_args_list[0].args[0]
+    checkout_args = mock_run.call_args_list[1].args[0]
+    assert clone_args[:2] == ["git", "clone"]
+    assert checkout_args == ["git", "-C", str(tmp_path / "ihp130"), "checkout", "22f2a25f"]
+
+
+def test_pdk_install_git_no_version_skips_checkout(tmp_path):
+    fake_clone = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._git_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_clone) as mock_run:
+        rc = main(["pdk", "install", "ihp130"])
+    assert rc == 0
+    mock_run.assert_called_once()  # clone only, no checkout
+
+
+def test_pdk_install_git_checkout_failure_raises(tmp_path):
+    fake_clone = MagicMock(returncode=0, stdout="", stderr="")
+    fake_checkout = MagicMock(returncode=1, stdout="", stderr="error: pathspec did not match")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._git_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", side_effect=[fake_clone, fake_checkout]):
+        from veriflow.commands.pdk import cmd_pdk_install
+        with pytest.raises(VeriFlowError) as exc_info:
+            cmd_pdk_install(argparse.Namespace(pdk_name="ihp130", version="bogus"))
+    assert exc_info.value.code == "VF_PDK_INSTALL_FAILED"
+
+
+def test_pdk_update_git_version_fetches_and_checks_out(tmp_path):
+    (tmp_path / "ihp130").mkdir()
+    fake_fetch = MagicMock(returncode=0, stdout="", stderr="")
+    fake_checkout = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._git_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", side_effect=[fake_fetch, fake_checkout]) as mock_run:
+        rc = main(["pdk", "update", "ihp130", "--version", "22f2a25f"])
+    assert rc == 0
+    fetch_args = mock_run.call_args_list[0].args[0]
+    checkout_args = mock_run.call_args_list[1].args[0]
+    assert fetch_args == ["git", "-C", str(tmp_path / "ihp130"), "fetch"]
+    assert checkout_args == ["git", "-C", str(tmp_path / "ihp130"), "checkout", "22f2a25f"]
+
+
+def test_pdk_update_git_no_version_pulls_as_before(tmp_path):
+    (tmp_path / "ihp130").mkdir()
+    fake_pull = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._git_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_pull) as mock_run:
+        rc = main(["pdk", "update", "ihp130"])
+    assert rc == 0
+    args = mock_run.call_args.args[0]
+    assert args == ["git", "-C", str(tmp_path / "ihp130"), "pull"]
+
+
 # ── Parser ────────────────────────────────────────────────────────────────────
 
 def test_pdk_parses():
@@ -763,6 +1348,180 @@ def test_pdk_parses():
     assert args.pdk_name == "sky130"
 
 
+def test_pdk_remove_parses():
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["pdk", "remove", "sky130", "--dry-run"])
+    assert args.command == "pdk"
+    assert args.pdk_command == "remove"
+    assert args.pdk_name == "sky130"
+    assert args.dry_run is True
+
+
+def test_pdk_install_version_flag_parses():
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["pdk", "install", "sky130", "--version", "abc123"])
+    assert args.version == "abc123"
+
+
+def test_pdk_update_version_flag_parses():
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["pdk", "update", "sky130", "--version", "abc123"])
+    assert args.version == "abc123"
+
+
 def test_pdk_no_subcommand_returns_1():
     rc = main(["pdk"])
     assert rc == 1
+
+
+# ── install/update progress spinner (_run_subprocess_with_spinner) ────────────
+#
+# sky130 installs can take several minutes and ~3 GB -- with nothing printed
+# between the initial "Installing sky130 ..." step line and the final
+# result, it's indistinguishable from a hang. A Rich Progress spinner runs
+# while the volare/git subprocess executes on a worker thread, and is
+# suppressed entirely under --non-interactive so it never pollutes CI logs.
+
+def test_run_subprocess_with_spinner_non_interactive_skips_spinner():
+    from veriflow.commands.pdk import _run_subprocess_with_spinner
+    fake_result = MagicMock(returncode=0, stdout="ok", stderr="")
+    with patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result) as mock_run, \
+         patch("veriflow.commands.pdk.Progress") as mock_progress_cls:
+        result = _run_subprocess_with_spinner(["echo", "hi"], "Installing...", non_interactive=True)
+    assert result is fake_result
+    mock_run.assert_called_once_with(["echo", "hi"], capture_output=True, text=True)
+    mock_progress_cls.assert_not_called()
+
+
+def test_run_subprocess_with_spinner_interactive_shows_spinner():
+    """A mocked subprocess that takes a moment -- the spinner (Progress)
+    must be constructed and given a task carrying the install message while
+    the subprocess (running on a worker thread) is still in flight."""
+    import time
+
+    from veriflow.commands.pdk import _run_subprocess_with_spinner
+
+    fake_result = MagicMock(returncode=0, stdout="ok", stderr="")
+
+    def _slow_run(*_args, **_kwargs):
+        time.sleep(0.2)
+        return fake_result
+
+    mock_progress_instance = MagicMock()
+    mock_progress_instance.__enter__.return_value = mock_progress_instance
+
+    with patch("veriflow.commands.pdk.subprocess.run", side_effect=_slow_run), \
+         patch("veriflow.commands.pdk.Progress", return_value=mock_progress_instance) as mock_progress_cls:
+        result = _run_subprocess_with_spinner(
+            ["volare", "enable"],
+            "Installing sky130 via volare... (this may take several minutes)",
+            non_interactive=False,
+        )
+
+    assert result is fake_result
+    mock_progress_cls.assert_called_once()
+    mock_progress_instance.add_task.assert_called_once_with(
+        "Installing sky130 via volare... (this may take several minutes)", total=None
+    )
+    mock_progress_instance.__exit__.assert_called_once()
+
+
+def test_pdk_install_non_interactive_suppresses_spinner(tmp_path):
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk.Progress") as mock_progress_cls:
+        rc = main(["--non-interactive", "pdk", "install", "sky130"])
+    assert rc == 0
+    mock_progress_cls.assert_not_called()
+
+
+def test_pdk_install_interactive_uses_spinner(tmp_path):
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    mock_progress_instance = MagicMock()
+    mock_progress_instance.__enter__.return_value = mock_progress_instance
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk.Progress", return_value=mock_progress_instance) as mock_progress_cls:
+        rc = main(["pdk", "install", "sky130"])
+    assert rc == 0
+    mock_progress_cls.assert_called_once()
+    call_args = mock_progress_instance.add_task.call_args
+    assert "sky130" in call_args.args[0]
+    assert "volare" in call_args.args[0]
+
+
+def test_pdk_update_non_interactive_suppresses_spinner(tmp_path):
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk.Progress") as mock_progress_cls:
+        rc = main(["--non-interactive", "pdk", "update", "sky130"])
+    assert rc == 0
+    mock_progress_cls.assert_not_called()
+
+
+def test_pdk_update_interactive_uses_spinner(tmp_path):
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    mock_progress_instance = MagicMock()
+    mock_progress_instance.__enter__.return_value = mock_progress_instance
+    with patched_pdk_root(tmp_path), \
+         patch("veriflow.commands.pdk._volare_available", return_value=True), \
+         patch("veriflow.commands.pdk.subprocess.run", return_value=fake_result), \
+         patch("veriflow.commands.pdk.Progress", return_value=mock_progress_instance) as mock_progress_cls:
+        rc = main(["pdk", "update", "sky130"])
+    assert rc == 0
+    mock_progress_cls.assert_called_once()
+
+
+# ── pdk path ────────────────────────────────────────────────────────────────
+
+def test_pdk_path_prints_plain_path_for_installed_pdk(tmp_path, capsys):
+    (tmp_path / "sky130" / "sky130A").mkdir(parents=True)
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "path", "sky130"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == str(tmp_path / "sky130")
+    assert captured.err == ""
+
+
+def test_pdk_path_not_installed_errors_to_stderr(tmp_path, capsys):
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "path", "sky130"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.out == ""
+    assert "not installed" in captured.err
+
+
+def test_pdk_path_prints_root_even_without_liberty(tmp_path, capsys):
+    """[INSTALLED, NO LIBERTY] -- get_pdk_path only checks the directory
+    exists, so the root path is still printed (useful for diagnosing an
+    incomplete install)."""
+    (tmp_path / "sky130").mkdir()
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "path", "sky130"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == str(tmp_path / "sky130")
+
+
+def test_pdk_path_unknown_technology_fails(tmp_path):
+    with patched_pdk_root(tmp_path):
+        rc = main(["pdk", "path", "notapdkname"])
+    assert rc == 1
+
+
+def test_pdk_path_flag_parses():
+    from veriflow.cli import build_parser
+    args = build_parser().parse_args(["pdk", "path", "sky130"])
+    assert args.pdk_command == "path"
+    assert args.pdk_name == "sky130"

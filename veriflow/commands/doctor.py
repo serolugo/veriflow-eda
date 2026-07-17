@@ -4,30 +4,39 @@ import argparse
 
 from veriflow import __homepage__
 from veriflow.core.backends.registry import _CONNECTIVITY, _SIMULATION, _SYNTHESIS
-from veriflow.models.pdk_manager import get_liberty_path
+from veriflow.models.pdk_manager import get_installed_pdk_version, get_liberty_path
 from veriflow.models.technology_profile import get_technology_profile, list_technology_profile_names
 from veriflow.ui.output import console
 
 
 def _technologies_report() -> list[dict]:
     """One entry per registered technology: name, whether its liberty file is
-    resolvable, and (when not) the install hint. Technologies with no
-    installable PDK (install_method is None, e.g. "generic") always report
-    "OK" -- see `models/pdk_manager.py`."""
+    resolvable, the active installed version (when applicable), and (when
+    not installed) the install hint. Technologies with no installable PDK
+    (install_method is None, e.g. "generic") always report "OK" -- see
+    `models/pdk_manager.py`."""
     entries: list[dict] = []
     for name in list_technology_profile_names():
         technology = get_technology_profile(name)
         if technology.install_method is None:
-            entries.append({"name": name, "status": "OK", "liberty": None, "install_hint": None})
+            entries.append({"name": name, "status": "OK", "liberty": None, "version": None, "install_hint": None})
             continue
         liberty_path = get_liberty_path(name)
         if liberty_path is not None:
-            entries.append({"name": name, "status": "OK", "liberty": str(liberty_path), "install_hint": None})
+            version = get_installed_pdk_version(name)
+            entries.append({
+                "name": name,
+                "status": "OK",
+                "liberty": str(liberty_path),
+                "version": version[:8] if version else None,
+                "install_hint": None,
+            })
         else:
             entries.append({
                 "name": name,
                 "status": "NOT INSTALLED",
                 "liberty": None,
+                "version": None,
                 "install_hint": technology.install_hint or f"veriflow pdk install {name}",
             })
     return entries
@@ -85,7 +94,8 @@ def _print_report(report: dict) -> None:
     for tech in report.get("technologies", []):
         if tech["status"] == "OK":
             marker = "[pass]\\[OK][/pass]          "
-            detail = tech["liberty"] or "(no PDK required)"
+            version_prefix = f"{tech['version']}  " if tech.get("version") else ""
+            detail = f"{version_prefix}{tech['liberty'] or '(no PDK required)'}"
         else:
             marker = "[fail]\\[NOT INSTALLED][/fail]"
             detail = f"run: {tech['install_hint']}"

@@ -423,6 +423,8 @@ class DatabaseWorkflow:
             synth_log_path=synth_log_path, wave_path=wave_path,
             profile=pipeline_profile,
             warnings=warnings,
+            synth_technology=_synth_sr.technology,
+            synth_technology_version=_synth_sr.technology_version,
         )
 
         return DatabaseRunResult(
@@ -656,6 +658,8 @@ def _finalize_run(
     wave_path: Path,
     profile: ExecutionProfile,
     warnings: list[str] | None = None,
+    synth_technology: str | None = None,
+    synth_technology_version: str | None = None,
 ) -> dict:
     """Generate all documentation, update CSV, and return the run_result dict."""
 
@@ -818,6 +822,8 @@ def _finalize_run(
                 tool=get_synthesis_tool_name(profile.synthesis_backend),
                 log_paths=synth_logs or None,
                 metrics=synth_metrics,
+                technology=synth_technology,
+                technology_version=synth_technology_version,
             ).to_dict(),
         },
         "sources": {

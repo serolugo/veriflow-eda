@@ -254,3 +254,117 @@ def test_synthesis_stage_does_not_override_explicit_liberty(tmp_path):
     finally:
         from veriflow.models.technology_profile import _REGISTRY
         _REGISTRY.pop("preconfigured", None)
+
+
+# ── StageResult.technology / technology_version (traceability snapshot) ──────
+
+def test_synthesis_stage_reports_technology_and_version_when_pdk_installed(tmp_path):
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    fake_liberty = tmp_path / "sky130.lib"
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=fake_liberty), \
+         patch("veriflow.core.stages.synthesis.get_installed_pdk_version", return_value="0fe599b2afb6708d281543108caf8310912f54af"):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    assert result.technology == "sky130"
+    assert result.technology_version == "0fe599b2afb6708d281543108caf8310912f54af"
+
+
+def test_synthesis_stage_omits_technology_fields_when_pdk_not_installed(tmp_path):
+    """PDK missing -- falls back to generic synthesis -- no technology/
+    technology_version in the traceability snapshot, since none was
+    actually applied."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=None):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    assert result.technology is None
+    assert result.technology_version is None
+
+
+def test_synthesis_stage_omits_technology_fields_for_generic(tmp_path):
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile()  # generic
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    result = stage.run(StageInput(design=design, context=ctx))
+    assert result.technology is None
+    assert result.technology_version is None
+
+
+def test_synthesis_stage_reports_technology_with_no_version_when_unresolvable(tmp_path):
+    """liberty resolved (PDK-mapped synthesis genuinely happened), but the
+    installed version can't be determined -- "technology" is still
+    meaningful even if "technology_version" isn't."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    fake_liberty = tmp_path / "sky130.lib"
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=fake_liberty), \
+         patch("veriflow.core.stages.synthesis.get_installed_pdk_version", return_value=None):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    assert result.technology == "sky130"
+    assert result.technology_version is None
+
+
+def test_stage_result_to_dict_includes_technology_fields_when_set():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="synthesis", status="PASS", technology="sky130", technology_version="abc123")
+    d = sr.to_dict()
+    assert d["technology"] == "sky130"
+    assert d["technology_version"] == "abc123"
+
+
+def test_stage_result_to_dict_omits_technology_fields_when_none():
+    from veriflow.models.stage_result import StageResult
+    sr = StageResult(name="synthesis", status="PASS")
+    d = sr.to_dict()
+    assert "technology" not in d
+    assert "technology_version" not in d

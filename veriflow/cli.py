@@ -17,10 +17,11 @@ Usage:
     veriflow wrap wizard
     veriflow doctor
     veriflow pdk list
-    veriflow pdk install <name>
-    veriflow pdk update <name>
+    veriflow pdk install <name> [--version <hash>]
+    veriflow pdk update <name> [--version <hash>]
     veriflow pdk status
     veriflow pdk versions <name>
+    veriflow pdk remove <name> [--dry-run]
 """
 
 import argparse
@@ -175,14 +176,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_pdk_install = pdk_sub.add_parser("install", help="Install a technology's PDK")
     p_pdk_install.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+    p_pdk_install.add_argument(
+        "--version", default=None, metavar="HASH", dest="version",
+        help="Install a specific PDK version/commit hash instead of the pinned default",
+    )
 
     p_pdk_update = pdk_sub.add_parser("update", help="Update an installed PDK")
     p_pdk_update.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+    p_pdk_update.add_argument(
+        "--version", default=None, metavar="HASH", dest="version",
+        help="Update to a specific PDK version/commit hash instead of the pinned default",
+    )
 
     pdk_sub.add_parser("status", help="Show detailed PDK install status (with resolved liberty paths)")
 
+    p_pdk_path = pdk_sub.add_parser("path", help="Print an installed PDK's root directory path (plain, for scripting)")
+    p_pdk_path.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+
     p_pdk_versions = pdk_sub.add_parser("versions", help="List remote versions available for a PDK")
     p_pdk_versions.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+
+    p_pdk_remove = pdk_sub.add_parser("remove", help="Remove an installed PDK")
+    p_pdk_remove.add_argument("pdk_name", metavar="NAME", help="Technology name (e.g. sky130)")
+    p_pdk_remove.add_argument(
+        "--dry-run", action="store_true", dest="dry_run",
+        help="Show what would be removed (path + size) without deleting anything",
+    )
 
     # wrap (wrapper generation namespace)
     p_wrap = sub.add_parser("wrap", help="Wrapper generation commands")
@@ -439,6 +458,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.pdk import cmd_pdk_status
                         exit_code, pdk_result = cmd_pdk_status(args)
+                    elif pdk_cmd == "path":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_path
+                        exit_code = cmd_pdk_path(args)
                     elif pdk_cmd == "install":
                         dispatched = True
                         from veriflow.commands.pdk import cmd_pdk_install
@@ -451,6 +474,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.pdk import cmd_pdk_versions
                         exit_code, pdk_result = cmd_pdk_versions(args)
+                    elif pdk_cmd == "remove":
+                        dispatched = True
+                        from veriflow.commands.pdk import cmd_pdk_remove
+                        exit_code = cmd_pdk_remove(args)
 
                 else:
                     if json_mode:
