@@ -10,6 +10,8 @@ using the technology profile's `pdk_subdir`/`liberty_glob` fields.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 from veriflow.models.technology_profile import TechnologyProfile, get_technology_profile
@@ -64,3 +66,30 @@ def build_volare_enable_command(technology: TechnologyProfile, pdk_dir: Path) ->
         cmd.append(technology.default_version)
     cmd += ["--pdk-root", str(pdk_dir)]
     return cmd
+
+
+def _create_pdk_link(src: Path, dst: Path) -> None:
+    """Create a symlink from dst -> src.
+
+    On Windows, falls back to a junction point if symlink creation fails
+    (requires SeCreateSymbolicLinkPrivilege or Developer Mode). Junction
+    points work without admin rights on NTFS volumes.
+
+    Raises OSError if both attempts fail.
+    """
+    try:
+        dst.symlink_to(src)
+    except OSError:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(dst), str(src)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise OSError(
+                    f"Failed to create junction point {dst} -> {src}: "
+                    f"{result.stderr}"
+                )
+        else:
+            raise  # Linux/macOS: symlink should always work

@@ -7,7 +7,7 @@ liberty resolution.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -155,3 +155,76 @@ def test_builtin_ihp130_and_generic_have_no_default_version():
     for name in ("ihp130", "generic"):
         technology = get_technology_profile(name)
         assert technology.default_version is None
+
+
+# ── _create_pdk_link ─────────────────────────────────────────────────────────
+#
+# volare creates pdk_root/<pdk_subdir> as a symlink into
+# pdk_root/versions/<version>/<pdk_subdir>. On Windows, creating a symlink
+# requires SeCreateSymbolicLinkPrivilege or Developer Mode -- without it,
+# Path.symlink_to() raises OSError, and _create_pdk_link falls back to a
+# junction point (`mklink /J`), which works on NTFS without admin rights.
+
+def test_create_pdk_link_posix_calls_symlink_only(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    with patch("veriflow.models.pdk_manager.sys.platform", "linux"), \
+         patch.object(Path, "symlink_to") as mock_symlink, \
+         patch("veriflow.models.pdk_manager.subprocess.run") as mock_run:
+        pdk_manager._create_pdk_link(src, dst)
+    mock_symlink.assert_called_once_with(src)
+    mock_run.assert_not_called()
+
+
+def test_create_pdk_link_windows_symlink_succeeds_no_mklink(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    with patch("veriflow.models.pdk_manager.sys.platform", "win32"), \
+         patch.object(Path, "symlink_to") as mock_symlink, \
+         patch("veriflow.models.pdk_manager.subprocess.run") as mock_run:
+        pdk_manager._create_pdk_link(src, dst)
+    mock_symlink.assert_called_once_with(src)
+    mock_run.assert_not_called()
+
+
+def test_create_pdk_link_windows_symlink_fails_falls_back_to_mklink_junction(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    fake_result = MagicMock(returncode=0, stdout="", stderr="")
+    with patch("veriflow.models.pdk_manager.sys.platform", "win32"), \
+         patch.object(Path, "symlink_to", side_effect=OSError("privilege not held")), \
+         patch("veriflow.models.pdk_manager.subprocess.run", return_value=fake_result) as mock_run:
+        pdk_manager._create_pdk_link(src, dst)  # must not raise
+    mock_run.assert_called_once_with(
+        ["cmd", "/c", "mklink", "/J", str(dst), str(src)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_create_pdk_link_windows_junction_also_fails_raises_oserror(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    fake_result = MagicMock(returncode=1, stdout="", stderr="Access is denied.")
+    with patch("veriflow.models.pdk_manager.sys.platform", "win32"), \
+         patch.object(Path, "symlink_to", side_effect=OSError("privilege not held")), \
+         patch("veriflow.models.pdk_manager.subprocess.run", return_value=fake_result):
+        with pytest.raises(OSError) as exc_info:
+            pdk_manager._create_pdk_link(src, dst)
+    message = str(exc_info.value)
+    assert str(src) in message
+    assert str(dst) in message
+    assert "Access is denied." in message
+
+
+def test_create_pdk_link_posix_symlink_failure_reraises_without_mklink(tmp_path):
+    """Junction points are an NTFS/Windows concept -- on Linux/macOS a
+    symlink failure propagates unchanged, no fallback attempted."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    with patch("veriflow.models.pdk_manager.sys.platform", "linux"), \
+         patch.object(Path, "symlink_to", side_effect=OSError("permission denied")), \
+         patch("veriflow.models.pdk_manager.subprocess.run") as mock_run:
+        with pytest.raises(OSError, match="permission denied"):
+            pdk_manager._create_pdk_link(src, dst)
+    mock_run.assert_not_called()

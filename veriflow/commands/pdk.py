@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+from pathlib import Path
 
 from rich import box
 from rich.table import Table
@@ -19,12 +20,17 @@ from rich.table import Table
 from veriflow.core import VeriFlowError
 from veriflow.models.pdk_manager import (
     VERIFLOW_PDK_ROOT,
+    _create_pdk_link,
     build_volare_enable_command,
     get_liberty_path,
     get_pdk_path,
 )
-from veriflow.models.technology_profile import get_technology_profile, list_technology_profile_names
-from veriflow.ui.output import console, print_done, print_error, print_step
+from veriflow.models.technology_profile import (
+    TechnologyProfile,
+    get_technology_profile,
+    list_technology_profile_names,
+)
+from veriflow.ui.output import console, print_done, print_error, print_step, print_warn
 from veriflow.ui.theme import BLUE, GREY, WHITE
 
 _STATUS_STYLE = {
@@ -136,6 +142,115 @@ def _git_available() -> bool:
     return shutil.which("git") is not None
 
 
+def _warn_on_stderr(result: subprocess.CompletedProcess) -> None:
+    """Surface stderr from a *successful* (returncode 0) subprocess call as
+    a warning instead of silently discarding it.
+
+    Success/failure is judged solely by returncode -- e.g. on Windows,
+    volare emits a PermissionError from its own temp-file cleanup on
+    stderr even when the install itself completed fine (returncode 0);
+    treating any stderr output as an error would misreport that as a
+    failure. Non-empty stderr on an otherwise-successful run is still
+    useful information, so it's shown, just not as an error.
+    """
+    if result.stderr and result.stderr.strip():
+        print_warn(result.stderr.strip())
+
+
+def _ensure_pdk_subdir_link(technology: TechnologyProfile, pdk_root: Path, *, step_label: str = "pdk install") -> None:
+    """After a successful `volare enable`, make sure pdk_root/<pdk_subdir>
+    actually exists.
+
+    volare's real on-disk layout (see `volare.common.get_volare_dir`/
+    `get_versions_dir` and `volare.manage.enable` in the installed
+    `volare` package) extracts each version under
+    `pdk_root/volare/<volare_pdk>/versions/<version>/<variant>/` and then
+    symlinks `pdk_root/<variant>` -> that directory for the "current"
+    version. `pdk_subdir` (e.g. "sky130A") is one such variant. On Windows,
+    creating that top-level symlink silently fails without
+    SeCreateSymbolicLinkPrivilege or Developer Mode enabled -- `volare
+    enable` still exits 0, but `pdk_root/<pdk_subdir>` never appears. When
+    that happens, fall back to a junction point (works without admin rights
+    on NTFS) pointing at the same already-extracted files.
+
+    A no-op when `pdk_subdir` isn't set, or when the expected path already
+    exists (the normal case everywhere except affected Windows setups, and
+    also true on a re-run against an already-fixed-up install).
+    """
+    if not technology.pdk_subdir:
+        return
+
+    expected_link = pdk_root / technology.pdk_subdir
+    if expected_link.exists():
+        return  # volare created it fine, or a previous install already fixed it up
+
+    versions_dir = pdk_root / "volare" / technology.volare_pdk / "versions"
+    if technology.default_version:
+        src = versions_dir / technology.default_version / technology.pdk_subdir
+    else:
+        # No pinned version -- volare resolved "latest" on its own, so the
+        # exact version directory it extracted into isn't known upfront.
+        # Discover it: there should be exactly one <pdk_subdir> under
+        # pdk_root/volare/<volare_pdk>/versions/*/ right after a fresh install.
+        candidates = sorted(versions_dir.glob(f"*/{technology.pdk_subdir}")) if versions_dir.is_dir() else []
+        src = candidates[-1] if candidates else versions_dir / "unknown" / technology.pdk_subdir
+
+    if not src.exists():
+        raise VeriFlowError(
+            f"volare did not extract PDK files for {technology.name!r} -- "
+            f"expected directory not found: {src}\n"
+            "  This usually means the PDK version wasn't fully downloaded/extracted. "
+            f"Try 'veriflow pdk install {technology.name}' again.",
+            code="VF_PDK_INSTALL_INCOMPLETE",
+            details={"name": technology.name, "expected_src": str(src)},
+        )
+
+    print_step(step_label, f"Creating directory link {technology.pdk_subdir} (Windows fallback)...")
+    _create_pdk_link(src, expected_link)
+
+
+# WinError 1314 == ERROR_PRIVILEGE_NOT_HELD -- os.symlink()'s failure mode on
+# Windows without SeCreateSymbolicLinkPrivilege/Developer Mode. The numeric
+# code is stable across Windows locales; the accompanying message text is
+# not (confirmed empirically: "[WinError 1314] El cliente no dispone de un
+# privilegio requerido" on a Spanish-locale install), so this is the only
+# reliable substring to match on.
+_WINDOWS_SYMLINK_PRIVILEGE_ERROR = "WinError 1314"
+
+
+def _recover_from_volare_symlink_failure(
+    technology: TechnologyProfile, pdk_dir: Path, result: subprocess.CompletedProcess, *, step_label: str
+) -> bool:
+    """volare's CLI wrapper (`volare.__main__.enable_cmd`) catches *any*
+    exception from `enable()` -- including the symlink OSError -- and exits
+    non-zero. That means a Windows symlink-privilege failure surfaces as a
+    hard `returncode != 0`, not the silent "exits 0, directory just missing"
+    case `_ensure_pdk_subdir_link` otherwise handles. But volare's `enable()`
+    runs `fetch()` (the actual download/extraction) *before* attempting the
+    top-level symlink -- so the PDK files are already correctly on disk even
+    when this exact failure happens.
+
+    Note: volare prints this error via a plain `rich.console.Console()`,
+    which defaults to *stdout*, not stderr (confirmed empirically) -- so
+    both streams are checked here, not just stderr.
+
+    Returns True if this was that specific failure and the junction-point
+    fallback recovered it (caller should treat the install as successful,
+    with a warning); False if this doesn't look like that failure at all
+    (caller should raise the original error).
+    """
+    combined_output = (result.stderr or "") + (result.stdout or "")
+    if _WINDOWS_SYMLINK_PRIVILEGE_ERROR not in combined_output:
+        return False
+    print_warn(
+        f"volare could not create the {technology.pdk_subdir!r} symlink "
+        "(Windows requires Developer Mode or admin rights for symlinks) "
+        "-- falling back to a junction point instead."
+    )
+    _ensure_pdk_subdir_link(technology, pdk_dir, step_label=step_label)
+    return True
+
+
 def cmd_pdk_install(args: argparse.Namespace) -> int:
     name = args.pdk_name
     technology = get_technology_profile(name)  # raises VF_TECHNOLOGY_UNKNOWN
@@ -147,11 +262,16 @@ def cmd_pdk_install(args: argparse.Namespace) -> int:
         )
 
     if get_pdk_path(name) is not None:
-        console.print(
-            f"\n  [secondary]{name} is already installed -- use[/secondary] "
-            f"veriflow pdk update {name} [secondary]to update[/secondary]\n"
-        )
-        return 0
+        if get_liberty_path(name) is not None:
+            console.print(
+                f"\n  [secondary]{name} is already installed -- use[/secondary] "
+                f"veriflow pdk update {name} [secondary]to update[/secondary]\n"
+            )
+            return 0
+        # Directory exists but no liberty resolves ([INSTALLED, NO LIBERTY])
+        # -- a prior install was interrupted or never finished. Don't treat
+        # this as "already installed"; fall through and reinstall.
+        print_step("pdk install", f"Incomplete installation detected, reinstalling {name}...")
 
     pdk_dir = VERIFLOW_PDK_ROOT / name
 
@@ -164,11 +284,15 @@ def cmd_pdk_install(args: argparse.Namespace) -> int:
         pdk_dir.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise VeriFlowError(
-                f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
-                code="VF_PDK_INSTALL_FAILED",
-                details={"name": name, "stderr": result.stderr},
-            )
+            if not _recover_from_volare_symlink_failure(technology, pdk_dir, result, step_label="pdk install"):
+                raise VeriFlowError(
+                    f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
+                    code="VF_PDK_INSTALL_FAILED",
+                    details={"name": name, "stderr": result.stderr},
+                )
+        else:
+            _warn_on_stderr(result)
+            _ensure_pdk_subdir_link(technology, pdk_dir, step_label="pdk install")
 
     elif technology.install_method == "git":
         if not _git_available():
@@ -186,6 +310,7 @@ def cmd_pdk_install(args: argparse.Namespace) -> int:
                 code="VF_PDK_INSTALL_FAILED",
                 details={"name": name, "stderr": result.stderr},
             )
+        _warn_on_stderr(result)
 
     print_done(f"{name} installed  ·  [id]{pdk_dir}[/id]")
     return 0
@@ -214,11 +339,15 @@ def cmd_pdk_update(args: argparse.Namespace) -> int:
         print_step("pdk update", f"Updating {name} ({' '.join(cmd)}) ...")
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise VeriFlowError(
-                f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
-                code="VF_PDK_UPDATE_FAILED",
-                details={"name": name, "stderr": result.stderr},
-            )
+            if not _recover_from_volare_symlink_failure(technology, pdk_dir, result, step_label="pdk update"):
+                raise VeriFlowError(
+                    f"volare enable failed for {name}:\n{result.stderr or result.stdout}",
+                    code="VF_PDK_UPDATE_FAILED",
+                    details={"name": name, "stderr": result.stderr},
+                )
+        else:
+            _warn_on_stderr(result)
+            _ensure_pdk_subdir_link(technology, pdk_dir, step_label="pdk update")
 
     elif technology.install_method == "git":
         if not _git_available():
@@ -236,6 +365,7 @@ def cmd_pdk_update(args: argparse.Namespace) -> int:
                 code="VF_PDK_UPDATE_FAILED",
                 details={"name": name, "stderr": result.stderr},
             )
+        _warn_on_stderr(result)
 
     print_done(f"{name} updated  ·  [id]{pdk_dir}[/id]")
     return 0
