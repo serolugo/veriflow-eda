@@ -97,7 +97,13 @@ def _run_project(
     return pr.run_dir.name
 
 
-def _make_db(tmp_path: Path, *, interface_name: str | None = "semicolab", dirname: str = "mydb") -> Path:
+def _make_db(
+    tmp_path: Path,
+    *,
+    interface_name: str | None = "semicolab",
+    dirname: str = "mydb",
+    technology_name: str | None = None,
+) -> Path:
     from veriflow.commands.init_db import cmd_init
 
     db_path = tmp_path / dirname
@@ -109,6 +115,8 @@ def _make_db(tmp_path: Path, *, interface_name: str | None = "semicolab", dirnam
         "description": "Test project.",
         "interface_name": interface_name,
     }
+    if technology_name is not None:
+        cfg["technology"] = {"name": technology_name}
     (db_path / "project_config.yaml").write_text(
         yaml.dump(cfg, default_flow_style=False), encoding="utf-8"
     )
@@ -381,6 +389,136 @@ def test_import_interface_none_in_project_never_mismatches(tmp_path):
 
     result = project_import(config_path, db_path)
     assert result["tile_number"] == "0001"
+
+
+# ── 2b. Technology comparison (Gotcha B: warn, don't block) ──────────────────
+
+
+def test_import_technology_mismatch_warns_not_raises(tmp_path):
+    """Source project defaults to technology 'generic' (no `technology:`
+    section in veriflow.yaml); destination database declares 'sky130'.
+    This must not block the import -- only a warning message, since the
+    tile can just be re-synthesized against 'sky130' on the next db run."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, technology_name="sky130")
+
+    result = project_import(config_path, db_path)
+
+    assert result["tile_number"] == "0001"
+    assert len(result["warnings"]) == 1
+    warning = result["warnings"][0]
+    assert "generic" in warning
+    assert "sky130" in warning
+    assert "re-synthesized" in warning
+
+
+def test_import_technology_match_no_warning(tmp_path):
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, technology_name="generic")
+
+    result = project_import(config_path, db_path)
+    assert result["warnings"] == []
+
+
+def test_import_technology_unset_in_db_no_warning(tmp_path):
+    """Destination database with no `technology:` section at all imposes no
+    constraint -- never warns, regardless of the source project's technology."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, technology_name=None)
+
+    result = project_import(config_path, db_path)
+    assert result["warnings"] == []
+
+
+# ── 2c. RTL filename vs top_module (Gotcha A) ─────────────────────────────────
+
+
+def _make_project_with_rtl_filename(
+    tmp_path: Path,
+    *,
+    rtl_filename: str,
+    top_module: str = "top",
+    dirname: str = "myproj",
+) -> Path:
+    """Like `_make_project`, but the RTL file's name and the `module` name it
+    declares can differ, to exercise the Gotcha A auto-rename/error path.
+    No testbench (irrelevant to this check)."""
+    project_dir = tmp_path / dirname
+    (project_dir / "rtl").mkdir(parents=True)
+    (project_dir / "rtl" / rtl_filename).write_text(
+        f"module {top_module}; endmodule\n", encoding="utf-8"
+    )
+
+    config_path = project_dir / "veriflow.yaml"
+    config_path.write_text(
+        "\n".join([
+            "design:",
+            f"  top_module: {top_module}",
+            "  rtl_sources:",
+            f"    - rtl/{rtl_filename}",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_import_rtl_filename_mismatch_auto_renames_with_warning(tmp_path):
+    """RTL source is named `core.v` but declares `module top` -- Database
+    Mode locates the top-level file by filename convention, so it must be
+    renamed to `top.v` on copy, with an informative warning."""
+    config_path = _make_project_with_rtl_filename(
+        tmp_path, rtl_filename="core.v", top_module="top"
+    )
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, interface_name=None)
+
+    result = project_import(config_path, db_path)
+
+    tile_dir = db_path / "config" / f"tile_{result['tile_number']}"
+    assert (tile_dir / "src" / "rtl" / "top.v").is_file()
+    assert not (tile_dir / "src" / "rtl" / "core.v").exists()
+    assert len(result["warnings"]) == 1
+    assert "core.v" in result["warnings"][0]
+    assert "top.v" in result["warnings"][0]
+
+
+def test_import_rtl_filename_already_matches_no_rename(tmp_path):
+    config_path = _make_project_with_rtl_filename(
+        tmp_path, rtl_filename="top.v", top_module="top"
+    )
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, interface_name=None)
+
+    result = project_import(config_path, db_path)
+
+    tile_dir = db_path / "config" / f"tile_{result['tile_number']}"
+    assert (tile_dir / "src" / "rtl" / "top.v").is_file()
+    assert result["warnings"] == []
+
+
+def test_import_top_module_not_in_any_source_raises(tmp_path):
+    """Safety net: if no recorded RTL source declares `module <top_module>`
+    at all (shouldn't happen if `project run` already passed connectivity),
+    raise VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES rather than silently importing
+    a tile that can never simulate/synthesize correctly."""
+    config_path = _make_project_with_rtl_filename(
+        tmp_path, rtl_filename="core.v", top_module="top"
+    )
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, interface_name=None)
+
+    # Simulate the module having been renamed/removed after the run completed
+    (config_path.parent / "rtl" / "core.v").write_text(
+        "module something_else; endmodule\n", encoding="utf-8"
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES"
+    assert "top" in str(exc_info.value)
 
 
 # ── 3. Explicit --run selection ────────────────────────────────────────────────

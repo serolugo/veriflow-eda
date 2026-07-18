@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from veriflow.ui.output import console, print_done, print_step
+from veriflow.ui.output import console, print_done, print_step, print_warn
 
 
 def cmd_import_project(args: argparse.Namespace) -> int:
@@ -36,6 +36,9 @@ def cmd_import_project(args: argparse.Namespace) -> int:
         "project-import",
         f"Wrote config/tile_{result['tile_number']}/imported_run.json",
     )
+
+    for warning in result.get("warnings") or []:
+        print_warn(warning)
 
     print_done(
         f"Imported [id]{result['run_id']}[/id] as tile [id]{result['tile_id']}[/id]"

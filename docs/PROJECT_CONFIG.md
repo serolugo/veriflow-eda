@@ -30,6 +30,27 @@ veriflow project run
 `project init` writes a `veriflow.yaml` in the current directory (use `--config <path>` to
 choose a different location, `--force` to overwrite an existing file).
 
+### `VERIFLOW_CONFIG` — default config path
+
+Every Project Mode command that takes `--config` (`run`, `set`, `generate-readme`, `import`,
+`apply-spec` — **not** `init`, which is scaffolding a new file rather than reading one) resolves
+its default in this priority order:
+
+1. An explicit `--config PATH` on the command line always wins.
+2. Otherwise, the `VERIFLOW_CONFIG` environment variable, if set.
+3. Otherwise, the literal `veriflow.yaml`.
+
+This is useful when working with a config file that isn't named `veriflow.yaml` (e.g. a
+shuttle-provided config committed under a different name) without having to pass `--config` on
+every invocation:
+
+```bash
+export VERIFLOW_CONFIG=shuttle_a.yaml
+veriflow project run          # reads shuttle_a.yaml
+veriflow project set interface semicolab   # edits shuttle_a.yaml
+veriflow project run --config other.yaml   # explicit --config still overrides the env var
+```
+
 The generated file contains every section as a comment so you can uncomment and fill in only
 what you need. Only `design.top_module` and `design.rtl_sources` are required before
 `veriflow project run` will accept the config.
@@ -360,6 +381,21 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
    interface than the database's own would silently corrupt tile consistency, so this is
    rejected rather than allowed through.
 
+### What it only warns about (doesn't block the import)
+
+- **Technology mismatch**: if the run's technology (from the synthesis stage, falling back to
+  the project's configured `technology`) differs from the destination database's
+  `project_config.yaml` technology, the import still proceeds — a message is added to the
+  returned result's `"warnings"` list (and printed after the import completes) rather than
+  raising, since the tile can simply be re-synthesized against the destination's technology on
+  the next `db run`. Unlike interface, a technology mismatch doesn't silently break simulation.
+- **RTL filename vs. `top_module`**: Database Mode requires a file literally named
+  `<top_module>.v` under `src/rtl/`. If none of the recorded RTL sources is named that way,
+  `project_import` looks for whichever file's text declares `module <top_module>` and renames
+  it to `<top_module>.v` on copy, adding a warning. If no recorded source declares the module at
+  all — which shouldn't happen if `project run` already passed — it raises
+  `VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES` instead of producing a tile `db run` can never pass.
+
 ### What it copies into the new tile
 
 - Creates a new tile via the same `create-tile` path Database Mode uses, keyed off the
@@ -385,3 +421,108 @@ it only reads from it.
 | `VF_IMPORT_RUN_NOT_FOUND` | `--run` given but that run (or its `results.json`) doesn't exist |
 | `VF_IMPORT_RUN_NOT_PASSING` | `--run` given but that run's `status` isn't `"PASS"` |
 | `VF_IMPORT_INTERFACE_MISMATCH` | the run's `interface_name` differs from the database's `project_config.yaml` `interface_name` |
+| `VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES` | no recorded RTL source declares `module <top_module>` (rename couldn't be resolved) |
+| `VF_IMPORT_RTL_SOURCE_MISSING` | a recorded RTL/TB source file no longer exists on disk |
+| `VF_DATABASE_CONFIG_YAML_ERROR` | the destination database's `project_config.yaml` is malformed |
+
+---
+
+## `shuttle_spec.yaml` / `project apply-spec`
+
+A shuttle organizer's own config (interface/technology/pipeline requirements) is a separate
+concern from a contributor's `veriflow.yaml` — it shouldn't require hand-editing every field by
+name. `shuttle_spec.yaml` is a small, flat schema for exactly that; `project apply-spec` applies
+its fields onto an existing `veriflow.yaml` using the same comment-preserving editor as
+`project set` (not a separate/duplicated implementation).
+
+```yaml
+shuttle_name: ""          # optional, informative only -- see below
+interface: null           # interface profile name, or null
+interface_definition: null # optional, path to an external .v interface definition
+technology: generic       # technology name
+technology_definition: null # optional, path to an external technology.yaml
+pipeline:
+  stages:
+    - type: connectivity
+    - type: simulation
+    - type: synthesis
+```
+
+```bash
+veriflow project apply-spec shuttle_spec.yaml [--config veriflow.yaml]
+```
+
+| Field | Applied as | Notes |
+|---|---|---|
+| `shuttle_name` | *(not applied)* | Project Mode has no shuttle concept — `veriflow.yaml` has no field for it. Emits a `UserWarning` (`VF_SHUTTLE_NAME_NOT_APPLIED`) rather than silently dropping it. |
+| `interface` | `interface.name` (via `project set interface`) | `null` clears the section, same as `project set interface null`. |
+| `interface_definition` | `interface.definition` (+ `interface.name` if also given) | Written directly (bypassing `project set`'s validated `interface` key, which requires an already-registered name) — validated later at config-load time, same as hand-authoring `interface: {name: ..., definition: ...}`. |
+| `technology` | `technology.name` (via `project set technology`) | Same validation as `project set technology` — an unregistered name with no `technology_definition` raises `VF_TECHNOLOGY_UNKNOWN`. |
+| `technology_definition` | `technology.definition` (+ `technology.name` if also given) | Same bypass rationale as `interface_definition`. |
+| `pipeline.stages` | `pipeline.stages` (via `project set pipeline`) | Comma-joined stage type list. |
+
+Only fields present in the spec file are applied — a partial spec (e.g. just `interface:`) leaves
+every other section of `veriflow.yaml` untouched. `--config` follows the same resolution as every
+other Project Mode command (`--config` > `VERIFLOW_CONFIG` > `veriflow.yaml`).
+
+### Error codes
+
+| Code | Cause |
+|---|---|
+| `VF_SHUTTLE_SPEC_NOT_FOUND` | the spec file path doesn't exist |
+| `VF_SHUTTLE_SPEC_YAML_ERROR` | the spec file exists but contains invalid YAML |
+| `VF_TECHNOLOGY_UNKNOWN` / `VF_INTERFACE_UNKNOWN` | a plain (no `*_definition`) name isn't registered |
+
+---
+
+## `db import-repo`
+
+Clones a git repository, runs its own `veriflow.yaml` through a real `project run` as a live
+precheck, and — only on a passing precheck — imports it into a Database Mode database as a new
+tile (`project_import`, inheriting all of its checks/warnings above).
+
+```bash
+veriflow db import-repo --db ./database --repo <url-or-local-path> \
+    [--branch main] [--config veriflow.yaml] [--force]
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--db PATH` | yes | Path to the destination VeriFlow database directory. |
+| `--repo URL` | yes | Anything `git clone` accepts — an https/ssh URL, or a local path. |
+| `--branch NAME` | no | Branch to clone. Default: `main`. |
+| `--config PATH` | no | Path to `veriflow.yaml` **relative to the cloned repo's root**. Default: `veriflow.yaml`. Unrelated to the `VERIFLOW_CONFIG` env var, which is about the *local* project you're currently in, not the repo being cloned. |
+| `--force` | no | Re-import this exact repo+branch even if it was already imported into this database (creates a new, separate tile; the existing one is left untouched). |
+
+### Flow
+
+1. Clone `--repo` (`--branch`, `--depth 1`) into a fresh temporary directory.
+2. Look for `--config` at the clone's root — missing is `VF_IMPORT_REPO_NO_CONFIG`.
+3. Run `project run` for real (this **is** the precheck, not a dry run/simulation of one).
+4. If the run's status isn't `PASS`, raise `VF_IMPORT_REPO_PRECHECK_FAILED` (the full run result
+   is attached to the error's details, so you can see exactly what failed).
+5. On `PASS`, call `project_import` — creating the tile, applying the technology-warning and
+   RTL-rename fixes described above.
+6. Always remove the temporary clone directory afterward, success or failure.
+
+### Duplicate-import guard
+
+Before cloning anything, checks whether `--repo` + `--branch` was already imported into this
+database (`imported_run.json` on every existing tile records `source_repo`/`source_branch` when
+imported this way). If a match is found and `--force` isn't given, the import is rejected
+(`VF_IMPORT_REPO_ALREADY_IMPORTED`) naming the existing tile. With `--force`, the import proceeds
+and creates a brand-new tile — the previous one is never overwritten. This guard is independent
+of the precheck: `--force` never lets a failing `project run` through; that gate
+(`VF_IMPORT_REPO_PRECHECK_FAILED`) always applies regardless.
+
+### Error codes
+
+| Code | Cause |
+|---|---|
+| `VF_IMPORT_REPO_ALREADY_IMPORTED` | this exact repo+branch was already imported and `--force` wasn't given |
+| `VF_IMPORT_REPO_CLONE_FAILED` | `git clone` failed (bad URL/branch, network error, etc.) |
+| `VF_IMPORT_REPO_NO_CONFIG` | `--config` not found at the cloned repo's root |
+| `VF_IMPORT_REPO_PRECHECK_FAILED` | `project run`'s status wasn't `PASS` |
+
+Plus anything `project_import` itself can raise (`VF_IMPORT_INTERFACE_MISMATCH`,
+`VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES`, `VF_IMPORT_RTL_SOURCE_MISSING`, etc.).

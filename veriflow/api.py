@@ -312,6 +312,8 @@ def project_import(
     db_path: str | Path,
     *,
     run_id: str | None = None,
+    source_repo: str | None = None,
+    source_branch: str | None = None,
 ) -> dict:
     """Import a verified Project Mode run into a Database Mode database as a
     new tile.
@@ -321,6 +323,20 @@ def project_import(
     copies results.json itself to config/tile_NNNN/imported_run.json for
     traceability (rtl_hash, timestamp, exact stage statuses of the run that
     was imported).
+
+    source_repo/source_branch are recorded onto imported_run.json (in
+    addition to copying results.json) only when the caller is `import_repo()`
+    -- direct Project Mode imports (`veriflow project import`) have no repo
+    URL and leave them out entirely, so `imported_run.json` for those is a
+    byte-for-byte copy of results.json as before. This is how `import_repo()`
+    later detects "this repo+branch was already imported" (VF_IMPORT_REPO_ALREADY_IMPORTED).
+
+    A technology mismatch between the source project and the destination
+    database does not block the import (unlike an interface mismatch, which
+    changes the port list and would silently break simulation): the returned
+    dict's "warnings" list gets an entry instead, since the tile can simply
+    be re-synthesized against the destination's technology on the next `db
+    run`.
 
     Parameters
     ----------
@@ -340,7 +356,10 @@ def project_import(
         VeriFlowError(VF_IMPORT_INTERFACE_MISMATCH)   -- project's interface_name != database's
         VeriFlowError(VF_DATABASE_CONFIG_YAML_ERROR)  -- destination project_config.yaml is malformed
         VeriFlowError(VF_IMPORT_RTL_SOURCE_MISSING)   -- a recorded RTL/TB source no longer exists on disk
+        VeriFlowError(VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES) -- no recorded RTL source declares `module <top_module>`
     """
+    import json
+    import re
     import shutil
 
     import yaml
@@ -416,6 +435,36 @@ def project_import(
             },
         )
 
+    # d.2 Technology comparison (Gotcha B) -- warn, don't block. Unlike
+    # interface (which changes the port list and would silently break
+    # simulation if mismatched), technology only selects the synthesis
+    # backend/liberty file, so a mismatch is recoverable: the tile just gets
+    # re-synthesized against the destination's technology on the next `db
+    # run`. Prefer the actual technology the synthesis stage ran against
+    # (results["stages"]["synthesis"]["technology"], only present if that
+    # stage ran and reported one); fall back to the source veriflow.yaml's
+    # configured technology (results["technology"], always present) when it
+    # didn't. Only compared when the destination database actually declares
+    # a technology -- a database with no `technology:` section in
+    # project_config.yaml imposes no constraint at all.
+    warnings_list: list[str] = []
+    project_technology_name = (
+        results.get("stages", {}).get("synthesis", {}).get("technology")
+        or results.get("technology")
+    )
+    if (
+        db_project_config.technology_name is not None
+        and project_technology_name is not None
+        and project_technology_name != db_project_config.technology_name
+    ):
+        warnings_list.append(
+            f"Source project was verified against technology "
+            f"'{project_technology_name}' but destination database uses "
+            f"'{db_project_config.technology_name}' — tile will be "
+            f"re-synthesized against '{db_project_config.technology_name}' "
+            "on next db run."
+        )
+
     # e. Create the tile and copy sources into it
     top_module = results["top_module"]
     tile_info = cmd_create_tile(db_path, top_module=top_module, silent=True)
@@ -427,10 +476,42 @@ def project_import(
     tb_dir = config_tile_dir / "src" / "tb"
     project_root = config_path.parent
 
-    for rel in results.get("rtl_sources") or []:
+    # e.2 RTL filename vs top_module (Gotcha A): Database Mode's sim/synth
+    # runners locate the top-level file by filename convention
+    # (<top_module>.v), while Project Mode only cares about the `module
+    # <top_module>` declaration inside the file's text -- a project whose
+    # top-level file isn't literally named `<top_module>.v` passes `project
+    # run` fine but would silently break once imported. Rename the file that
+    # actually declares the module on copy rather than requiring the source
+    # project to be renamed.
+    rtl_sources = results.get("rtl_sources") or []
+    expected_rtl_filename = f"{top_module}.v"
+    rename_source_rel = None
+    if not any(Path(rel).name == expected_rtl_filename for rel in rtl_sources):
+        module_re = re.compile(r"\bmodule\s+" + re.escape(top_module) + r"\b")
+        for rel in rtl_sources:
+            src = (project_root / rel).resolve()
+            if src.exists() and module_re.search(src.read_text(encoding="utf-8", errors="ignore")):
+                rename_source_rel = rel
+                break
+        if rename_source_rel is None:
+            raise VeriFlowError(
+                f"None of the recorded RTL sources declare `module {top_module}`. "
+                f"Expected a file named {expected_rtl_filename!r}, or one "
+                f"containing `module {top_module}`.",
+                code="VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES",
+                details={"top_module": top_module, "rtl_sources": rtl_sources},
+            )
+        warnings_list.append(
+            f"Renamed '{Path(rename_source_rel).name}' to "
+            f"'{expected_rtl_filename}' for Database Mode compatibility."
+        )
+
+    for rel in rtl_sources:
         src = (project_root / rel).resolve()
+        dest_name = expected_rtl_filename if rel == rename_source_rel else Path(rel).name
         try:
-            shutil.copy2(src, rtl_dir / Path(rel).name)
+            shutil.copy2(src, rtl_dir / dest_name)
         except FileNotFoundError as exc:
             raise VeriFlowError(
                 f"RTL source file no longer exists: {src}\n"
@@ -497,8 +578,18 @@ def project_import(
         )
     tile_cfg_path.write_text(tile_cfg_text, encoding="utf-8")
 
-    # f. Copy results.json -> imported_run.json for traceability
-    shutil.copy2(runs_dir / run_id / "results.json", config_tile_dir / "imported_run.json")
+    # f. Copy results.json -> imported_run.json for traceability (plus
+    # source_repo/source_branch when imported via `db import-repo`)
+    imported_run_path = config_tile_dir / "imported_run.json"
+    if source_repo is not None:
+        run_data = json.loads((runs_dir / run_id / "results.json").read_text(encoding="utf-8"))
+        run_data["source_repo"] = source_repo
+        run_data["source_branch"] = source_branch
+        imported_run_path.write_text(
+            json.dumps(run_data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    else:
+        shutil.copy2(runs_dir / run_id / "results.json", imported_run_path)
 
     # g. Summary
     return {
@@ -508,7 +599,167 @@ def project_import(
         "config_path": str(config_path),
         "run_id": run_id,
         "rtl_hash": results.get("rtl_hash", {}),
+        "warnings": warnings_list,
     }
+
+
+def _find_prior_import(db_path: Path, repo_url: str, branch: str) -> str | None:
+    """Return the tile_id of an existing tile whose imported_run.json
+    records the same source_repo+source_branch, or None.
+
+    Only tiles created by `import_repo()` have these fields at all (a plain
+    `veriflow project import` or a manually created tile's imported_run.json
+    has neither) -- those are simply never a match.
+    """
+    import json
+
+    from veriflow.core.csv_store import get_tile_row
+
+    config_dir = db_path / "config"
+    if not config_dir.is_dir():
+        return None
+
+    tile_index_path = db_path / "tile_index.csv"
+
+    for tile_dir in sorted(config_dir.glob("tile_*")):
+        imported_run_path = tile_dir / "imported_run.json"
+        if not imported_run_path.is_file():
+            continue
+        try:
+            data = json.loads(imported_run_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if data.get("source_repo") == repo_url and data.get("source_branch") == branch:
+            tile_number = tile_dir.name.removeprefix("tile_")
+            try:
+                row = get_tile_row(tile_index_path, tile_number)
+            except VeriFlowError:
+                row = None
+            return (row or {}).get("tile_id") or tile_number
+
+    return None
+
+
+def import_repo(
+    repo_url: str,
+    db_path: str | Path,
+    *,
+    branch: str = "main",
+    config_path: str = "veriflow.yaml",
+    force: bool = False,
+) -> dict:
+    """Clone a git repo, run its own `project run` as a real precheck, and
+    import the result into a Database Mode database as a new tile -- for
+    shuttle organizers importing directly from a contributor's repo rather
+    than a local checkout they already cloned themselves.
+
+    Flow: clone repo_url (given branch, --depth 1) into a fresh temp dir ->
+    look for config_path at the clone's root -> run it for real (this IS the
+    precheck, not a dry run) -> on status PASS, `project_import()` the
+    result -> always remove the temp dir, success or failure.
+
+    Duplicate-import guard: before doing any of that, checks whether
+    repo_url+branch was already imported into this database (by scanning
+    existing tiles' imported_run.json for a matching source_repo/
+    source_branch, written by a prior `import_repo()` call -- see
+    `project_import()`'s source_repo parameter). Checked first, before
+    cloning, so a rejected duplicate doesn't pay for a clone+run it can't
+    use. If found and force=False, raises VF_IMPORT_REPO_ALREADY_IMPORTED
+    naming the existing tile. If found and force=True, proceeds normally --
+    a new tile is created (the existing one is left untouched, never
+    overwritten). This check is independent of the precheck below: force
+    never lets a failing `project run` through -- that gate is
+    `project_import()`'s own PASS-only requirement, unchanged.
+
+    Parameters
+    ----------
+    repo_url : str
+        Anything `git clone` accepts (https URL, ssh URL, or a local path).
+    db_path : str | Path
+        Path to the destination VeriFlow database directory.
+    branch : str
+        Branch to clone (default "main").
+    config_path : str
+        Path to the Project Mode veriflow.yaml, relative to the repo's root
+        (default "veriflow.yaml").
+    force : bool
+        Re-import repo_url+branch even if already imported into this
+        database (creates another, separate tile). Does not affect the
+        precheck -- a failing `project run` is always rejected regardless.
+
+    Raises:
+        VeriFlowError(VF_IMPORT_REPO_ALREADY_IMPORTED)  -- repo_url+branch already imported, force=False
+        VeriFlowError(VF_IMPORT_REPO_CLONE_FAILED)      -- git clone failed (bad URL/branch/network)
+        VeriFlowError(VF_IMPORT_REPO_NO_CONFIG)         -- config_path missing at the repo's root
+        VeriFlowError(VF_IMPORT_REPO_PRECHECK_FAILED)   -- project run status != PASS
+        ... plus anything project_import() itself can raise (VF_IMPORT_INTERFACE_MISMATCH, etc.)
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    from veriflow.commands.pdk import _force_remove_readonly
+    from veriflow.core.validator import validate_database
+
+    db_path = Path(db_path).resolve()
+    validate_database(db_path)
+
+    prior_tile_id = _find_prior_import(db_path, repo_url, branch)
+    if prior_tile_id is not None and not force:
+        raise VeriFlowError(
+            f"{repo_url!r} (branch {branch!r}) was already imported as tile "
+            f"{prior_tile_id!r}. Use force=True (--force) to import it again "
+            "as a new, separate tile.",
+            code="VF_IMPORT_REPO_ALREADY_IMPORTED",
+            details={"repo_url": repo_url, "branch": branch, "tile_id": prior_tile_id},
+        )
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="veriflow_import_"))
+    try:
+        clone_result = subprocess.run(
+            ["git", "clone", "--branch", branch, "--depth", "1", repo_url, str(tmp_dir)],
+            capture_output=True,
+            text=True,
+        )
+        if clone_result.returncode != 0:
+            raise VeriFlowError(
+                f"Failed to clone {repo_url!r} (branch {branch!r}):\n"
+                f"  {clone_result.stderr.strip()}",
+                code="VF_IMPORT_REPO_CLONE_FAILED",
+                details={"repo_url": repo_url, "branch": branch, "stderr": clone_result.stderr},
+            )
+
+        cloned_config_path = tmp_dir / config_path
+        if not cloned_config_path.is_file():
+            raise VeriFlowError(
+                f"{config_path!r} not found at the root of {repo_url!r} (branch {branch!r}).",
+                code="VF_IMPORT_REPO_NO_CONFIG",
+                details={"repo_url": repo_url, "branch": branch, "config_path": config_path},
+            )
+
+        run_result = project_run(cloned_config_path)
+        if run_result.get("status") != "PASS":
+            raise VeriFlowError(
+                f"Precheck failed for {repo_url!r} (branch {branch!r}): "
+                f"status={run_result.get('status')!r}. Only a passing "
+                "'project run' can be imported.",
+                code="VF_IMPORT_REPO_PRECHECK_FAILED",
+                details={"repo_url": repo_url, "branch": branch, "run_result": run_result},
+            )
+
+        result = project_import(
+            cloned_config_path, db_path, source_repo=repo_url, source_branch=branch
+        )
+        result["source_repo"] = repo_url
+        result["source_branch"] = branch
+        return result
+    finally:
+        # plain ignore_errors=True silently leaves .git/objects behind --
+        # git marks those files read-only on Windows, which raises
+        # PermissionError inside rmtree; _force_remove_readonly clears the
+        # attribute and retries instead of giving up (confirmed via a real
+        # git clone left in %TEMP% until this fix was added).
+        shutil.rmtree(tmp_dir, onerror=_force_remove_readonly)
 
 
 _DEFAULT_README_TEMPLATE_PATH = Path(__file__).parent / "templates" / "submission_readme_template.j2"
@@ -885,3 +1136,164 @@ def db_tile_set(db_path: str | Path, tile: str | int, key: str, value: str) -> d
     from veriflow.commands.set_config import db_tile_set_config
 
     return db_tile_set_config(_normalize_path(db_path), tile, key, value)
+
+
+def _default_veriflow_config_path() -> Path:
+    """Same `--config` resolution rule as the CLI (`cli.py::_default_config_path`,
+    duplicated here as a one-line default lookup, not the YAML-editing logic
+    itself -- explicit --config/config_path always wins over this, this is
+    only what's used when the caller passes config_path=None."""
+    import os
+
+    return Path(os.environ.get("VERIFLOW_CONFIG", "veriflow.yaml"))
+
+
+def apply_spec(spec_path: str | Path, config_path: str | Path | None = None) -> dict:
+    """Apply a `shuttle_spec.yaml` (a shuttle organizer's technology/
+    interface/pipeline contract, see docs/PROJECT_CONFIG.md) onto a
+    project's `veriflow.yaml`.
+
+    Every field present in the spec is applied via the *same*
+    `project_set_config()` (or, for the two fields it has no key for,
+    `set_yaml_key()` directly) that `veriflow project set` itself uses --
+    no separate YAML-writing logic, so behavior (comment preservation,
+    validation, uncomment-in-place, etc.) is identical to setting each
+    field by hand one at a time.
+
+    Fields recognized in the spec:
+      - `interface` (str | null): normally applied via
+        `project_set_config(..., "interface", ...)` -- `null` clears it,
+        same as `project set interface null`. **Except** when
+        `interface_definition` is also set (below): a custom interface's
+        name isn't registered yet, so it can't go through
+        `project_set_config()`'s immediate registry validation -- both
+        `interface.name` and `interface.definition` are then written
+        directly via `set_yaml_key()`, mirroring hand-authoring
+        `interface: {name: ..., definition: ...}` in veriflow.yaml
+        (registration happens later, at config-load time).
+      - `interface_definition` (str | null): only applied when non-null;
+        see above for how it's written.
+      - `technology` (str): applied via `project_set_config(...,
+        "technology", ...)` -- unless `technology_definition` is also
+        set, same reasoning and same direct-write treatment as
+        `interface`/`interface_definition` above. `null`/absent is
+        skipped either way -- Project Mode's technology has no "clear
+        it" concept (it always defaults to "generic", never None), so
+        there's nothing meaningful to apply.
+      - `technology_definition` (str | null): only applied when non-null;
+        see `technology` above.
+      - `pipeline.stages` (list of `{"type": ...}` dicts): the stage
+        types are joined into the same comma-separated string
+        `project_set_config(..., "pipeline", ...)` already expects.
+      - `shuttle_name` (str): informative only -- there is no field in
+        `veriflow.yaml` for it (Project Mode has no shuttle concept;
+        that's a Database Mode/`project_config.yaml` idea). Recorded in
+        neither the file nor the returned dict, and surfaced as a
+        `UserWarning` so it isn't silently dropped without a trace.
+
+    Parameters
+    ----------
+    spec_path : str | Path
+        Path to the `shuttle_spec.yaml` file to read.
+    config_path : str | Path | None
+        Path to the destination `veriflow.yaml`. If None, resolves via
+        the `VERIFLOW_CONFIG` environment variable, else `"veriflow.yaml"`
+        -- the same priority order as the CLI's `--config` default.
+
+    Raises:
+        VeriFlowError(VF_SHUTTLE_SPEC_NOT_FOUND)  -- spec_path doesn't exist
+        VeriFlowError(VF_SHUTTLE_SPEC_YAML_ERROR) -- spec_path isn't valid YAML
+        VeriFlowError(VF_PROJECT_CONFIG_NOT_FOUND) -- config_path doesn't exist
+        (plus whatever project_set_config() itself raises for an invalid
+        interface/technology/pipeline value)
+
+    Returns a dict of the fields actually applied, e.g.
+    `{"interface": "semicolab", "technology": "sky130",
+    "pipeline": ["connectivity", "synthesis"]}` -- only the keys that were
+    actually written, in the same shape as the spec's own values (not
+    `project_set_config()`'s per-call `{"key", "value", "config"}` dicts).
+    """
+    import warnings
+
+    import yaml
+
+    from veriflow.commands.set_config import project_set_config
+    from veriflow.core.yaml_config_editor import set_yaml_nested_keys
+
+    spec_path = Path(spec_path).resolve()
+    if not spec_path.is_file():
+        raise VeriFlowError(
+            f"Shuttle spec not found: {spec_path}",
+            code="VF_SHUTTLE_SPEC_NOT_FOUND",
+            details={"path": str(spec_path)},
+        )
+    try:
+        spec = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise VeriFlowError(
+            f"YAML parse error in {spec_path}:\n  {exc}",
+            code="VF_SHUTTLE_SPEC_YAML_ERROR",
+            details={"path": str(spec_path)},
+        ) from exc
+
+    resolved_config = Path(config_path) if config_path is not None else _default_veriflow_config_path()
+
+    applied: dict = {}
+
+    if "shuttle_name" in spec and spec.get("shuttle_name"):
+        warnings.warn(
+            f"shuttle_spec.yaml's shuttle_name ({spec['shuttle_name']!r}) is "
+            "informative only -- veriflow.yaml has no field for it (that's a "
+            "Database Mode/project_config.yaml concept), so it was not applied "
+            "anywhere. [VF_SHUTTLE_NAME_NOT_APPLIED]",
+            stacklevel=2,
+        )
+
+    raw_interface = spec.get("interface")
+    raw_interface_definition = spec.get("interface_definition")
+    if raw_interface_definition:
+        # A custom interface backed by an external .v file isn't
+        # registered yet, so it can't go through project_set_config()'s
+        # "interface" key -- that validates immediately against the
+        # *current* registry (_validate_interface_value), which would
+        # reject a not-yet-registered custom name. Writing name+definition
+        # directly mirrors hand-authoring `interface: {name, definition}`
+        # -- registration happens later, at config-load time
+        # (ProjectWorkflowConfig._parse_interface_section), same as if the
+        # user had typed this into veriflow.yaml themselves. Both children
+        # are set in a single set_yaml_nested_keys() pass, not two
+        # separate set_yaml_key() calls -- see that function's docstring
+        # for the ruamel comment-bundling bug two sequential calls hit
+        # here (discovered while implementing this).
+        children = {"definition": str(raw_interface_definition)}
+        if raw_interface:
+            children = {"name": str(raw_interface), **children}
+            applied["interface"] = raw_interface
+        set_yaml_nested_keys(resolved_config, "interface", children)
+        applied["interface_definition"] = raw_interface_definition
+    elif "interface" in spec:
+        value = "null" if raw_interface is None else str(raw_interface)
+        project_set_config(resolved_config, "interface", value)
+        applied["interface"] = raw_interface
+
+    raw_technology = spec.get("technology")
+    raw_technology_definition = spec.get("technology_definition")
+    if raw_technology_definition:
+        # Same reasoning and same-single-pass treatment as interface_definition above.
+        children = {"definition": str(raw_technology_definition)}
+        if raw_technology:
+            children = {"name": str(raw_technology), **children}
+            applied["technology"] = raw_technology
+        set_yaml_nested_keys(resolved_config, "technology", children)
+        applied["technology_definition"] = raw_technology_definition
+    elif raw_technology:
+        project_set_config(resolved_config, "technology", str(raw_technology))
+        applied["technology"] = raw_technology
+
+    pipeline_section = spec.get("pipeline")
+    if isinstance(pipeline_section, dict) and pipeline_section.get("stages"):
+        stage_types = [s["type"] for s in pipeline_section["stages"]]
+        project_set_config(resolved_config, "pipeline", ",".join(stage_types))
+        applied["pipeline"] = stage_types
+
+    return applied

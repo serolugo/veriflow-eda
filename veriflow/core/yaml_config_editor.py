@@ -199,6 +199,70 @@ def set_yaml_pipeline(path: Path, stages: list[dict]) -> None:
         _set_yaml_pipeline_fallback(path, stages)
 
 
+def set_yaml_nested_keys(path: Path, parent_key: str, children: dict[str, Any]) -> None:
+    """Set multiple one-level-nested children of *parent_key* (e.g.
+    ``interface: {name: ..., definition: ...}``) in a single pass.
+
+    Setting them one at a time via separate `set_yaml_key()` calls is
+    unsafe here: adding a *second* key to a mapping whose only existing
+    key has a large trailing comment attached (as happens right after the
+    first key was just uncommented from a scaffold placeholder -- every
+    remaining commented-out section in the file can end up bundled onto
+    that one key's comment slot, see `_uncomment_existing_section`'s
+    docstring) can push the second key's value to the very end of the
+    file in ruamel's dump, landing outside the mapping it was meant to be
+    part of. Setting every child in the same read-modify-write pass never
+    creates that fragile one-key intermediate state.
+
+    Order of *children*'s keys is preserved when uncommenting a
+    placeholder (each is looked up as its own `#   child:` line within the
+    parent's commented block, same as `set_yaml_key`); when the parent
+    already has other children (active or being added fresh), order
+    follows however the underlying dict/YAML naturally lays them out.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+
+    if _find_active_line(lines, parent_key) is None:
+        parent_idx = _find_commented_line(lines, 0, len(lines), parent_key)
+        if parent_idx is not None:
+            block_end = _commented_block_end(lines, parent_idx)
+            lines[parent_idx] = f"{parent_key}:\n"
+            insert_at = parent_idx + 1
+            for child_key, value in children.items():
+                rendered = _render_uncommented_value(value, quoted=False)
+                child_idx = _find_commented_line(lines, parent_idx + 1, block_end, child_key)
+                if child_idx is not None:
+                    lines[child_idx] = f"  {child_key}: {rendered}\n"
+                    insert_at = child_idx + 1
+                else:
+                    lines.insert(insert_at, f"  {child_key}: {rendered}\n")
+                    insert_at += 1
+                    block_end += 1
+            path.write_text("".join(lines), encoding="utf-8")
+            return
+
+    if HAS_RUAMEL:
+        yaml = _make_yaml()
+        data = _load_ruamel(path, yaml)
+        node = data.get(parent_key)
+        if not isinstance(node, dict):
+            node = CommentedMap()
+            data[parent_key] = node
+        for child_key, value in children.items():
+            node[child_key] = value
+        _dump_ruamel(data, path, yaml)
+    else:
+        # The fallback's insert-new-child branch (_fallback_set_nested)
+        # always inserts immediately after the parent's own key line,
+        # regardless of any trailing comments further down -- it doesn't
+        # share ruamel's comment-bundling hazard, so sequential calls here
+        # are safe.
+        for child_key, value in children.items():
+            current = path.read_text(encoding="utf-8")
+            path.write_text(_fallback_set_nested(current, parent_key, child_key, value), encoding="utf-8")
+
+
 # ── ruamel.yaml round-trip implementation ──────────────────────────────────
 
 def _load_ruamel(path: Path, yaml: "YAML"):

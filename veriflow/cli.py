@@ -27,6 +27,7 @@ Usage:
 import argparse
 import contextlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -43,6 +44,17 @@ from veriflow.ui.output import print_cli_error
 def _emit_json(data: dict) -> None:
     """Write a JSON object to stdout. Called only in --json mode."""
     sys.stdout.write(json.dumps(data, indent=2) + "\n")
+
+
+def _default_config_path() -> str:
+    """Default for every Project Mode `--config` argument: an explicit
+    `--config` on the command line always wins (argparse handles that --
+    this is only the *default* used when it's omitted); otherwise the
+    `VERIFLOW_CONFIG` environment variable; otherwise `"veriflow.yaml"`.
+    Read fresh every time `build_parser()` runs (once per CLI invocation,
+    see `main()`), not cached at import time, so it reflects the
+    environment at invocation time."""
+    return os.environ.get("VERIFLOW_CONFIG", "veriflow.yaml")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,9 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_run = project_sub.add_parser("run", help="Run a project workflow")
     p_project_run.add_argument(
         "--config",
-        default="veriflow.yaml",
+        default=_default_config_path(),
         metavar="PATH",
-        help="Path to project config file (default: veriflow.yaml)",
+        help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
     )
 
     p_project_init = project_sub.add_parser("init", help="Generate a commented veriflow.yaml scaffold")
@@ -92,9 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_import.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_project_import.add_argument(
         "--config",
-        default="veriflow.yaml",
+        default=_default_config_path(),
         metavar="PATH",
-        help="Path to project config file (default: veriflow.yaml)",
+        help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
     )
     p_project_import.add_argument(
         "--run",
@@ -115,16 +127,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_project_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
-    p_project_set.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Path to project config file (default: veriflow.yaml)")
+    p_project_set.add_argument(
+        "--config", default=_default_config_path(), metavar="PATH",
+        help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
+    )
 
     p_project_readme = project_sub.add_parser(
         "generate-readme", help="Render a submission README.md from the latest passing run"
     )
     p_project_readme.add_argument(
         "--config",
-        default="veriflow.yaml",
+        default=_default_config_path(),
         metavar="PATH",
-        help="Path to project config file (default: veriflow.yaml)",
+        help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
     )
     p_project_readme.add_argument(
         "--out",
@@ -137,6 +152,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="Custom Jinja2 template (default: readme_template: in config, or VeriFlow's built-in default)",
+    )
+
+    p_project_apply_spec = project_sub.add_parser(
+        "apply-spec", help="Apply a shuttle_spec.yaml's fields onto veriflow.yaml"
+    )
+    p_project_apply_spec.add_argument("spec_path", metavar="SPEC_PATH", help="Path to shuttle_spec.yaml")
+    p_project_apply_spec.add_argument(
+        "--config", default=_default_config_path(), metavar="PATH",
+        help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
     )
 
     # db (Database Mode namespace)
@@ -206,6 +230,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_db_set.add_argument("key", help="interface | technology | id-format | prefix | shuttle | pipeline")
     p_db_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
+
+    p_db_ir = db_sub.add_parser(
+        "import-repo", help="Clone a git repo, precheck it, and import it as a new tile"
+    )
+    p_db_ir.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
+    p_db_ir.add_argument("--repo", required=True, metavar="URL", help="Git URL (or local path) to clone")
+    p_db_ir.add_argument("--branch", default="main", metavar="NAME", help="Branch to clone (default: main)")
+    p_db_ir.add_argument(
+        "--config", default="veriflow.yaml", metavar="PATH",
+        help="Path to veriflow.yaml relative to the repo's root (default: veriflow.yaml)",
+    )
+    p_db_ir.add_argument(
+        "--force", action="store_true",
+        help="Re-import this repo+branch even if already imported (creates a new, separate tile)",
+    )
 
     # db tile (per-tile config namespace)
     p_db_tile = db_sub.add_parser("tile", help="Per-tile config commands")
@@ -361,6 +400,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.generate_readme import cmd_generate_readme
                         exit_code = cmd_generate_readme(args)
+                    elif project_cmd == "apply-spec":
+                        dispatched = True
+                        from veriflow.commands.apply_spec import cmd_apply_spec
+                        exit_code = cmd_apply_spec(args)
                     else:
                         if json_mode:
                             error_payload = {
@@ -483,6 +526,11 @@ def main(argv: list[str] | None = None) -> int:
                             dispatched = True
                             from veriflow.commands.set_config import cmd_db_set
                             exit_code = cmd_db_set(args)
+
+                        elif db_cmd == "import-repo":
+                            dispatched = True
+                            from veriflow.commands.import_repo import cmd_import_repo
+                            exit_code = cmd_import_repo(args)
 
                 elif args.command == "wrap":
                     wrap_cmd = getattr(args, "wrap_command", None)
