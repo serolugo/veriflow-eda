@@ -611,6 +611,82 @@ def test_workflow_skip_flags_preserved_in_explicit_request(tmp_path):
     assert pr.result.stages["synthesis"].status == "SKIPPED"
 
 
+def test_needed_tools_no_request_defaults_to_pipeline_only(tmp_path):
+    from veriflow.workflows.project import _needed_tools
+
+    cfg = _rtl_only_config(tmp_path)
+    need_iverilog, need_yosys = _needed_tools(cfg)
+    assert need_yosys is True
+
+
+def test_needed_tools_skip_synth_request_does_not_need_yosys(tmp_path):
+    """RunRequest.skip_synth=True must drop the yosys requirement even
+    though synthesis is present in the pipeline -- same behavior as
+    Database Mode's run_tile, which factors skip_* into its tool check."""
+    from veriflow.workflows.project import _needed_tools
+
+    cfg = _rtl_only_config(tmp_path)
+    req = RunRequest(work_dir=tmp_path, skip_synth=True)
+    need_iverilog, need_yosys = _needed_tools(cfg, req)
+    assert need_yosys is False
+
+
+def test_needed_tools_skip_check_request_does_not_need_iverilog_for_connectivity(tmp_path):
+    """RunRequest.skip_connectivity=True must not require iverilog for
+    connectivity checking (iverilog may still be needed for simulation,
+    handled separately)."""
+    from veriflow.workflows.project import _needed_tools
+
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "shift_mux", "rtl_sources": ["rtl/shift_mux.v"]},
+            "interface": {"name": "semicolab"},
+        },
+        root=tmp_path,
+    )
+    req = RunRequest(work_dir=tmp_path, skip_connectivity=True, skip_sim=True)
+    need_iverilog, need_yosys = _needed_tools(cfg, req)
+    assert need_iverilog is False
+
+
+def test_needed_tools_all_skip_flags_need_no_tools(tmp_path):
+    from veriflow.workflows.project import _needed_tools
+
+    cfg = _rtl_only_config(tmp_path)
+    req = RunRequest(work_dir=tmp_path, skip_connectivity=True, skip_sim=True, skip_synth=True)
+    need_iverilog, need_yosys = _needed_tools(cfg, req)
+    assert need_iverilog is False
+    assert need_yosys is False
+
+
+def test_workflow_skip_synth_request_calls_validate_tools_without_yosys(tmp_path):
+    """End-to-end: ProjectWorkflow.run() with a connectivity-enabled config
+    and RunRequest(skip_synth=True) must ask validate_tools for iverilog
+    (connectivity still runs) but NOT yosys, even though synthesis is in
+    the pipeline."""
+    from veriflow.workflows.project import ProjectWorkflow
+
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "shift_mux", "rtl_sources": ["rtl/shift_mux.v"]},
+            "interface": {"name": "semicolab"},
+        },
+        root=tmp_path,
+    )
+    req = RunRequest(work_dir=tmp_path / "run-001", skip_synth=True)
+
+    mock_backend = MagicMock()
+    mock_backend.run_connectivity.return_value = "PASS"
+
+    with (
+        patch("veriflow.workflows.project.validate_tools") as mock_validate,
+        patch("veriflow.workflows.project.get_connectivity_backend", return_value=mock_backend),
+    ):
+        ProjectWorkflow(cfg).run(request=req)
+
+    mock_validate.assert_called_once_with(need_iverilog=True, need_yosys=False)
+
+
 def test_workflow_run_returns_project_run_result(tmp_path):
     cfg = _rtl_only_config(tmp_path)
 

@@ -78,7 +78,9 @@ notes: |
 """
 
 
-def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") -> dict:
+def cmd_create_tile(
+    db: Path, *, top_module: str = "", tile_author: str = "", silent: bool = False
+) -> dict:
     """Create a new tile entry in the database.
 
     top_module: RTL top module name.  Required when the selected interface
@@ -91,8 +93,13 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
     when provided, and used to compute the {author_initials} placeholder for
     project_config.yaml's id_format.
 
+    silent: Suppress all progress/summary output (used when this is called
+    as a step of a larger command, e.g. `project import`, which prints its
+    own summary instead).
+
     Returns {"tile_id": ..., "tile_number": ...} for the newly created tile.
     """
+    step = (lambda *a, **k: None) if silent else lambda prefix, msg: print_step(prefix, msg)
 
     validate_database(db)
 
@@ -161,12 +168,12 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
     }
     tile_id = format_tile_id(project_config.id_format, placeholders)
 
-    print_step("create-tile", f"Generating tile {tile_number_str} -> {tile_id}")
+    step("create-tile", f"Generating tile {tile_number_str} -> {tile_id}")
 
     # 6. Create config/tile_XXXX/
     config_tile_dir = db / "config" / f"tile_{tile_number_str}"
     config_tile_dir.mkdir(parents=True, exist_ok=True)
-    print_step("create-tile", f"Created {config_tile_dir.relative_to(db)}")
+    step("create-tile", f"Created {config_tile_dir.relative_to(db)}")
 
     # 7. Write single tile_config.yaml (tile + run fields merged)
     config_text = _TILE_CONFIG_TEMPLATE.replace("__PORTS_COMMENT__", _ports_comment(profile))
@@ -175,7 +182,7 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
     if tile_author:
         config_text = config_text.replace('tile_author: ""', f'tile_author: "{tile_author}"')
     (config_tile_dir / "tile_config.yaml").write_text(config_text, encoding="utf-8")
-    print_step("create-tile", "Written tile_config.yaml")
+    step("create-tile", "Written tile_config.yaml")
 
     # 8. Create src/rtl/ and src/tb/ with templates
     import shutil
@@ -196,29 +203,29 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
             content = content.replace("/* DUT_MODULE */", top_module)
         (tb_dir / "tb_tile.v").write_text(content, encoding="utf-8")
     profile_label = interface_name or "universal"
-    print_step("create-tile", f"Created src/rtl/ and src/tb/ ({profile_label}: tb_tile.v)")
+    step("create-tile", f"Created src/rtl/ and src/tb/ ({profile_label}: tb_tile.v)")
 
     # 9. Create tiles/<tile_id>/
     tile_dir = db / "tiles" / tile_id
     tile_dir.mkdir(parents=True, exist_ok=True)
-    print_step("create-tile", f"Created tiles/{tile_id}/")
+    step("create-tile", f"Created tiles/{tile_id}/")
 
     # 9. Generate README.md with empty fields
     empty_tile_config = TileConfig.from_dict({})
     generate_readme(tile_id, empty_tile_config, tile_dir / "README.md")
-    print_step("create-tile", "Generated README.md")
+    step("create-tile", "Generated README.md")
 
     # 10. Create works/ and runs/
     for sub in ("works/rtl", "works/tb"):
         d = tile_dir / sub
         d.mkdir(parents=True, exist_ok=True)
         (d / ".gitkeep").touch()
-    print_step("create-tile", "Created works/")
+    step("create-tile", "Created works/")
 
     runs_dir = tile_dir / "runs"
     runs_dir.mkdir(exist_ok=True)
     (runs_dir / ".gitkeep").touch()
-    print_step("create-tile", "Created runs/")
+    step("create-tile", "Created runs/")
 
     # 11. Append row to tile_index.csv
     append_tile_index(tile_index_path, {
@@ -230,12 +237,13 @@ def cmd_create_tile(db: Path, *, top_module: str = "", tile_author: str = "") ->
         "revision": f"{id_revision:02d}",
         "interface_name": interface_name or "",
     })
-    print_step("create-tile", "Appended row to tile_index.csv")
+    step("create-tile", "Appended row to tile_index.csv")
 
-    print_done("Tile created successfully.")
-    console.print(f"  [secondary]Tile Number[/secondary] : [id]{tile_number_str}[/id]")
-    console.print(f"  [secondary]Tile ID    [/secondary] : [id]{tile_id}[/id]")
-    console.print(f"  [secondary]Next       [/secondary] : Fill in [id]config/tile_{tile_number_str}/tile_config.yaml[/id]")
-    console.print(f"                 Add RTL to [id]config/tile_{tile_number_str}/src/rtl/[/id]")
+    if not silent:
+        print_done("Tile created successfully.")
+        console.print(f"  [secondary]Tile Number[/secondary] : [id]{tile_number_str}[/id]")
+        console.print(f"  [secondary]Tile ID    [/secondary] : [id]{tile_id}[/id]")
+        console.print(f"  [secondary]Next       [/secondary] : Fill in [id]config/tile_{tile_number_str}/tile_config.yaml[/id]")
+        console.print(f"                 Add RTL to [id]config/tile_{tile_number_str}/src/rtl/[/id]")
 
     return {"tile_id": tile_id, "tile_number": tile_number_str}

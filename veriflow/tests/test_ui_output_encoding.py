@@ -90,6 +90,13 @@ def test_print_runs_table_is_cp1252_safe(capsys):
     _assert_cp1252_safe(capsys)
 
 
+def test_print_ports_table_is_cp1252_safe(capsys):
+    """print_ports_table used box.SIMPLE (unicode box-drawing edges) before
+    the fix -- now shares _FRAMED_HEAD_BOX with the other tables."""
+    ui_output.print_ports_table([{"name": "clk", "direction": "input", "width": 1}])
+    _assert_cp1252_safe(capsys)
+
+
 def test_print_cli_error_is_cp1252_safe(capsys):
     ui_output.print_cli_error("Tool not found in PATH: yosys")
     _assert_cp1252_safe(capsys)

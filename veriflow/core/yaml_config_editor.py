@@ -27,11 +27,21 @@ except ImportError:  # pragma: no cover -- exercised in environments without rua
     HAS_RUAMEL = False
 
 
+def _represent_none_as_null(representer, data):
+    """ruamel's default null representer writes an empty scalar (`key:`
+    with nothing after it) -- render the explicit `null` literal instead,
+    so e.g. `project set interface null` produces `interface: null`, not
+    a value-less `interface:`. Both parse back to Python None identically,
+    this only affects what's written to disk."""
+    return representer.represent_scalar("tag:yaml.org,2002:null", "null")
+
+
 def _make_yaml() -> "YAML":
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)
     yaml.width = 4096  # avoid re-wrapping long values across lines
+    yaml.representer.add_representer(type(None), _represent_none_as_null)
     return yaml
 
 
@@ -57,11 +67,126 @@ def set_yaml_key(
     to inherit the style from (e.g. project_config.yaml's ``shuttle_name``/
     ``id_format``, commented out by default so ruamel sees them as brand
     new keys, not updates to an existing quoted one).
+
+    If *key_path* exists only as a commented-out placeholder (e.g.
+    ``# interface:\\n#   name: ""``, the scaffolded default), it's
+    uncommented and updated in place instead of appending a second, active
+    copy of the section at the end of the file -- this is a pure text
+    operation that runs the same way whether or not ruamel.yaml is
+    installed. Only when no commented match exists do we fall through to
+    the ruamel/fallback update-or-append behavior below.
     """
+    text = path.read_text(encoding="utf-8")
+    uncommented = _uncomment_existing_section(
+        text, key_path, value, block_scalar=block_scalar, quoted=quoted
+    )
+    if uncommented is not None:
+        path.write_text(uncommented, encoding="utf-8")
+        return
+
     if HAS_RUAMEL:
         _set_yaml_key_ruamel(path, key_path, value, block_scalar=block_scalar, quoted=quoted)
     else:
         _set_yaml_key_fallback(path, key_path, value, block_scalar=block_scalar)
+
+
+# ── commented-placeholder uncommenting (shared by both implementations) ────
+
+def _render_uncommented_value(value: Any, *, quoted: bool) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if quoted:
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return text
+
+
+def _commented_block_end(lines: list[str], start: int) -> int:
+    """Return the index just past the run of commented lines following
+    lines[start] (a `# key:` comment line) -- ends at the first blank line
+    or the first line that isn't itself a comment (mirrors _section_end's
+    role for the active-YAML case, but for a still-commented-out block)."""
+    end = start + 1
+    while end < len(lines):
+        line = lines[end]
+        if line.strip() == "" or not line.lstrip().startswith("#"):
+            break
+        end += 1
+    return end
+
+
+def _find_commented_line(lines: list[str], start: int, end: int, key: str) -> int | None:
+    pattern = re.compile(rf"^#\s*{re.escape(key)}:")
+    return next((i for i in range(start, end) if pattern.match(lines[i])), None)
+
+
+def _find_active_line(lines: list[str], key: str) -> int | None:
+    """Index of *key* as an already-active (uncommented, column-0-anchored)
+    top-level line, or None. Anchoring at column 0 with no leading `#`
+    naturally excludes both commented lines and nested child lines (which
+    are indented) -- this only ever matches a real top-level `key:`."""
+    pattern = re.compile(rf"^{re.escape(key)}:")
+    return next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+
+
+def _uncomment_existing_section(
+    text: str, key_path: tuple[str, ...], value: Any, *, block_scalar: bool, quoted: bool
+) -> str | None:
+    """If *key_path* exists only as a commented-out placeholder in *text*,
+    uncomment and update it in place, returning the new full text.
+    Returns None -- the caller then falls through to updating an existing
+    *active* key in place or appending a brand new section at the end
+    (unchanged pre-existing behavior) -- when either:
+
+    - *key_path*'s top-level key is already active somewhere in the file
+      (even if a stale commented placeholder for it also still exists
+      elsewhere): uncommenting the placeholder here would create a
+      *second*, duplicate top-level section instead of updating the one
+      real section that's already there. The existing update-in-place
+      logic (ruamel's key lookup / the fallback's active-line regex)
+      already finds and updates that real section correctly on its own.
+    - no commented match exists either.
+    """
+    if block_scalar and isinstance(value, str):
+        # No template ships a block-scalar field (e.g. tile_config.yaml's
+        # description:) as a commented-out placeholder -- they're all
+        # already active -- so there is never anything to uncomment here.
+        return None
+
+    lines = text.splitlines(keepends=True)
+    rendered = _render_uncommented_value(value, quoted=quoted)
+    top_level_key = key_path[0]
+
+    if _find_active_line(lines, top_level_key) is not None:
+        return None
+
+    if len(key_path) == 1:
+        idx = _find_commented_line(lines, 0, len(lines), top_level_key)
+        if idx is None:
+            return None
+        lines[idx] = f"{top_level_key}: {rendered}\n"
+        return "".join(lines)
+
+    parent_key, child_key = key_path
+    parent_idx = _find_commented_line(lines, 0, len(lines), parent_key)
+    if parent_idx is None:
+        return None
+
+    block_end = _commented_block_end(lines, parent_idx)
+    child_idx = _find_commented_line(lines, parent_idx + 1, block_end, child_key)
+
+    lines[parent_idx] = f"{parent_key}:\n"
+    if child_idx is not None:
+        lines[child_idx] = f"  {child_key}: {rendered}\n"
+    else:
+        lines.insert(parent_idx + 1, f"  {child_key}: {rendered}\n")
+
+    return "".join(lines)
 
 
 def set_yaml_pipeline(path: Path, stages: list[dict]) -> None:

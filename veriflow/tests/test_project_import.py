@@ -424,6 +424,25 @@ def test_cli_project_import_veriflow_error_propagates_nonzero(tmp_path):
     assert rc != 0
 
 
+def test_cli_project_import_output_excludes_create_tile_lines(tmp_path, capsys):
+    """cmd_create_tile's own step-by-step progress output (tagged
+    "[create-tile]") must not leak into `project import`'s summary -- it
+    is invoked with silent=True and only the "[project-import]" lines
+    plus the final summary should appear."""
+    from veriflow.cli import main
+
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    rc = main(["project", "import", "--db", str(db_path), "--config", str(config_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "create-tile" not in out
+    assert "project-import" in out
+
+
 def test_project_import_parses():
     from veriflow.cli import build_parser
     args = build_parser().parse_args(["project", "import", "--db", "mydb"])

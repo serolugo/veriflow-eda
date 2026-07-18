@@ -415,7 +415,7 @@ def project_import(
 
     # e. Create the tile and copy sources into it
     top_module = results["top_module"]
-    tile_info = cmd_create_tile(db_path, top_module=top_module)
+    tile_info = cmd_create_tile(db_path, top_module=top_module, silent=True)
     tile_number_str = tile_info["tile_number"]
     tile_id = tile_info["tile_id"]
 

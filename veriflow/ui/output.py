@@ -8,7 +8,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from rich import box
 from rich.box import Box
 
 from veriflow.ui.theme import (
@@ -126,11 +125,12 @@ def print_title(title: str) -> None:
 def print_ports_table(ports: list[dict]) -> None:
     """Render a port list as a styled table."""
     table = Table(
-        box=box.SIMPLE,
+        box=_FRAMED_HEAD_BOX,
         show_header=True,
         header_style=f"bold {BLUE}",
         border_style=GREY,
         padding=(0, 2),
+        show_edge=True,
     )
     table.add_column("Name",      style=WHITE)
     table.add_column("Direction", style=GREY)

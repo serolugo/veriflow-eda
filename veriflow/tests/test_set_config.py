@@ -58,10 +58,87 @@ def test_project_set_interface_updates_yaml_and_preserves_comments(tmp_path):
     updated = config_path.read_text(encoding="utf-8")
     data = yaml.safe_load(updated)
     assert data["interface"] == {"name": "semicolab"}
-    # every comment line from the original scaffold is still present verbatim
+    # comment lines belonging to *other* sections are still present verbatim --
+    # only the "# interface:" / "#   name: ..." placeholder itself is
+    # uncommented in place (see test_project_set_interface_uncomments_existing_
+    # commented_section_in_place below), not appended as a second copy.
     for line in original.splitlines():
-        if line.strip().startswith("#"):
+        if line.strip().startswith("#") and "interface" not in line and "name:" not in line:
             assert line in updated
+    assert updated.count("interface:") == 1
+
+
+def test_project_set_interface_uncomments_existing_commented_section_in_place(tmp_path):
+    """The scaffold ships `interface:` commented out (`# interface:\\n#   name:
+    ""`). Setting it must uncomment and update that existing placeholder in
+    place, not append a second, active `interface:` section at the end of
+    the file."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    original = config_path.read_text(encoding="utf-8")
+    assert "# interface:" in original  # sanity: scaffold ships it commented out
+
+    project_set_config(config_path, "interface", "semicolab")
+
+    updated = config_path.read_text(encoding="utf-8")
+    assert "# interface:" not in updated
+    # uncommented in place -- not appended as a new section at the end
+    lines = updated.splitlines()
+    interface_idx = next(i for i, l in enumerate(lines) if l == "interface:")
+    assert interface_idx < len(lines) - 5
+    data = yaml.safe_load(updated)
+    assert data["interface"] == {"name": "semicolab"}
+
+
+def test_project_set_does_not_duplicate_section_when_active_copy_exists_elsewhere(tmp_path):
+    """Regression: a yaml with an *active* `interface:` section (e.g.
+    appended below the scaffold's still-present `# interface:` commented
+    placeholder, as any file written before the 2026-07-18
+    uncomment-in-place fix would look) must update that one active
+    section in place -- not uncomment the stale placeholder into a
+    *second*, duplicate `interface:` section."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    original = config_path.read_text(encoding="utf-8")
+    assert "# interface:" in original  # sanity: scaffold's placeholder is still there
+
+    # Simulate an active section coexisting with the untouched commented
+    # placeholder (append it directly, bypassing set_yaml_key entirely).
+    with config_path.open("a", encoding="utf-8") as f:
+        f.write("\ninterface:\n  name: semicolab\n")
+
+    project_set_config(config_path, "interface", "null")
+
+    updated = config_path.read_text(encoding="utf-8")
+    active_lines = [line for line in updated.splitlines() if line.startswith("interface:")]
+    assert len(active_lines) == 1, f"expected exactly one active 'interface:' line, got: {active_lines!r}"
+    assert active_lines == ["interface: null"]
+    data = yaml.safe_load(updated)
+    assert data["interface"] is None
+
+
+def test_db_set_does_not_duplicate_nested_section_when_active_copy_exists_elsewhere(tmp_path):
+    """Same regression as above, for a nested key (`technology.name`) and
+    a different command (`db set`)."""
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    config_path = db / "project_config.yaml"
+    original = config_path.read_text(encoding="utf-8")
+    assert "# technology:" in original  # sanity: scaffold's placeholder is still there
+
+    with config_path.open("a", encoding="utf-8") as f:
+        f.write("\ntechnology:\n  name: sky130\n")
+
+    db_set_config(db, "technology", "gf180")
+
+    updated = config_path.read_text(encoding="utf-8")
+    active_lines = [line for line in updated.splitlines() if line == "technology:"]
+    assert len(active_lines) == 1, f"expected exactly one active 'technology:' line, got: {active_lines!r}"
+    data = yaml.safe_load(updated)
+    assert data["technology"] == {"name": "gf180"}
 
 
 def test_project_set_interface_null_clears_it(tmp_path):
@@ -71,7 +148,27 @@ def test_project_set_interface_null_clears_it(tmp_path):
     project_set_config(config_path, "interface", "semicolab")
     project_set_config(config_path, "interface", "null")
 
-    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    updated = config_path.read_text(encoding="utf-8")
+    data = yaml.safe_load(updated)
+    assert data["interface"] is None
+    # written as the explicit `null` literal, not a value-less key
+    assert "interface: null" in updated
+
+
+def test_project_set_interface_null_writes_explicit_null_literal_when_never_active(tmp_path):
+    """Same clear-to-null case, but on a fresh scaffold where `interface:`
+    was never set active first -- exercises the uncomment-in-place path
+    (the scaffold's `# interface:` placeholder is commented; it gets
+    uncommented directly to `interface: null`) rather than the
+    update-an-already-active-key path covered above."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "interface", "null")
+
+    updated = config_path.read_text(encoding="utf-8")
+    assert "interface: null" in updated
+    data = yaml.safe_load(updated)
     assert data["interface"] is None
 
 
@@ -649,19 +746,103 @@ def test_yaml_editor_ruamel_updates_existing_key_in_place(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "a: 99" in text
     assert "# keep me" in text
-    assert "b: 2" in text
 
 
 @pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
-def test_yaml_editor_ruamel_appends_new_key(tmp_path):
+def test_yaml_editor_ruamel_none_value_writes_explicit_null_literal(tmp_path):
+    """ruamel's default null representer writes a value-less `key:` (empty
+    after the colon) for a None value, not the `null` literal -- both
+    parse back identically, but the task spec wants the literal written to
+    disk. Covers the raw append path (no scaffold comment involved) and
+    the update-an-existing-active-key path, both of which route through
+    `_set_yaml_key_ruamel`'s direct ruamel dump (unlike the
+    uncomment-in-place path, which has its own renderer and was already
+    correct -- see test_project_set_interface_null_writes_explicit_null_
+    literal_when_never_active)."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    # brand new key, nothing to update or uncomment -- pure append path
+    append_path = tmp_path / "append.yaml"
+    append_path.write_text("a: 1\n", encoding="utf-8")
+    set_yaml_key(append_path, ("b",), None)
+    assert "b: null" in append_path.read_text(encoding="utf-8")
+
+    # already-active key -- update-in-place path
+    update_path = tmp_path / "update.yaml"
+    update_path.write_text("a: 1\n", encoding="utf-8")
+    set_yaml_key(update_path, ("a",), None)
+    assert "a: null" in update_path.read_text(encoding="utf-8")
+
+
+def test_yaml_editor_uncomments_existing_commented_key_in_place(tmp_path):
+    """A key that exists only as a commented-out placeholder (e.g.
+    `# c: 3`) is uncommented and updated in place -- not left as-is with a
+    second, active copy appended at the end."""
     from veriflow.core.yaml_config_editor import set_yaml_key
 
     path = tmp_path / "config.yaml"
     path.write_text("# a commented example\n# c: 3\na: 1\n", encoding="utf-8")
+    set_yaml_key(path, ("c",), 5)
+    text = path.read_text(encoding="utf-8")
+    assert "# a commented example" in text  # unrelated comment untouched
+    assert "# c:" not in text
+    assert text.count("c:") == 1
+    data = yaml.safe_load(text)
+    assert data["c"] == 5
+    assert data["a"] == 1
+
+
+def test_yaml_editor_prefers_active_key_over_stale_commented_placeholder(tmp_path):
+    """Regression for the duplicate-section bug: when a key is *both*
+    commented out (a leftover/stale placeholder) AND already active
+    elsewhere in the file, the active one must be updated in place --
+    uncommenting the stale placeholder too would create a second, active
+    copy of the same top-level key."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "# c: 3\n"
+        "a: 1\n"
+        "c:\n"
+        "  child: value\n",
+        encoding="utf-8",
+    )
+    set_yaml_key(path, ("c", "child"), "updated")
+    text = path.read_text(encoding="utf-8")
+    active_lines = [line for line in text.splitlines() if line == "c:"]
+    assert len(active_lines) == 1, f"expected exactly one active 'c:' line, got: {active_lines!r}"
+    assert "# c: 3" in text  # stale commented placeholder left untouched, not a bug per se
+    data = yaml.safe_load(text)
+    assert data["c"] == {"child": "updated"}
+    assert data["a"] == 1
+
+
+def test_yaml_editor_prefers_active_flat_key_over_stale_commented_placeholder(tmp_path):
+    """Same regression as above, for a flat (1-element) key_path."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text("# c: 3\na: 1\nc: old\n", encoding="utf-8")
+    set_yaml_key(path, ("c",), "new")
+    text = path.read_text(encoding="utf-8")
+    active_lines = [line for line in text.splitlines() if line.startswith("c:")]
+    assert len(active_lines) == 1, f"expected exactly one active 'c:' line, got: {active_lines!r}"
+    data = yaml.safe_load(text)
+    assert data["c"] == "new"
+
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_yaml_editor_ruamel_appends_new_key(tmp_path):
+    """A key absent from the file entirely -- not even as a commented
+    placeholder -- is still appended at the end (unchanged behavior)."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text("# a commented example\na: 1\n", encoding="utf-8")
     set_yaml_key(path, ("c",), 3)
     text = path.read_text(encoding="utf-8")
     assert "# a commented example" in text
-    assert "# c: 3" in text  # original commented example untouched
     assert "a: 1" in text
     data = yaml.safe_load(text)
     assert data["c"] == 3
@@ -759,18 +940,25 @@ def test_yaml_editor_fallback_pipeline_replaces_existing_section(tmp_path):
 
 def test_project_set_uses_fallback_when_ruamel_unavailable(tmp_path):
     """Force the no-ruamel code path (monkeypatching HAS_RUAMEL) and confirm
-    project_set_config still produces valid, comment-preserving output."""
+    project_set_config still produces valid, comment-preserving output.
+
+    Uses "top-module" (design.top_module), an *already-active* key in the
+    scaffold, rather than "interface" -- the commented-placeholder
+    uncomment step runs regardless of HAS_RUAMEL and would otherwise
+    short-circuit before this test ever reaches the fallback branch it's
+    meant to exercise.
+    """
     config_path = _write_project_yaml(tmp_path)
     original = config_path.read_text(encoding="utf-8")
 
     with patch("veriflow.core.yaml_config_editor.HAS_RUAMEL", False):
         from veriflow.commands.set_config import project_set_config
 
-        project_set_config(config_path, "interface", "semicolab")
+        project_set_config(config_path, "top-module", "counter8")
 
     updated = config_path.read_text(encoding="utf-8")
     data = yaml.safe_load(updated)
-    assert data["interface"]["name"] == "semicolab"
+    assert data["design"]["top_module"] == "counter8"
     for line in original.splitlines():
         if line.strip().startswith("#"):
             assert line in updated

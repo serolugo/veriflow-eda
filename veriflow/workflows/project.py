@@ -139,7 +139,9 @@ def _write_results_json(
     generate_results_json(data, run_dir / "results.json")
 
 
-def _needed_tools(config: ProjectWorkflowConfig) -> tuple[bool, bool]:
+def _needed_tools(
+    config: ProjectWorkflowConfig, request: RunRequest | None = None
+) -> tuple[bool, bool]:
     """Which EDA tools the *effective* pipeline will actually invoke.
 
     Mirrors build_project_flow's per-type inclusion logic exactly: a stage
@@ -147,13 +149,24 @@ def _needed_tools(config: ProjectWorkflowConfig) -> tuple[bool, bool]:
     holds (connectivity needs config.interface, simulation needs
     config.tb_sources) -- so a synthesis-only project on the default
     pipeline (no interface, no tb_sources) must not be asked for iverilog.
+
+    Also honors *request*'s skip_* flags (same behavior as Database Mode's
+    run_tile, which factors skip_connectivity/skip_sim/skip_synth directly
+    into its tool check) -- e.g. skip_synth=True must not require yosys
+    even though synthesis is in the pipeline.
     """
+    skip_connectivity = request.skip_connectivity if request else False
+    skip_sim = request.skip_sim if request else False
+    skip_synth = request.skip_synth if request else False
+
     need_iverilog = (
-        config.pipeline.has_stage("connectivity") and config.interface is not None
+        not skip_connectivity
+        and config.pipeline.has_stage("connectivity") and config.interface is not None
     ) or (
-        config.pipeline.has_stage("simulation") and bool(config.tb_sources)
+        not skip_sim
+        and config.pipeline.has_stage("simulation") and bool(config.tb_sources)
     )
-    need_yosys = config.pipeline.has_stage("synthesis")
+    need_yosys = not skip_synth and config.pipeline.has_stage("synthesis")
     return need_iverilog, need_yosys
 
 
@@ -241,7 +254,7 @@ class ProjectWorkflow:
         self,
         request: RunRequest | None = None,
     ) -> ProjectRunResult:
-        need_iverilog, need_yosys = _needed_tools(self.config)
+        need_iverilog, need_yosys = _needed_tools(self.config, request)
         if need_iverilog or need_yosys:
             validate_tools(need_iverilog=need_iverilog, need_yosys=need_yosys)
 
