@@ -354,8 +354,11 @@ def project_import(
     config_path = Path(config_path).resolve()
     db_path = Path(db_path).resolve()
 
-    # a. Load the Project Mode config
-    project_config = ProjectWorkflowConfig.from_file(config_path)
+    # a. Load the Project Mode config -- only runs_dir/tb_top are used below,
+    # not rtl_sources (the run's own recorded sources are what matter, and
+    # a missing one is reported as VF_IMPORT_RTL_SOURCE_MISSING further
+    # down, not a live-config check here).
+    project_config = ProjectWorkflowConfig.from_file(config_path, validate_rtl_sources=False)
     runs_dir = project_config.runs_dir
 
     # b. Determine which run to import
@@ -459,13 +462,34 @@ def project_import(
                     details={"path": str(src), "run_id": run_id},
                 ) from exc
 
-    # Prefill tile_config.yaml: tile_name (project directory name), top_module
-    # (already set by cmd_create_tile), and tb_top_module if the project
-    # declares one. results.json's schema has no simulation.tb_top field, so
-    # this comes from the just-loaded ProjectWorkflowConfig instead.
+    # Prefill tile_config.yaml: tile_name (metadata.name if the source
+    # project set one, else the project directory name as before),
+    # tile_author/description from metadata.author/metadata.description if
+    # set, top_module (already set by cmd_create_tile), and tb_top_module if
+    # the project declares one. results.json's schema has no simulation.tb_top
+    # field, so that one comes from the just-loaded ProjectWorkflowConfig
+    # instead -- metadata isn't modeled by ProjectWorkflowConfig at all (same
+    # as _readme_render_context()), so it's read directly from the source
+    # veriflow.yaml here, same raw-YAML-read pattern.
+    source_raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    source_metadata = source_raw.get("metadata") or {}
+    metadata_name = (source_metadata.get("name") or "").strip()
+    metadata_author = (source_metadata.get("author") or "").strip()
+    metadata_description = (source_metadata.get("description") or "").strip()
+
     tile_cfg_path = config_tile_dir / "tile_config.yaml"
     tile_cfg_text = tile_cfg_path.read_text(encoding="utf-8")
-    tile_cfg_text = tile_cfg_text.replace('tile_name: ""', f'tile_name: "{project_root.name}"')
+    tile_cfg_text = tile_cfg_text.replace(
+        'tile_name: ""', f'tile_name: "{metadata_name or project_root.name}"'
+    )
+    if metadata_author:
+        tile_cfg_text = tile_cfg_text.replace('tile_author: ""', f'tile_author: "{metadata_author}"')
+    if metadata_description:
+        description_lines = "\n".join(f"  {ln}" for ln in metadata_description.splitlines())
+        tile_cfg_text = tile_cfg_text.replace(
+            "description: |\n  # What does this tile do?",
+            f"description: |\n{description_lines}",
+        )
     if project_config.tb_top:
         tile_cfg_text = tile_cfg_text.replace(
             f'tb_top_module: "{DEFAULT_TB_TOP_MODULE}"',
@@ -485,6 +509,170 @@ def project_import(
         "run_id": run_id,
         "rtl_hash": results.get("rtl_hash", {}),
     }
+
+
+_DEFAULT_README_TEMPLATE_PATH = Path(__file__).parent / "templates" / "submission_readme_template.j2"
+
+
+def _readme_render_context(config, config_path: Path, results: dict) -> dict:
+    """Build the Jinja2 render context for `generate_readme()`.
+
+    Two distinct data sources, deliberately kept separate:
+
+    - The *current* `veriflow.yaml` (via *config*, an already-loaded
+      `ProjectWorkflowConfig`, plus a raw re-read for the `metadata:`
+      section it doesn't model): `interface_name`, `interface_ports`,
+      `interface_port_descriptions`, `technology`, and
+      `description`/`author`/`version`/`tile_name`. These describe the
+      project *as configured right now* -- e.g. after `veriflow project
+      set interface semicolab`, the README reflects `semicolab`
+      immediately, even if the last passing run predates that change and
+      never actually verified it. `interface_port_descriptions` merges the
+      interface profile's own `meta.yaml` port_descriptions (shared by
+      every project using that interface) with veriflow.yaml's
+      `interface.port_descriptions` (a per-project override/addition,
+      taking precedence per port).
+    - *results* (that run's results.json): everything else, spread in via
+      `**results` -- `stages` (pass/fail per stage), `rtl_hash`,
+      `timestamp`, `veriflow_version`. These describe what a specific run
+      actually verified and can't be back-filled from the live config.
+
+    repo_owner/repo_name are None (not a hardcoded "owner"/"repo" fallback)
+    when GITHUB_REPOSITORY isn't set, so the default template can tell
+    "running locally" apart from "actually in owner/repo" and skip
+    rendering a badge that would 404."""
+    import os
+    import yaml
+
+    from veriflow.models.interface_profile import get_interface_profile
+
+    repo_owner, _, repo_name = os.environ.get("GITHUB_REPOSITORY", "").partition("/")
+    if not repo_owner or not repo_name:
+        repo_owner, repo_name = None, None
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    metadata = raw.get("metadata") or {}
+    description = (metadata.get("description") or "").strip()
+    author = (metadata.get("author") or "").strip()
+    raw_version = metadata.get("version")
+    version = str(raw_version).strip() if raw_version is not None else ""
+    tile_name = (metadata.get("name") or "").strip() or results.get("top_module")
+
+    interface_name = config.interface.name if config.interface else None
+    interface_ports = []
+    interface_port_descriptions: dict[str, str] = {}
+    if interface_name:
+        # config.interface.name is only ever set to a name that already
+        # resolved successfully at config-load time (or raised
+        # VF_INTERFACE_UNKNOWN there), so this can't raise here.
+        profile = get_interface_profile(interface_name)
+        interface_ports = [
+            {"name": p.name, "direction": p.direction, "width": p.width}
+            for p in profile.ports
+        ]
+        # port_descriptions: profile's own meta.yaml first (shared across
+        # every project using this interface), then veriflow.yaml's
+        # interface.port_descriptions overrides/adds on top, per port --
+        # a project-specific note takes precedence over the generic one.
+        if profile.port_descriptions:
+            interface_port_descriptions.update(profile.port_descriptions)
+        raw_interface_section = raw.get("interface")
+        if isinstance(raw_interface_section, dict):
+            raw_overrides = raw_interface_section.get("port_descriptions")
+            if isinstance(raw_overrides, dict):
+                interface_port_descriptions.update(
+                    {str(k): str(v) for k, v in raw_overrides.items()}
+                )
+
+    technology = config.technology.name
+
+    return {
+        **results,
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "description": description,
+        "author": author,
+        "version": version,
+        "tile_name": tile_name,
+        "interface_name": interface_name,
+        "interface_ports": interface_ports,
+        "interface_port_descriptions": interface_port_descriptions,
+        "technology": technology,
+    }
+
+
+def generate_readme(
+    config_path: str | Path,
+    out_path: str | Path | None = None,
+    template_path: str | Path | None = None,
+) -> str:
+    """Render a submission README.md for the current project.
+
+    interface_name/technology/metadata always reflect *config_path* (the
+    current veriflow.yaml) as of this call, not whatever a past run saw --
+    only run-verification facts (per-stage status, rtl_hash, timestamp,
+    veriflow_version) come from the latest passing run's results.json. See
+    `_readme_render_context()` for the full split.
+
+    Parameters
+    ----------
+    config_path : str | Path
+        Path to the Project Mode veriflow.yaml.
+    out_path : str | Path | None
+        Where to write the rendered README. Defaults to `README.md` in the
+        same directory as *config_path*.
+    template_path : str | Path | None
+        Jinja2 template to render with. If None, uses `readme_template:`
+        from *config_path* if set, else VeriFlow's built-in default
+        (`veriflow/templates/submission_readme_template.j2`).
+
+    Raises:
+        VeriFlowError(VF_README_NO_PASSING_RUN) -- no run under runs_dir
+            has status PASS.
+
+    Returns the rendered README content as a string.
+    """
+    from jinja2 import Template
+
+    from veriflow.workflows.project_config import ProjectWorkflowConfig
+
+    config_path = Path(config_path).resolve()
+    # rtl_sources is never read by this function -- it describes a past
+    # run's verification facts plus the *current* interface/technology/
+    # metadata, so a not-yet-created RTL file shouldn't block regenerating
+    # the README.
+    config = ProjectWorkflowConfig.from_file(config_path, validate_rtl_sources=False)
+
+    run_id, results = _find_latest_passing_run(config.runs_dir)
+    if run_id is None:
+        raise VeriFlowError(
+            f"No passing run found under {config.runs_dir}. "
+            "Run 'veriflow project run' until a run reports status PASS "
+            "before generating a README.",
+            code="VF_README_NO_PASSING_RUN",
+            details={"runs_dir": str(config.runs_dir)},
+        )
+
+    if template_path is not None:
+        resolved_template = Path(template_path)
+    elif config.readme_template is not None:
+        resolved_template = config.readme_template
+    else:
+        resolved_template = _DEFAULT_README_TEMPLATE_PATH
+
+    template = Template(
+        resolved_template.read_text(encoding="utf-8"),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    context = _readme_render_context(config, config_path, results)
+    content = template.render(**context)
+
+    resolved_out = Path(out_path).resolve() if out_path is not None else config.root / "README.md"
+    resolved_out.write_text(content, encoding="utf-8")
+
+    return content
 
 
 def list_interface_profiles() -> list[dict]:

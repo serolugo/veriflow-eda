@@ -83,6 +83,51 @@ def test_load_without_meta_yaml_uses_defaults(tmp_path):
     assert profile.requires_top_module is False
 
 
+def test_load_reads_port_descriptions_from_meta_yaml(tmp_path):
+    stub = tmp_path / "interface.v"
+    stub.write_text(
+        "module foo (input wire clk, output wire valid);\nendmodule\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "meta.yaml").write_text(
+        "description: A test interface.\n"
+        "port_descriptions:\n"
+        "  clk: System clock\n"
+        "  valid: Output valid strobe\n",
+        encoding="utf-8",
+    )
+
+    profile = load_interface_profile_from_file(stub)
+    assert profile.port_descriptions == {
+        "clk": "System clock",
+        "valid": "Output valid strobe",
+    }
+
+
+def test_load_without_port_descriptions_in_meta_yaml_is_none(tmp_path):
+    stub = tmp_path / "interface.v"
+    stub.write_text("module foo (input wire clk);\nendmodule\n", encoding="utf-8")
+    (tmp_path / "meta.yaml").write_text("description: A test interface.\n", encoding="utf-8")
+
+    profile = load_interface_profile_from_file(stub)
+    assert profile.port_descriptions is None
+
+
+def test_load_without_meta_yaml_port_descriptions_is_none(tmp_path):
+    stub = tmp_path / "interface.v"
+    stub.write_text("module foo (input wire clk);\nendmodule\n", encoding="utf-8")
+
+    profile = load_interface_profile_from_file(stub)
+    assert profile.port_descriptions is None
+
+
+def test_builtin_semicolab_has_port_descriptions_for_all_nine_ports():
+    profile = get_interface_profile("semicolab")
+    assert profile.port_descriptions is not None
+    assert set(profile.port_descriptions) == {p.name for p in profile.ports}
+    assert profile.port_descriptions["clk"] == "System clock"
+
+
 def test_load_missing_file_raises_not_found(tmp_path):
     missing = tmp_path / "does_not_exist.v"
     with pytest.raises(VeriFlowError) as exc_info:

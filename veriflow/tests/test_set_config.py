@@ -254,6 +254,107 @@ def test_project_set_runs_dir_updates_yaml(tmp_path):
     assert data["output"]["runs_dir"] == "my_runs"
 
 
+def test_project_set_rtl_sources_updates_yaml_as_list(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    (config_path.parent / "src").mkdir()
+    (config_path.parent / "src" / "counter8.v").write_text("", encoding="utf-8")
+    (config_path.parent / "src" / "edge_detector.v").write_text("", encoding="utf-8")
+
+    project_set_config(config_path, "rtl-sources", "src/counter8.v,src/edge_detector.v")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["rtl_sources"] == ["src/counter8.v", "src/edge_detector.v"]
+
+
+def test_project_set_rtl_sources_missing_file_warns_not_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+
+    with pytest.warns(UserWarning, match="VF_SET_SOURCE_NOT_FOUND"):
+        result = project_set_config(config_path, "rtl-sources", "src/does_not_exist.v")
+
+    assert result["value"] == "src/does_not_exist.v"
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["rtl_sources"] == ["src/does_not_exist.v"]
+
+
+def test_project_set_rtl_sources_empty_value_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "rtl-sources", "  ,  ")
+    assert exc_info.value.code == "VF_SET_SOURCE_LIST_EMPTY"
+
+
+def test_project_set_tb_sources_updates_yaml_as_list(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    (config_path.parent / "tb").mkdir()
+    (config_path.parent / "tb" / "tb_top.v").write_text("", encoding="utf-8")
+
+    project_set_config(config_path, "tb-sources", "tb/tb_top.v")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["tb_sources"] == ["tb/tb_top.v"]
+
+
+def test_project_set_tb_top_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "tb-top", "tb_counter8")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["simulation"]["tb_top"] == "tb_counter8"
+
+
+def test_project_set_name_updates_metadata(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "name", "Counter8 Tile")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["metadata"]["name"] == "Counter8 Tile"
+
+
+def test_project_set_author_updates_metadata(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "author", "Roman Lugo")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["metadata"]["author"] == "Roman Lugo"
+
+
+def test_project_set_version_updates_metadata(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "version", "2.0.0")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["metadata"]["version"] == "2.0.0"
+
+
+def test_project_set_description_updates_metadata_as_block_scalar(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "description", "An 8-bit counter with async reset.")
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "description: |" in text
+    data = yaml.safe_load(text)
+    assert data["metadata"]["description"].strip() == "An 8-bit counter with async reset."
+
+
 def test_project_set_unknown_key_raises_with_valid_keys_listed(tmp_path):
     from veriflow.commands.set_config import project_set_config
 

@@ -233,6 +233,29 @@ def _set_yaml_key_ruamel(
             existing = CommentedMap()
             node[key] = existing
         node = existing
+
+    old_value = node.get(key_path[-1])
+    if (
+        isinstance(value, list)
+        and not isinstance(old_value, list)
+        and hasattr(node, "ca")
+        and key_path[-1] in node.ca.items
+    ):
+        # Replacing a scalar/flow value (e.g. `rtl_sources: []  # comment`)
+        # with a multi-line block sequence while keeping that value's
+        # attached end-of-line comment confuses ruamel's comment-anchoring:
+        # the comment stays put but the new list's items get dumped several
+        # lines further down (after the next few keys/comments), landing
+        # nowhere near the key they belong to even though the file still
+        # parses correctly. Dropping the comment when shifting shape from
+        # flow/scalar to block avoids that -- a stale inline hint next to a
+        # field the user just populated for real has served its purpose
+        # anyway. Only guards this specific flow-to-block transition: an
+        # existing block *list* being replaced by a new one (the common
+        # case after the first `project set rtl-sources`) is unaffected and
+        # already round-trips its surrounding comments correctly on its own.
+        del node.ca.items[key_path[-1]]
+
     node[key_path[-1]] = value
 
     _dump_ruamel(data, path, yaml)

@@ -77,6 +77,7 @@ def test_project_mode_technology_definition_registers_and_resolves(tmp_path):
     tech_dir.mkdir()
     tech_path = _write_technology_yaml(tech_dir / "mi_proceso.yaml", name="mi_proceso", liberty="./cells/mi_proceso.lib")
 
+    (tmp_path / "top.v").write_text("", encoding="utf-8")
     veriflow_yaml = tmp_path / "veriflow.yaml"
     veriflow_yaml.write_text(dedent("""\
         design:

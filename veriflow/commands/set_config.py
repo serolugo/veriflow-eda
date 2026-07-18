@@ -11,6 +11,7 @@ Each `*_set_config` function here is reused directly by `veriflow/api.py`
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 
 from veriflow.core import VeriFlowError
@@ -20,7 +21,10 @@ from veriflow.models.pipeline_config import VALID_STAGE_TYPES
 from veriflow.models.technology_profile import get_technology_profile
 from veriflow.ui.output import print_done
 
-_PROJECT_SET_KEYS = ("interface", "technology", "top-module", "pipeline", "runs-dir")
+_PROJECT_SET_KEYS = (
+    "interface", "technology", "top-module", "pipeline", "runs-dir",
+    "rtl-sources", "tb-sources", "tb-top", "name", "author", "description", "version",
+)
 _DB_SET_KEYS = ("interface", "technology", "id-format", "prefix", "shuttle", "pipeline")
 _DB_TILE_SET_KEYS = (
     "top-module", "tb-top", "name", "author", "description", "tags", "objective", "pipeline",
@@ -97,6 +101,34 @@ def _validate_id_format_value(value: str) -> str:
     return value
 
 
+def _parse_source_list_value(value: str) -> list[str]:
+    sources = [s.strip() for s in value.split(",") if s.strip()]
+    if not sources:
+        raise VeriFlowError(
+            "value must be a non-empty comma-separated list of file paths, "
+            "e.g. 'src/top.v,src/helper.v'",
+            code="VF_SET_SOURCE_LIST_EMPTY",
+            details={"value": value},
+        )
+    return sources
+
+
+def _warn_missing_sources(config_path: Path, sources: list[str]) -> None:
+    """Warn (don't error) for any entry that doesn't resolve to a real file
+    relative to config_path's directory -- the user may be preparing the
+    config before the RTL/TB files exist yet, e.g. scaffolding
+    `rtl_sources`/`tb_sources` ahead of adding the actual sources."""
+    root = config_path.parent
+    for rel in sources:
+        if not (root / rel).is_file():
+            warnings.warn(
+                f"Source file not found: {rel!r} (resolved relative to {root}). "
+                "The value was set anyway -- add the file before running "
+                "'veriflow project run'. [VF_SET_SOURCE_NOT_FOUND]",
+                stacklevel=2,
+            )
+
+
 def _tile_number_str(tile: str | int) -> str:
     try:
         return f"{int(tile):04d}"
@@ -139,6 +171,24 @@ def project_set_config(config_path: str | Path, key: str, value: str) -> dict:
         set_yaml_pipeline(config_path, stages)
     elif key == "runs-dir":
         set_yaml_key(config_path, ("output", "runs_dir"), value)
+    elif key == "rtl-sources":
+        sources = _parse_source_list_value(value)
+        _warn_missing_sources(config_path, sources)
+        set_yaml_key(config_path, ("design", "rtl_sources"), sources)
+    elif key == "tb-sources":
+        sources = _parse_source_list_value(value)
+        _warn_missing_sources(config_path, sources)
+        set_yaml_key(config_path, ("design", "tb_sources"), sources)
+    elif key == "tb-top":
+        set_yaml_key(config_path, ("simulation", "tb_top"), value, quoted=True)
+    elif key == "name":
+        set_yaml_key(config_path, ("metadata", "name"), value, quoted=True)
+    elif key == "author":
+        set_yaml_key(config_path, ("metadata", "author"), value, quoted=True)
+    elif key == "description":
+        set_yaml_key(config_path, ("metadata", "description"), value, block_scalar=True)
+    elif key == "version":
+        set_yaml_key(config_path, ("metadata", "version"), value, quoted=True)
     else:
         raise _unknown_key_error(key, _PROJECT_SET_KEYS)
 

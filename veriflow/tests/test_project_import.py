@@ -214,6 +214,61 @@ def test_import_prefills_top_module_and_tb_top_module(tmp_path):
     assert 'tb_top_module: "tb"' in tile_cfg
 
 
+def test_import_carries_metadata_name_author_description_to_tile_config(tmp_path):
+    """veriflow.yaml's metadata.name/author/description are carried into
+    the new tile's tile_config.yaml (tile_name/tile_author/description),
+    instead of requiring the user to retype what they already wrote once."""
+    config_path = _make_project(tmp_path, dirname="counter8_project")
+    with config_path.open("a", encoding="utf-8") as f:
+        f.write(
+            "metadata:\n"
+            "  name: Counter8 Tile\n"
+            "  author: Roman Lugo\n"
+            "  description: An 8-bit counter with async reset.\n"
+        )
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    result = project_import(config_path, db_path)
+
+    tile_cfg_path = db_path / "config" / f"tile_{result['tile_number']}" / "tile_config.yaml"
+    tile_cfg_text = tile_cfg_path.read_text(encoding="utf-8")
+    assert 'tile_name: "Counter8 Tile"' in tile_cfg_text
+    assert 'tile_author: "Roman Lugo"' in tile_cfg_text
+
+    tile_cfg = yaml.safe_load(tile_cfg_text)
+    assert tile_cfg["description"].strip() == "An 8-bit counter with async reset."
+
+
+def test_import_metadata_name_preferred_over_directory_name(tmp_path):
+    config_path = _make_project(tmp_path, dirname="counter8_project")
+    with config_path.open("a", encoding="utf-8") as f:
+        f.write("metadata:\n  name: A Nicer Display Name\n")
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    result = project_import(config_path, db_path)
+
+    tile_cfg = (db_path / "config" / f"tile_{result['tile_number']}" / "tile_config.yaml").read_text(encoding="utf-8")
+    assert 'tile_name: "A Nicer Display Name"' in tile_cfg
+    assert "counter8_project" not in tile_cfg
+
+
+def test_import_without_metadata_falls_back_to_directory_name(tmp_path):
+    """Unchanged pre-existing behavior when the source project has no
+    metadata section at all."""
+    config_path = _make_project(tmp_path, dirname="counter8_project")
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    result = project_import(config_path, db_path)
+
+    tile_cfg_path = db_path / "config" / f"tile_{result['tile_number']}" / "tile_config.yaml"
+    tile_cfg_text = tile_cfg_path.read_text(encoding="utf-8")
+    assert 'tile_name: "counter8_project"' in tile_cfg_text
+    assert 'tile_author: ""' in tile_cfg_text
+
+
 def test_import_registers_tile_in_tile_index(tmp_path):
     from veriflow.core.csv_store import get_tile_row
 

@@ -18,3 +18,7 @@ build/
 /wrapper_config.yaml
 
 dev-docs/
+
+# Scratch generation output for the veriflow-submission-template repo
+# (Sebastian copies these files to the actual GitHub repo by hand).
+/submission_template/

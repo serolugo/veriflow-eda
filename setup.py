@@ -30,6 +30,7 @@ setup(
     package_data={
         "veriflow": [
             "template/*.v",
+            "templates/*.j2",
             "core/wrapper/templates/*.j2",
             "interfaces/*/*.v",
             "interfaces/*/*.yaml",

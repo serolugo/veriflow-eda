@@ -107,9 +107,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_set = project_sub.add_parser(
         "set", help="Modify a field in veriflow.yaml (comments/formatting preserved)"
     )
-    p_project_set.add_argument("key", help="interface | technology | top-module | pipeline | runs-dir")
+    p_project_set.add_argument(
+        "key",
+        help=(
+            "interface | technology | top-module | pipeline | runs-dir | "
+            "rtl-sources | tb-sources | tb-top | name | author | description | version"
+        ),
+    )
     p_project_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
     p_project_set.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Path to project config file (default: veriflow.yaml)")
+
+    p_project_readme = project_sub.add_parser(
+        "generate-readme", help="Render a submission README.md from the latest passing run"
+    )
+    p_project_readme.add_argument(
+        "--config",
+        default="veriflow.yaml",
+        metavar="PATH",
+        help="Path to project config file (default: veriflow.yaml)",
+    )
+    p_project_readme.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="Output path (default: README.md next to the config file)",
+    )
+    p_project_readme.add_argument(
+        "--template",
+        default=None,
+        metavar="PATH",
+        help="Custom Jinja2 template (default: readme_template: in config, or VeriFlow's built-in default)",
+    )
 
     # db (Database Mode namespace)
     p_db = sub.add_parser("db", help="Database Mode commands")
@@ -329,6 +357,10 @@ def main(argv: list[str] | None = None) -> int:
                         dispatched = True
                         from veriflow.commands.set_config import cmd_project_set
                         exit_code = cmd_project_set(args)
+                    elif project_cmd == "generate-readme":
+                        dispatched = True
+                        from veriflow.commands.generate_readme import cmd_generate_readme
+                        exit_code = cmd_generate_readme(args)
                     else:
                         if json_mode:
                             error_payload = {

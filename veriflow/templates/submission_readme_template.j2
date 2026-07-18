@@ -1,0 +1,139 @@
+{#
+  submission_readme_template.j2 -- VeriFlow's default submission README.
+
+  Rendered by `veriflow project generate-readme`
+  (_readme_render_context() + generate_readme() in veriflow/api.py). To
+  customize: copy this file, point `readme_template:` in veriflow.yaml (or
+  --template) at your copy, and edit freely -- the context below is
+  everything this template (or yours) can reference, from two distinct
+  sources kept deliberately separate (see _readme_render_context()'s
+  docstring for why):
+
+  From the CURRENT veriflow.yaml (live config, re-read on every call --
+  reflects any `veriflow project set` change immediately, even without a
+  new `project run`):
+    interface_name        -- config.interface's name, or null for a
+                             generic project (str | None)
+    interface_ports        -- [{"name", "direction", "width"}, ...] for
+                             interface_name's profile; [] for a generic
+                             project (no interface configured)
+    interface_port_descriptions -- {port_name: description}; the profile's
+                             own meta.yaml merged with veriflow.yaml's
+                             interface.port_descriptions override (the
+                             latter wins per port); {} if neither exists
+    technology             -- config.technology's name (str)
+    description            -- metadata.description, "" if unset
+    author                 -- metadata.author, "" if unset
+    version                -- metadata.version, "" if unset
+    tile_name              -- metadata.name, falling back to top_module
+                             (from the LAST RUN, see below) when unset
+    repo_owner, repo_name  -- parsed from the GITHUB_REPOSITORY env var
+                             ("owner/repo", set automatically by GitHub
+                             Actions); both None when that variable isn't
+                             set (e.g. generating locally) -- check
+                             `{% if repo_owner and repo_name %}` before
+                             using them, don't assume they're set
+
+  From the latest PASSING run's results.json (verification facts that
+  can't be back-filled from the live config -- what actually ran, not
+  what's currently configured; see workflows/project.py::_write_results_json):
+    top_module          -- RTL top module name as of that run (str)
+    rtl_sources           -- RTL source paths, relative to veriflow.yaml (list[str])
+    tb_sources            -- testbench source paths, relative to veriflow.yaml (list[str])
+    rtl_hash              -- {filename: sha256_hex} for every RTL source (dict[str, str])
+    stages                -- {"connectivity": {...}, "simulation": {...}, "synthesis": {...}};
+                             each stage dict has at least "status" (PASS/FAIL/SKIPPED) and "log"
+    warnings              -- warning strings collected across all stages (list[str])
+    veriflow_version      -- VeriFlow version that produced that run (str)
+    timestamp             -- ISO 8601 UTC timestamp of that run (str) -- timestamp[:10]
+                             gives just the date (YYYY-MM-DD)
+    status                -- that run's overall status -- always "PASS" here,
+                             since generate-readme only ever looks at a passing run
+
+  Note the asymmetry this creates by design: if veriflow.yaml's interface/
+  technology changed since the last passing run, this README shows the
+  *new* interface/technology name and port map, while `stages` still shows
+  what that older run actually verified -- run `veriflow project run`
+  again to make both agree.
+#}
+# {{ tile_name }} -- VeriFlow Submission
+
+{# CI badge: only meaningful once this repo is actually pushed to GitHub
+   (GITHUB_REPOSITORY is set by GitHub Actions itself). A README generated
+   locally, before a first push, would otherwise get a badge pointing at
+   a literal "owner/repo" that always 404s -- show a plain HTML comment
+   placeholder instead; it's invisible in rendered Markdown but tells
+   anyone reading the raw file why there's no badge yet. #}
+{% if repo_owner and repo_name %}
+![VeriFlow Precheck](https://github.com/{{ repo_owner }}/{{ repo_name }}/actions/workflows/precheck.yml/badge.svg)
+{% else %}
+<!-- add badge after pushing to GitHub -->
+{% endif %}
+
+{# description is optional (metadata.description in veriflow.yaml) --
+   skip the blockquote line (and its trailing blank-line separator)
+   entirely rather than rendering an empty "> ". The separator lives
+   *inside* the if-block so it collapses along with the rest when
+   description is unset, instead of leaving a stray blank line behind. #}
+{% if description %}
+> {{ description }}
+
+{% endif %}
+{# author/version are optional (metadata.author/metadata.version) --
+   show whichever of the two is actually set, joined by " | " only when
+   both are; omit the whole line (and its separator, same reasoning as
+   description above) if neither is set. Built from {{ }} expressions
+   rather than chained {% if %}/{% endif %} tags on one line -- trim_blocks
+   strips the newline right after a block tag, which would otherwise eat
+   the blank-line separator below whenever this line ends in {% endif %}. #}
+{% if author or version %}
+{{ "**Author:** " ~ author if author else "" }}{{ " | " if author and version else "" }}{{ "**Version:** " ~ version if version else "" }}
+
+{% endif %}
+## Verification Status
+
+| Stage | Status | Last Run |
+|-------|--------|----------|
+| Connectivity | {{ stages.connectivity.status }} | {{ timestamp[:10] }} |
+| Simulation | {{ stages.simulation.status }} | {{ timestamp[:10] }} |
+| Synthesis | {{ stages.synthesis.status }} | {{ timestamp[:10] }} |
+
+**Interface:** `{{ interface_name or "generic" }}` |
+**Technology:** `{{ technology }}` |
+**VeriFlow:** `{{ veriflow_version }}`
+
+## RTL Sources
+
+| File | SHA256 |
+|------|--------|
+{% for file, hash in rtl_hash.items() %}
+| `{{ file }}` | `{{ hash[:12] }}...` |
+{% endfor %}
+
+## Port Map
+
+{# interface_ports is [] for a generic project (no interface configured) --
+   show a plain status line instead of an empty/missing table. When
+   interface_port_descriptions has any entries, add a 4th "Description"
+   column; otherwise the table stays 3 columns (unchanged from before
+   port_descriptions existed). #}
+{% if interface_ports %}
+{% if interface_port_descriptions %}
+| Port | Direction | Width | Description |
+|------|-----------|-------|-------------|
+{% for port in interface_ports %}
+| `{{ port.name }}` | {{ port.direction }} | {{ port.width }} | {{ interface_port_descriptions.get(port.name, "") }} |
+{% endfor %}
+{% else %}
+| Port | Direction | Width |
+|------|-----------|-------|
+{% for port in interface_ports %}
+| `{{ port.name }}` | {{ port.direction }} | {{ port.width }} |
+{% endfor %}
+{% endif %}
+{% else %}
+*No interface profile selected -- connectivity check skipped*
+{% endif %}
+
+---
+*Generated by [VeriFlow](https://github.com/serolugo/veriflow) v{{ veriflow_version }} on {{ timestamp[:10] }}*

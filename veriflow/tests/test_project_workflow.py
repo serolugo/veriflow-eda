@@ -27,6 +27,16 @@ def _write_yaml(tmp_path: Path, content: str) -> Path:
     return p
 
 
+def _touch(root: Path, rel_path: str) -> Path:
+    """Create an empty file at root/rel_path (parents included). Needed
+    since ProjectWorkflowConfig.from_file() validates that every
+    rtl_sources entry is a real file (VF_DESIGN_RTL_SOURCE_NOT_FILE)."""
+    p = root / rel_path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("", encoding="utf-8")
+    return p
+
+
 def _rtl_only_config(root: Path) -> ProjectWorkflowConfig:
     return ProjectWorkflowConfig.from_dict(
         {
@@ -88,6 +98,48 @@ def test_config_rtl_paths_resolved_relative_to_root(tmp_path):
         tmp_path / "rtl" / "top.v",
         tmp_path / "rtl" / "sub.v",
     ]
+
+
+def test_config_readme_template_omitted_resolves_to_none(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {"design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]}},
+        root=tmp_path,
+    )
+    assert cfg.readme_template is None
+
+
+def test_config_readme_template_null_resolves_to_none(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+            "readme_template": None,
+        },
+        root=tmp_path,
+    )
+    assert cfg.readme_template is None
+
+
+def test_config_readme_template_resolved_relative_to_root(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+            "readme_template": "templates/custom_readme.j2",
+        },
+        root=tmp_path,
+    )
+    assert cfg.readme_template == (tmp_path / "templates" / "custom_readme.j2").resolve()
+
+
+def test_config_readme_template_empty_string_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {
+                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+                "readme_template": "   ",
+            },
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_README_TEMPLATE_INVALID"
 
 
 def test_config_tb_paths_resolved_relative_to_root(tmp_path):
@@ -311,6 +363,7 @@ def test_config_both_flat_and_section_interface_rejected(tmp_path):
 
 
 def test_config_from_file_interface_section_parses(tmp_path):
+    _touch(tmp_path, "rtl/shift_mux.v")
     p = _write_yaml(
         tmp_path,
         """\
@@ -328,6 +381,7 @@ def test_config_from_file_interface_section_parses(tmp_path):
 
 
 def test_config_from_file_interface_null_parses_to_none(tmp_path):
+    _touch(tmp_path, "rtl/shift_mux.v")
     p = _write_yaml(
         tmp_path,
         """\
@@ -379,6 +433,7 @@ def test_config_from_file_parses_yaml(tmp_path):
         """,
     )
     # Add a tb source so tb_top is required
+    _touch(tmp_path, "rtl/shift_mux.v")
     p2 = tmp_path / "workflow2.yaml"
     p2.write_text(
         dedent("""\
@@ -483,6 +538,7 @@ def test_flow_design_has_correct_rtl_sources(tmp_path):
 # ── C. ProjectWorkflow execution behavior ────────────────────────────────────
 
 def test_workflow_from_file_loads_yaml(tmp_path):
+    _touch(tmp_path, "rtl/my_top.v")
     p = _write_yaml(
         tmp_path,
         """\
@@ -1037,6 +1093,7 @@ def test_config_unknown_technology_name_fails(tmp_path):
 
 
 def test_config_from_file_execution_and_technology_parse(tmp_path):
+    _touch(tmp_path, "rtl/shift_mux.v")
     p = _write_yaml(
         tmp_path,
         """\
@@ -1060,6 +1117,7 @@ def test_config_from_file_execution_and_technology_parse(tmp_path):
 
 
 def test_config_from_file_execution_null_parses_to_defaults(tmp_path):
+    _touch(tmp_path, "rtl/shift_mux.v")
     p = _write_yaml(
         tmp_path,
         """\
@@ -1281,6 +1339,7 @@ def test_from_file_rtl_sources_are_absolute_when_cwd_differs(tmp_path, monkeypat
     """
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    _touch(project_dir, "counter8.v")
     config = project_dir / "veriflow.yaml"
     config.write_text(
         "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
@@ -1306,6 +1365,7 @@ def test_from_file_relative_config_path_rtl_sources_are_absolute(tmp_path, monke
     resolves to 'veriflow.yaml' relative to cwd.  rtl_sources must still
     be absolute so backends never receive a bare filename like 'counter8.v'.
     """
+    _touch(tmp_path, "counter8.v")
     config = tmp_path / "veriflow.yaml"
     config.write_text(
         "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
@@ -1324,6 +1384,7 @@ def test_from_file_runs_dir_is_absolute_when_cwd_differs(tmp_path, monkeypatch):
     """runs_dir derived from config must also be absolute after the fix."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    _touch(project_dir, "top.v")
     config = project_dir / "veriflow.yaml"
     config.write_text(
         "design:\n  top_module: top\n  rtl_sources:\n    - top.v\n",
@@ -1349,6 +1410,7 @@ def test_workflow_synth_backend_receives_absolute_rtl_paths(tmp_path, monkeypatc
     """
     project_dir = tmp_path / "project"
     project_dir.mkdir()
+    _touch(project_dir, "counter8.v")
     config = project_dir / "veriflow.yaml"
     config.write_text(
         "design:\n  top_module: counter8\n  rtl_sources:\n    - counter8.v\n",
@@ -1384,6 +1446,75 @@ def test_workflow_synth_backend_receives_absolute_rtl_paths(tmp_path, monkeypatc
         "Backend received relative paths; yosys would fail with 'file not found' "
         "when cwd does not match the config directory"
     )
+
+
+# ── H. from_file() validates rtl_sources entries are real files (2026-07-20) ──
+
+
+def test_from_file_rtl_sources_directory_raises(tmp_path):
+    """The exact reported scaffold bug: rtl_sources pointing at a directory
+    (not a file) must raise a clean VeriFlowError, not silently proceed
+    into a raw iverilog/yosys 'is a directory' crash deep in the pipeline."""
+    (tmp_path / "src").mkdir()
+    config = tmp_path / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - src\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_file(config)
+    assert exc_info.value.code == "VF_DESIGN_RTL_SOURCE_NOT_FILE"
+    assert "src" in str(exc_info.value)
+
+
+def test_from_file_rtl_sources_missing_file_raises(tmp_path):
+    config = tmp_path / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - rtl/does_not_exist.v\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_file(config)
+    assert exc_info.value.code == "VF_DESIGN_RTL_SOURCE_NOT_FILE"
+
+
+def test_from_file_rtl_sources_real_file_passes(tmp_path):
+    _touch(tmp_path, "rtl/top.v")
+    config = tmp_path / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - rtl/top.v\n",
+        encoding="utf-8",
+    )
+
+    cfg = ProjectWorkflowConfig.from_file(config)
+    assert cfg.rtl_sources == [tmp_path / "rtl" / "top.v"]
+
+
+def test_from_dict_does_not_validate_rtl_sources(tmp_path):
+    """from_dict() is exercised directly by many other tests with synthetic
+    (never-written) rtl_sources paths -- it must not validate file
+    existence; only from_file() does."""
+    cfg = ProjectWorkflowConfig.from_dict(
+        {"design": {"top_module": "top", "rtl_sources": ["rtl/does_not_exist.v"]}},
+        root=tmp_path,
+    )
+    assert cfg.rtl_sources == [tmp_path / "rtl" / "does_not_exist.v"]
+
+
+def test_from_file_validate_rtl_sources_false_skips_check(tmp_path):
+    """Opt-out used internally by project_import()/generate_readme(),
+    neither of which reads rtl_sources -- confirms the flag actually works
+    end to end through from_file(), not just from_dict()."""
+    config = tmp_path / "veriflow.yaml"
+    config.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - rtl/does_not_exist.v\n",
+        encoding="utf-8",
+    )
+
+    cfg = ProjectWorkflowConfig.from_file(config, validate_rtl_sources=False)
+    assert cfg.rtl_sources == [tmp_path / "rtl" / "does_not_exist.v"]
 
 
 # ── H. Regression: missing config file raises VeriFlowError, not FileNotFoundError

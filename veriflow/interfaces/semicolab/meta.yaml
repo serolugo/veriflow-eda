@@ -1,2 +1,12 @@
 description: Nine-port structural contract required by the Semicolab harness.
 requires_top_module: true
+port_descriptions:
+  clk: "System clock"
+  arst_n: "Asynchronous reset, active low"
+  csr_in: "Control/status register input bus"
+  data_reg_a: "Data register A (input)"
+  data_reg_b: "Data register B (input)"
+  data_reg_c: "Data register C (output)"
+  csr_out: "Control/status register output bus"
+  csr_in_re: "CSR input read enable"
+  csr_out_we: "CSR output write enable"

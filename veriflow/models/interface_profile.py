@@ -59,6 +59,7 @@ class InterfaceProfile:
     description: str = ""
     requires_top_module: bool = False
     tb_template: str | None = None  # path to a co-located tb_template.v; None → tb_universal_template.v
+    port_descriptions: dict[str, str] | None = None  # {port_name: description}, from meta.yaml
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -104,8 +105,10 @@ def load_interface_profile_from_file(path: Path) -> InterfaceProfile:
     The profile's name is the parsed module name (not the file/directory
     name). An optional `tb_template.v` in the same directory becomes
     `tb_template`; an optional `meta.yaml` in the same directory supplies
-    `description`/`requires_top_module` (both default to `""`/`False` when
-    absent -- a bare `.v` file with no sidecar is a complete, valid profile).
+    `description`/`requires_top_module`/`port_descriptions` (description and
+    requires_top_module default to `""`/`False`, port_descriptions to None,
+    when absent -- a bare `.v` file with no sidecar is a complete, valid
+    profile).
 
     Raises:
         VeriFlowError(VF_INTERFACE_FILE_NOT_FOUND) -- path does not exist
@@ -157,11 +160,17 @@ def load_interface_profile_from_file(path: Path) -> InterfaceProfile:
 
     description = ""
     requires_top_module = False
+    port_descriptions: dict[str, str] | None = None
     meta_path = path.parent / "meta.yaml"
     if meta_path.exists():
         meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
         description = meta.get("description") or ""
         requires_top_module = bool(meta.get("requires_top_module", False))
+        raw_port_descriptions = meta.get("port_descriptions")
+        if isinstance(raw_port_descriptions, dict) and raw_port_descriptions:
+            port_descriptions = {
+                str(k): str(v) for k, v in raw_port_descriptions.items()
+            }
 
     tb_template_path = path.parent / "tb_template.v"
     tb_template = str(tb_template_path) if tb_template_path.exists() else None
@@ -172,6 +181,7 @@ def load_interface_profile_from_file(path: Path) -> InterfaceProfile:
         description=description,
         requires_top_module=requires_top_module,
         tb_template=tb_template,
+        port_descriptions=port_descriptions,
     )
 
 

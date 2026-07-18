@@ -101,11 +101,11 @@ def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfi
             details={"interface": section},
         )
 
-    unknown_keys = sorted(set(section) - {"name", "definition"})
+    unknown_keys = sorted(set(section) - {"name", "definition", "port_descriptions"})
     if unknown_keys:
         raise VeriFlowError(
             f"Unsupported keys in interface section: {', '.join(unknown_keys)}.\n"
-            "  Supported keys: 'name', 'definition'.",
+            "  Supported keys: 'name', 'definition', 'port_descriptions'.",
             code="VF_INTERFACE_CONFIG_INVALID",
             details={"unknown_keys": unknown_keys},
         )
@@ -333,6 +333,24 @@ def _parse_pipeline_section(data: dict) -> PipelineConfig:
     return parse_optional_pipeline_section(data) or DEFAULT_PIPELINE
 
 
+def _parse_readme_template(data: dict, *, root: Path) -> Path | None:
+    """`readme_template:` -- optional path to a custom Jinja2 template for
+    `veriflow project generate-readme`, resolved relative to *root* (the
+    veriflow.yaml directory). Omitted or null means "no project-level
+    override" -- `generate_readme()` then falls back to VeriFlow's
+    built-in default template."""
+    raw = data.get("readme_template")
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise VeriFlowError(
+            "readme_template must be a non-empty string path or null",
+            code="VF_README_TEMPLATE_INVALID",
+            details={"readme_template": raw},
+        )
+    return (root / raw.strip()).resolve()
+
+
 @dataclass
 class ProjectWorkflowConfig:
     top_module: str
@@ -344,6 +362,7 @@ class ProjectWorkflowConfig:
     execution: ProjectExecutionConfig = field(default_factory=ProjectExecutionConfig)
     technology: ProjectTechnologyConfig = field(default_factory=ProjectTechnologyConfig)
     pipeline: PipelineConfig = field(default_factory=lambda: DEFAULT_PIPELINE)
+    readme_template: Path | None = None
     root: Path = field(default_factory=lambda: Path("."))
 
     @classmethod
@@ -377,6 +396,7 @@ class ProjectWorkflowConfig:
         execution = _parse_execution_section(data)
         technology = _parse_technology_section(data, root=root)
         pipeline = _parse_pipeline_section(data)
+        readme_template = _parse_readme_template(data, root=root)
 
         # simulation section
         sim_section = data.get("simulation")
@@ -409,6 +429,7 @@ class ProjectWorkflowConfig:
             execution=execution,
             technology=technology,
             pipeline=pipeline,
+            readme_template=readme_template,
             runs_dir=runs_dir,
             root=Path(root),
         )
@@ -417,7 +438,18 @@ class ProjectWorkflowConfig:
     def from_file(
         cls,
         path: Path | str,
+        *,
+        validate_rtl_sources: bool = True,
     ) -> "ProjectWorkflowConfig":
+        """validate_rtl_sources=False skips the rtl_sources existence/
+        is-file check below -- used by callers that only need other fields
+        off the live config (runs_dir, interface, technology, tb_top, ...)
+        and don't actually touch the RTL files themselves, e.g.
+        `project_import()` (only cares about a past run's *own* recorded
+        rtl_sources in results.json, checked separately via
+        VF_IMPORT_RTL_SOURCE_MISSING) and `generate_readme()` (describes a
+        past run's verification facts plus the current interface/
+        technology/metadata -- never reads rtl_sources at all)."""
         given = Path(path)
         path = given.resolve()
         if not path.exists():
@@ -436,4 +468,23 @@ class ProjectWorkflowConfig:
             ) from exc
         if raw is None:
             raw = {}
-        return cls.from_dict(raw, root=path.parent)
+        config = cls.from_dict(raw, root=path.parent)
+
+        # Only checked here, not in from_dict(): from_dict() is exercised
+        # directly by many tests with synthetic rtl_sources paths that are
+        # never written to disk. from_file() is the real-world entry point
+        # (an actual veriflow.yaml being run), where a directory or missing
+        # path would otherwise surface as a raw iverilog/yosys tool error
+        # deep inside the pipeline instead of a clear VeriFlow error.
+        if validate_rtl_sources:
+            for rtl_path in config.rtl_sources:
+                if not rtl_path.is_file():
+                    raise VeriFlowError(
+                        f"design.rtl_sources entry is not a file: {rtl_path}\n"
+                        "  Each entry must be a path to an existing RTL source "
+                        "file, not a directory or a missing path.",
+                        code="VF_DESIGN_RTL_SOURCE_NOT_FILE",
+                        details={"path": str(rtl_path)},
+                    )
+
+        return config
