@@ -1011,6 +1011,180 @@ def test_yaml_editor_fallback_block_scalar(tmp_path):
     assert data["other"] == 1
 
 
+# ── yaml_config_editor: CI regression (2026-07-21) -- fallback bugs that only
+#    manifest without ruamel.yaml installed, as in the actual CI environment
+#    (ruamel is an optional extra, `setup.py`'s `yaml-edit`, never installed
+#    by default). Each test below explicitly forces the fallback path via
+#    HAS_RUAMEL=False, so these run deterministically in both environments
+#    instead of silently only exercising ruamel whenever it happens to be
+#    installed locally -- which is exactly how these 3 bugs shipped unnoticed
+#    in the first place. ──────────────────────────────────────────────────────
+
+
+def test_yaml_editor_fallback_clearing_active_nested_section_to_scalar_stays_valid_yaml(tmp_path):
+    """Bug 1: clearing an already-active nested section (`interface:\\n
+    name: semicolab`) to a plain scalar (`interface: null`) used to leave
+    the old child line (`  name: semicolab`) behind, still indented under
+    what is now a scalar value -- invalid YAML
+    (yaml.scanner.ScannerError: "mapping values are not allowed here")."""
+    from veriflow.core.yaml_config_editor import _set_yaml_key_fallback
+
+    path = tmp_path / "config.yaml"
+    path.write_text("design:\n  top_module: top\ninterface:\n  name: semicolab\n", encoding="utf-8")
+    _set_yaml_key_fallback(path, ("interface",), None, block_scalar=False)
+    text = path.read_text(encoding="utf-8")
+
+    data = yaml.safe_load(text)  # must not raise ScannerError
+    assert data["interface"] is None
+    assert data["design"]["top_module"] == "top"
+    assert "name: semicolab" not in text
+
+
+def test_yaml_editor_fallback_uncomment_then_clear_matches_ci_repro(tmp_path):
+    """The exact reported CI repro end to end: uncomment interface (from
+    the scaffold's commented placeholder) then immediately clear it to
+    null, both under the fallback -- must produce valid, reloadable YAML."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with patch("veriflow.core.yaml_config_editor.HAS_RUAMEL", False):
+        project_set_config(config_path, "interface", "semicolab")
+        project_set_config(config_path, "interface", "null")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))  # must not raise
+    assert data["interface"] is None
+
+
+def test_yaml_editor_fallback_nested_key_list_value_renders_as_yaml_list(tmp_path):
+    """Bug 2: a list value for a nested key used to be rendered via
+    _render_scalar(), which has no list handling and falls through to
+    str(value) -- writing the literal Python repr string
+    "['a.v', 'b.v']" as a quoted YAML scalar instead of a real list."""
+    from veriflow.core.yaml_config_editor import _set_yaml_key_fallback
+
+    path = tmp_path / "config.yaml"
+    path.write_text("design:\n  top_module: top\n  rtl_sources: []\n", encoding="utf-8")
+    _set_yaml_key_fallback(path, ("design", "rtl_sources"), ["src/counter8.v", "src/edge_detector.v"], block_scalar=False)
+    text = path.read_text(encoding="utf-8")
+
+    assert "['src/counter8.v', 'src/edge_detector.v']" not in text
+    data = yaml.safe_load(text)
+    assert data["design"]["rtl_sources"] == ["src/counter8.v", "src/edge_detector.v"]
+
+
+def test_yaml_editor_fallback_replacing_existing_list_value_drops_old_items(tmp_path):
+    """A second list-value write must replace the old `- item` lines, not
+    just the key line, leaving stale entries behind."""
+    from veriflow.core.yaml_config_editor import _set_yaml_key_fallback
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "design:\n  top_module: top\n  rtl_sources:\n    - old_a.v\n    - old_b.v\nsimulation:\n  tb_top: tb\n",
+        encoding="utf-8",
+    )
+    _set_yaml_key_fallback(path, ("design", "rtl_sources"), ["new.v"], block_scalar=False)
+    text = path.read_text(encoding="utf-8")
+
+    data = yaml.safe_load(text)
+    assert data["design"]["rtl_sources"] == ["new.v"]
+    assert data["simulation"]["tb_top"] == "tb"  # sibling untouched
+    assert "old_a.v" not in text
+    assert "old_b.v" not in text
+
+
+def test_yaml_editor_fallback_rtl_sources_via_project_set_matches_ci_repro(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with patch("veriflow.core.yaml_config_editor.HAS_RUAMEL", False):
+        project_set_config(config_path, "rtl-sources", "src/counter8.v,src/edge_detector.v")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["rtl_sources"] == ["src/counter8.v", "src/edge_detector.v"]
+
+
+def test_yaml_editor_fallback_nested_block_scalar_writes_under_parent(tmp_path):
+    """Bug 3: a nested block scalar (e.g. metadata.description) used to
+    ignore the parent entirely, searching for `child_key` as a *top-level*
+    key -- since no such top-level key exists, it got appended as a stray
+    unrelated top-level section instead of nested under its real parent,
+    so `data["metadata"]["description"]` raised KeyError('metadata')."""
+    from veriflow.core.yaml_config_editor import _set_yaml_key_fallback
+
+    path = tmp_path / "config.yaml"
+    path.write_text("design:\n  top_module: top\n", encoding="utf-8")
+    _set_yaml_key_fallback(
+        path, ("metadata", "description"), "An 8-bit counter with async reset.", block_scalar=True
+    )
+    text = path.read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+
+    assert "metadata" in data  # must not raise KeyError
+    assert data["metadata"]["description"].strip() == "An 8-bit counter with async reset."
+
+
+def test_yaml_editor_fallback_nested_block_scalar_updates_existing_in_place(tmp_path):
+    from veriflow.core.yaml_config_editor import _set_yaml_key_fallback
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "design:\n  top_module: top\nmetadata:\n  author: \"Roman Lugo\"\n  description: |\n    old text\n  version: \"1.0.0\"\n",
+        encoding="utf-8",
+    )
+    _set_yaml_key_fallback(path, ("metadata", "description"), "new text", block_scalar=True)
+    text = path.read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+
+    assert data["metadata"]["description"].strip() == "new text"
+    assert data["metadata"]["author"] == "Roman Lugo"  # sibling before, untouched
+    assert data["metadata"]["version"] == "1.0.0"  # sibling after, untouched
+    assert "old text" not in text
+
+
+def test_yaml_editor_fallback_metadata_description_via_project_set_matches_ci_repro(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with patch("veriflow.core.yaml_config_editor.HAS_RUAMEL", False):
+        project_set_config(config_path, "description", "An 8-bit counter with async reset.")
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "description: |" in text
+    data = yaml.safe_load(text)
+    assert data["metadata"]["description"].strip() == "An 8-bit counter with async reset."
+
+
+def test_yaml_editor_fallback_full_suite_matches_ci(tmp_path):
+    """Broader smoke test: the same sequence of operations exercised across
+    this whole file, all under the fallback -- confirms nothing regresses
+    when every one of these bugs' fixes interact with each other."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with patch("veriflow.core.yaml_config_editor.HAS_RUAMEL", False):
+        project_set_config(config_path, "interface", "semicolab")
+        project_set_config(config_path, "technology", "sky130")
+        project_set_config(config_path, "rtl-sources", "src/counter8.v,src/edge_detector.v")
+        project_set_config(config_path, "tb-sources", "tb/tb_top.v")
+        project_set_config(config_path, "name", "Counter8 Tile")
+        project_set_config(config_path, "author", "Roman Lugo")
+        project_set_config(config_path, "description", "An 8-bit counter with async reset.")
+        project_set_config(config_path, "version", "2.0.0")
+        project_set_config(config_path, "interface", "null")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["interface"] is None
+    assert data["technology"] == {"name": "sky130"}
+    assert data["design"]["rtl_sources"] == ["src/counter8.v", "src/edge_detector.v"]
+    assert data["design"]["tb_sources"] == ["tb/tb_top.v"]
+    assert data["metadata"] == {
+        "name": "Counter8 Tile",
+        "author": "Roman Lugo",
+        "description": "An 8-bit counter with async reset.\n",
+        "version": "2.0.0",
+    }
+
+
 def test_yaml_editor_fallback_pipeline_appends_new_section(tmp_path):
     from veriflow.core.yaml_config_editor import _set_yaml_pipeline_fallback
 

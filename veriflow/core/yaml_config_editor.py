@@ -302,10 +302,52 @@ def _section_end(lines: list[str], start: int) -> int:
     return end
 
 
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _value_extent_end(lines: list[str], key_idx: int) -> int:
+    """Return the index just past the *value* of the key at lines[key_idx]:
+    every subsequent line indented strictly more than the key line itself
+    (blank lines pass through without ending the value) -- covers a
+    block scalar's content lines, an existing list's `- item` lines, or a
+    multi-line inline comment continuing the key's own line. Stops at the
+    first non-blank line at or below the key's own indentation (a sibling
+    key, a dedented comment block, or EOF) -- unlike `_section_end`, which
+    treats *any* indentation as "still part of this section" and would
+    incorrectly swallow a sibling key at the same indent as lines[key_idx]
+    (e.g. another key nested one level deeper than a shared parent)."""
+    key_indent = _indent_of(lines[key_idx])
+    end = key_idx + 1
+    while end < len(lines):
+        line = lines[end]
+        if line.strip() == "":
+            end += 1
+            continue
+        if _indent_of(line) > key_indent:
+            end += 1
+            continue
+        break
+    return end
+
+
+def _render_fallback_value_lines(key: str, value: Any, *, indent: str) -> list[str]:
+    """Render `{indent}{key}: value` (scalar) or `{indent}{key}:` followed
+    by `{indent}  - item` lines (list) -- the fallback's only two value
+    shapes. `indent` is however many spaces the key itself sits at (`""`
+    for a top-level key, `"  "` for a one-level-nested child)."""
+    if isinstance(value, list):
+        return [f"{indent}{key}:\n"] + [f"{indent}  - {item}\n" for item in value]
+    return [f"{indent}{key}: {_render_scalar(value)}\n"]
+
+
 def _set_yaml_key_fallback(path: Path, key_path: tuple[str, ...], value: Any, *, block_scalar: bool) -> None:
     text = path.read_text(encoding="utf-8")
     if block_scalar and isinstance(value, str):
-        text = _fallback_set_block_scalar(text, key_path[-1], value)
+        if len(key_path) == 1:
+            text = _fallback_set_block_scalar(text, key_path[0], value)
+        else:
+            text = _fallback_set_nested_block_scalar(text, key_path[0], key_path[1], value)
     elif len(key_path) == 1:
         text = _fallback_set_top_level(text, key_path[0], value)
     else:
@@ -314,26 +356,36 @@ def _set_yaml_key_fallback(path: Path, key_path: tuple[str, ...], value: Any, *,
 
 
 def _fallback_set_top_level(text: str, key: str, value: Any) -> str:
-    rendered = _render_scalar(value)
-    pattern = re.compile(rf"^{re.escape(key)}:.*$", re.MULTILINE)
-    new_line = f"{key}: {rendered}"
-    if pattern.search(text):
-        return pattern.sub(new_line, text, count=1)
-    sep = "" if (not text or text.endswith("\n")) else "\n"
-    return f"{text}{sep}{new_line}\n"
+    lines = text.splitlines(keepends=True)
+    pattern = re.compile(rf"^{re.escape(key)}:")
+    idx = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+    new_lines = _render_fallback_value_lines(key, value, indent="")
+
+    if idx is not None:
+        # _value_extent_end (not the old bare single-line replace) also
+        # removes any indented lines the old value owned -- e.g. a nested
+        # mapping's children when clearing a section key to a plain scalar
+        # (`interface: null` after `interface:\n  name: semicolab`), which
+        # the single-line replace used to leave behind as an orphaned,
+        # wrongly-indented continuation that ScannerError'd on reload.
+        end = _value_extent_end(lines, idx)
+        return "".join(lines[:idx]) + "".join(new_lines) + "".join(lines[end:])
+
+    sep = "" if (not lines or lines[-1].endswith("\n")) else "\n"
+    return "".join(lines) + sep + "".join(new_lines)
 
 
 def _fallback_set_nested(text: str, parent_key: str, child_key: str, value: Any) -> str:
-    rendered = _render_scalar(value)
     lines = text.splitlines(keepends=True)
     parent_re = re.compile(rf"^{re.escape(parent_key)}:\s*(#.*)?$")
     child_re = re.compile(rf"^\s+{re.escape(child_key)}:.*$")
+    new_lines = _render_fallback_value_lines(child_key, value, indent="  ")
 
     parent_idx = next((i for i, line in enumerate(lines) if parent_re.match(line)), None)
 
     if parent_idx is None:
         sep = "" if (not lines or lines[-1].endswith("\n")) else "\n"
-        addition = f"{sep}{parent_key}:\n  {child_key}: {rendered}\n"
+        addition = f"{sep}{parent_key}:\n" + "".join(new_lines)
         return "".join(lines) + addition
 
     end = _section_end(lines, parent_idx)
@@ -341,11 +393,13 @@ def _fallback_set_nested(text: str, parent_key: str, child_key: str, value: Any)
         (i for i in range(parent_idx + 1, end) if child_re.match(lines[i])), None
     )
     if child_idx is not None:
-        lines[child_idx] = f"  {child_key}: {rendered}\n"
+        # As in _fallback_set_top_level: consume whatever the existing
+        # child value owned (e.g. an existing list's own `- item` lines),
+        # not just its own key line.
+        child_end = _value_extent_end(lines, child_idx)
+        return "".join(lines[:child_idx]) + "".join(new_lines) + "".join(lines[child_end:])
     else:
-        lines.insert(parent_idx + 1, f"  {child_key}: {rendered}\n")
-
-    return "".join(lines)
+        return "".join(lines[:parent_idx + 1]) + "".join(new_lines) + "".join(lines[parent_idx + 1:])
 
 
 def _fallback_set_block_scalar(text: str, key: str, value: str) -> str:
@@ -358,8 +412,38 @@ def _fallback_set_block_scalar(text: str, key: str, value: str) -> str:
         sep = "" if (not lines or lines[-1].endswith("\n")) else "\n"
         return "".join(lines) + sep + f"{key}: |\n" + "".join(new_content)
 
-    end = _section_end(lines, key_idx)
+    end = _value_extent_end(lines, key_idx)
     return "".join(lines[:key_idx]) + f"{key}: |\n" + "".join(new_content) + "".join(lines[end:])
+
+
+def _fallback_set_nested_block_scalar(text: str, parent_key: str, child_key: str, value: str) -> str:
+    """Like _fallback_set_block_scalar, but for a one-level-nested block
+    scalar (e.g. veriflow.yaml's `metadata.description`) -- the plain
+    version ignores the parent entirely (searches for child_key as a
+    *top-level* key), so a nested block scalar either collided with an
+    unrelated top-level key of the same name or, more commonly since no
+    such key exists, got appended as a stray top-level section instead of
+    living under its actual parent."""
+    lines = text.splitlines(keepends=True)
+    parent_re = re.compile(rf"^{re.escape(parent_key)}:\s*(#.*)?$")
+    child_re = re.compile(rf"^\s+{re.escape(child_key)}:\s*\|?\s*$")
+    new_content = [f"    {ln}\n" for ln in value.splitlines()] or ["    \n"]
+    new_lines = [f"  {child_key}: |\n"] + new_content
+
+    parent_idx = next((i for i, line in enumerate(lines) if parent_re.match(line)), None)
+    if parent_idx is None:
+        sep = "" if (not lines or lines[-1].endswith("\n")) else "\n"
+        return "".join(lines) + sep + f"{parent_key}:\n" + "".join(new_lines)
+
+    end = _section_end(lines, parent_idx)
+    child_idx = next(
+        (i for i in range(parent_idx + 1, end) if child_re.match(lines[i])), None
+    )
+    if child_idx is not None:
+        child_end = _value_extent_end(lines, child_idx)
+        return "".join(lines[:child_idx]) + "".join(new_lines) + "".join(lines[child_end:])
+    else:
+        return "".join(lines[:parent_idx + 1]) + "".join(new_lines) + "".join(lines[parent_idx + 1:])
 
 
 def _render_pipeline_block(stages: list[dict]) -> str:
