@@ -16,9 +16,11 @@ artifacts for compatibility.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import warnings
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -29,7 +31,15 @@ from veriflow.core.wrapper.port_parser import extract_ports
 
 INTERFACES_DIR = Path(__file__).parent.parent / "interfaces"
 
+# Permanent local cache for URL-sourced interface.definition:/interface_definition:
+# values -- same philosophy as `veriflow pdk install` (models/pdk_manager.py's
+# VERIFLOW_PDK_ROOT): fetched once, used from disk forever after, never
+# re-fetched implicitly. Only `veriflow interface update <name>` re-downloads.
+VERIFLOW_INTERFACES_CACHE_ROOT = Path.home() / ".veriflow" / "interfaces" / "cache"
+
 _MODULE_RE = re.compile(r"\bmodule\s+(\w+)", re.IGNORECASE)
+_URL_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 
 
 @dataclass(frozen=True)
@@ -268,7 +278,7 @@ def get_interface_profile(name: str | None) -> InterfaceProfile | None:
     )
 
 
-def register_interface_profile_from_file(path: Path) -> str:
+def register_interface_profile_from_file(path: Path) -> tuple[str, list[str]]:
     """Load an InterfaceProfile from an external `.v` file and register it.
 
     Used for project-supplied interfaces (`interface.definition:` in
@@ -278,16 +288,197 @@ def register_interface_profile_from_file(path: Path) -> str:
 
     Overwrites any existing profile registered under the same name --
     including a built-in one, so a project can locally redefine e.g.
-    "semicolab" if it needs to -- emitting a UserWarning when it does.
+    "semicolab" if it needs to.
 
-    Returns the registered profile's name (the parsed module name).
+    Returns (registered_name, config_warnings) -- registered_name is the
+    parsed module name; config_warnings is a plain list of message
+    strings (a "Overwriting existing interface profile..."
+    [VF_INTERFACE_PROFILE_OVERWRITTEN] entry when applicable, otherwise
+    empty). These are deliberately NOT emitted via `warnings.warn()`:
+    unlike VF_INTERFACE_FILE_MULTIPLE_MODULES (raised by
+    `load_interface_profile_from_file` above, which can also fire later
+    from a stored profile factory, well outside any config-parsing call --
+    a broader case left as a real Python warning), this one only ever
+    fires exactly once, synchronously, from a config-parsing call site
+    that can collect it and surface it properly: in `results.json`'s
+    `warnings` array and via `print_warn()`'s clean CLI output, not a raw
+    Python UserWarning traceback a user has to scroll past.
     """
     profile = load_interface_profile_from_file(Path(path))
+    config_warnings: list[str] = []
     if profile.name in _PROFILE_FACTORIES:
-        warnings.warn(
+        config_warnings.append(
             f"Overwriting existing interface profile {profile.name!r} with "
-            f"external definition from {path}. [VF_INTERFACE_PROFILE_OVERWRITTEN]",
-            stacklevel=2,
+            f"external definition from {path}. [VF_INTERFACE_PROFILE_OVERWRITTEN]"
         )
     _PROFILE_FACTORIES[profile.name] = (lambda p=Path(path): load_interface_profile_from_file(p))
-    return profile.name
+    return profile.name, config_warnings
+
+
+# ── URL-sourced interface.definition ──────────────────────────────────────────
+
+def _url_scheme(definition: str) -> str | None:
+    """Return the lowercased scheme if *definition* looks like
+    `<scheme>://...`, else None (a local path, relative or absolute --
+    including Windows drive paths like `C:\\...`, which use a backslash,
+    not `://`, so never match here)."""
+    match = _URL_SCHEME_RE.match(definition)
+    return match.group(1).lower() if match else None
+
+
+def _cache_dir_for_url(url: str) -> Path:
+    """VERIFLOW_INTERFACES_CACHE_ROOT/<sha256(url)> -- the URL itself is the
+    cache key, so the same URL always resolves to the same directory
+    regardless of which project/database referenced it."""
+    return VERIFLOW_INTERFACES_CACHE_ROOT / hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def _download_interface_url(url: str) -> Path:
+    """Fetch *url* and (over)write its cache entry unconditionally --
+    always hits the network. Returns the resulting interface.v path.
+
+    Used both for a cache miss (`resolve_interface_definition`) and for an
+    explicit `veriflow interface update <name>` (force re-fetch, ignoring
+    whatever's already cached).
+
+    Raises VeriFlowError(VF_INTERFACE_URL_FETCH_FAILED) for any network/HTTP
+    error (connection failure, timeout, 404, etc.) -- urllib raises
+    HTTPError (a URLError subclass) for non-2xx responses, so this single
+    except clause covers both categories.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            content = response.read()
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise VeriFlowError(
+            f"Failed to fetch interface definition from {url!r}: {exc}",
+            code="VF_INTERFACE_URL_FETCH_FAILED",
+            details={"url": url, "error": str(exc)},
+        ) from exc
+
+    cache_dir = _cache_dir_for_url(url)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    interface_path = cache_dir / "interface.v"
+    interface_path.write_bytes(content)
+    # Recorded alongside the .v so `veriflow interface update <name>` can
+    # later re-resolve "this profile name" back to "the URL that produced
+    # it" -- the cache directory itself is only named by URL hash, not by
+    # the (not-yet-known-until-parsed) profile name.
+    (cache_dir / "source_url.txt").write_text(url, encoding="utf-8")
+    return interface_path
+
+
+def resolve_interface_definition(definition: str, base_dir: Path) -> Path:
+    """Resolve an `interface.definition:`/`interface_definition:` value to
+    a local `.v` file path.
+
+    *definition* is either:
+    - an `http://`/`https://` URL: resolved through the permanent local
+      cache (VERIFLOW_INTERFACES_CACHE_ROOT/<sha256(url)>/interface.v) --
+      a cache hit returns immediately with no network access at all; a
+      cache miss downloads once and caches permanently (see
+      `_download_interface_url`). Never re-fetched implicitly after that --
+      only an explicit `veriflow interface update <name>` does.
+    - anything else: treated as a local path, resolved relative to
+      *base_dir* exactly as before this feature (unchanged behavior).
+
+    Any other URL scheme (`file://`, `ftp://`, etc.) is rejected outright --
+    only http(s) is supported.
+
+    Raises:
+        VeriFlowError(VF_INTERFACE_URL_SCHEME_NOT_ALLOWED) -- a non-http(s) scheme
+        VeriFlowError(VF_INTERFACE_URL_FETCH_FAILED)       -- network/HTTP error on a cache miss
+    """
+    scheme = _url_scheme(definition)
+    if scheme is None:
+        return (Path(base_dir) / definition).resolve()
+
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        raise VeriFlowError(
+            f"Unsupported interface.definition URL scheme {scheme + '://'!r} in "
+            f"{definition!r}. Only http:// and https:// are allowed.",
+            code="VF_INTERFACE_URL_SCHEME_NOT_ALLOWED",
+            details={"definition": definition, "scheme": scheme},
+        )
+
+    interface_path = _cache_dir_for_url(definition) / "interface.v"
+    if interface_path.is_file():
+        return interface_path  # cache hit -- no network access
+
+    return _download_interface_url(definition)
+
+
+def find_cached_interface_by_name(name: str) -> tuple[Path, str] | None:
+    """Scan VERIFLOW_INTERFACES_CACHE_ROOT for a cached interface.v whose
+    declared module name matches *name*.
+
+    Returns (cache_dir, source_url), or None if *name* was never downloaded
+    from a URL at all (a built-in profile, a local-file `interface.definition`,
+    or simply never referenced)."""
+    if not VERIFLOW_INTERFACES_CACHE_ROOT.is_dir():
+        return None
+    for cache_dir in sorted(p for p in VERIFLOW_INTERFACES_CACHE_ROOT.iterdir() if p.is_dir()):
+        interface_path = cache_dir / "interface.v"
+        source_url_path = cache_dir / "source_url.txt"
+        if not interface_path.is_file() or not source_url_path.is_file():
+            continue
+        text = interface_path.read_text(encoding="utf-8")
+        if name in _find_module_names(text):
+            return cache_dir, source_url_path.read_text(encoding="utf-8").strip()
+    return None
+
+
+def update_cached_interface_url(name: str) -> str:
+    """Force re-download the URL-sourced interface profile registered as
+    *name*, overwriting its cached interface.v. Returns the source URL that
+    was re-fetched.
+
+    Raises VeriFlowError(VF_INTERFACE_UPDATE_NOT_FOUND) if *name* has no
+    cached URL-based definition -- either it was never downloaded from a
+    URL, or it's a built-in/local-file-based profile with nothing to
+    re-fetch in the first place.
+    """
+    found = find_cached_interface_by_name(name)
+    if found is None:
+        raise VeriFlowError(
+            f"No cached URL-based interface definition found for {name!r}. "
+            "Only interfaces originally loaded via "
+            "interface.definition: http(s)://... (or interface_definition: "
+            "in Database Mode) can be updated -- built-in interfaces and "
+            "local-file definitions have nothing to re-fetch.",
+            code="VF_INTERFACE_UPDATE_NOT_FOUND",
+            details={"name": name},
+        )
+    _cache_dir, source_url = found
+    _download_interface_url(source_url)
+    return source_url
+
+
+def list_cached_interface_urls() -> list[dict]:
+    """Return every cached URL-based interface definition, sorted by name.
+
+    Each entry: {"name": str, "url": str, "downloaded_at": datetime} --
+    "downloaded_at" is interface.v's mtime (updated on every
+    `veriflow interface update`, since that overwrites the file in place).
+    "name" is parsed fresh from the cached file's current content, not
+    stored separately, so it always reflects what's actually on disk right
+    now (e.g. after a URL's content changed name across an update).
+    """
+    entries: list[dict] = []
+    if VERIFLOW_INTERFACES_CACHE_ROOT.is_dir():
+        for cache_dir in sorted(p for p in VERIFLOW_INTERFACES_CACHE_ROOT.iterdir() if p.is_dir()):
+            interface_path = cache_dir / "interface.v"
+            source_url_path = cache_dir / "source_url.txt"
+            if not interface_path.is_file() or not source_url_path.is_file():
+                continue
+            modules = _find_module_names(interface_path.read_text(encoding="utf-8"))
+            entries.append({
+                "name": modules[0] if modules else "?",
+                "url": source_url_path.read_text(encoding="utf-8").strip(),
+                "downloaded_at": datetime.fromtimestamp(interface_path.stat().st_mtime),
+            })
+    entries.sort(key=lambda e: e["name"])
+    return entries

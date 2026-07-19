@@ -164,6 +164,57 @@ Omitting `definition` is unchanged from before: `name` must then refer to an
 already-registered (built-in) profile. See `veriflow/interfaces/semicolab/` for the on-disk
 shape of a built-in profile (`interface.v` + optional `tb_template.v` + optional `meta.yaml`).
 
+#### `interface.definition` from a URL
+
+```yaml
+interface:
+  name: tinytapeout
+  definition: https://raw.githubusercontent.com/example/repo/main/tinytapeout_if.v
+```
+
+`definition` also accepts an `http://`/`https://` URL, resolved through a **permanent local
+cache** — same "fetch once, use from disk forever, update explicitly" philosophy as
+`veriflow pdk install` (see `docs/INSTALL.md`). The first time a given URL is used, VeriFlow
+downloads it to `~/.veriflow/interfaces/cache/<sha256(url)>/interface.v` (plus a
+`source_url.txt` recording where it came from) and parses it exactly like a local file from
+then on. Every later resolution of that same URL — in this project or any other — is a pure
+cache read: **no network access at all**, even across separate `veriflow project run`
+invocations. Nothing re-fetches it automatically, ever.
+
+```bash
+veriflow interface update <name>     # force re-download, overwrite the cache
+veriflow interface list-cached       # show every cached URL, its profile name, and download date
+```
+
+`veriflow interface update <name>` looks up *name* (the profile name — the module name parsed
+from the file, not the URL itself) against the cache, re-downloads its source URL, and
+overwrites the cached copy. It only works for profiles that actually came from a URL — a
+built-in profile or a local-file `definition:` has nothing to re-fetch and raises
+`VF_INTERFACE_UPDATE_NOT_FOUND`.
+
+Any URL scheme other than `http`/`https` (`file://`, `ftp://`, etc.) is rejected outright with
+`VF_INTERFACE_URL_SCHEME_NOT_ALLOWED` — a definition string with no scheme prefix at all (a
+plain local path) is unaffected and resolves exactly as described above.
+
+**Security note:** VeriFlow does not validate the content of externally-fetched interface
+definitions beyond parsing them as Verilog module declarations — only use URLs you trust. A
+malicious or compromised URL could serve a `.v` file with a port list crafted to pass
+connectivity checks it shouldn't, but VeriFlow itself only ever reads the file as a Verilog
+text stub (no code execution, no other side effects) — the practical risk is a false-positive
+connectivity PASS, not arbitrary code execution.
+
+Database Mode's `project_config.yaml` supports the exact same URL resolution for its
+`interface_definition:` field (the flat, non-nested equivalent of `interface.definition:` —
+see `shuttle_spec.yaml` below) — same permanent cache, same `veriflow interface update`.
+
+##### Error codes
+
+| Code | Cause |
+|---|---|
+| `VF_INTERFACE_URL_SCHEME_NOT_ALLOWED` | `definition` has a scheme other than `http`/`https` |
+| `VF_INTERFACE_URL_FETCH_FAILED` | network/HTTP error fetching a not-yet-cached URL (DNS failure, timeout, 404, etc.) |
+| `VF_INTERFACE_UPDATE_NOT_FOUND` | `veriflow interface update <name>` — *name* has no cached URL-based definition |
+
 ### `execution` (optional)
 
 ```yaml

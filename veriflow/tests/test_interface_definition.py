@@ -76,17 +76,22 @@ def test_project_mode_interface_definition_resolves_relative_to_config_dir(tmp_p
     assert cfg.interface.name == "tinytapeout"
 
 
-def test_project_mode_interface_definition_name_mismatch_warns_and_uses_module_name(tmp_path):
+def test_project_mode_interface_definition_name_mismatch_surfaces_as_config_warning(tmp_path, recwarn):
+    """VF_INTERFACE_NAME_MISMATCH is a config-level fact surfaced in
+    cfg.config_warnings (-> results.json / print_warn()), not a raw Python
+    UserWarning -- confirmed via `recwarn` that nothing is emitted at all."""
     _write_tinytapeout_stub(tmp_path / "tinytapeout_if.v")
-    with pytest.warns(UserWarning, match="VF_INTERFACE_NAME_MISMATCH"):
-        cfg = ProjectWorkflowConfig.from_dict(
-            {
-                "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
-                "interface": {"name": "wrong_name", "definition": "./tinytapeout_if.v"},
-            },
-            root=tmp_path,
-        )
+    cfg = ProjectWorkflowConfig.from_dict(
+        {
+            "design": {"top_module": "top", "rtl_sources": ["rtl/top.v"]},
+            "interface": {"name": "wrong_name", "definition": "./tinytapeout_if.v"},
+        },
+        root=tmp_path,
+    )
+    assert len(recwarn) == 0
     assert cfg.interface.name == "tinytapeout"
+    assert len(cfg.config_warnings) == 1
+    assert "VF_INTERFACE_NAME_MISMATCH" in cfg.config_warnings[0]
 
 
 def test_project_mode_no_definition_behaves_as_before(tmp_path):
@@ -134,15 +139,17 @@ def test_database_mode_interface_definition_registers_and_resolves(tmp_path):
     assert config.interface_name == "tinytapeout"
 
 
-def test_database_mode_interface_definition_name_mismatch_warns(tmp_path):
+def test_database_mode_interface_definition_name_mismatch_surfaces_as_config_warning(tmp_path, recwarn):
     _write_tinytapeout_stub(tmp_path / "tinytapeout_if.v")
     data = _base_project_config_dict(
         interface_name="wrong_name",
         interface_definition="./tinytapeout_if.v",
     )
-    with pytest.warns(UserWarning, match="VF_INTERFACE_NAME_MISMATCH"):
-        config = ProjectConfig.from_dict(data, root=tmp_path)
+    config = ProjectConfig.from_dict(data, root=tmp_path)
+    assert len(recwarn) == 0
     assert config.interface_name == "tinytapeout"
+    assert len(config.config_warnings) == 1
+    assert "VF_INTERFACE_NAME_MISMATCH" in config.config_warnings[0]
 
 
 def test_database_mode_no_definition_behaves_as_before(tmp_path):

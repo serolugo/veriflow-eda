@@ -230,8 +230,9 @@ def test_register_external_profile_becomes_available(tmp_path, _cleanup_register
         "endmodule\n",
         encoding="utf-8",
     )
-    name = register_interface_profile_from_file(stub)
+    name, register_warnings = register_interface_profile_from_file(stub)
     assert name == "tinytapeout"
+    assert register_warnings == []
 
     profile = get_interface_profile("tinytapeout")
     assert profile is not None
@@ -241,20 +242,30 @@ def test_register_external_profile_becomes_available(tmp_path, _cleanup_register
 def test_register_external_profile_name_comes_from_module_not_filename(tmp_path, _cleanup_registered_profiles):
     stub = tmp_path / "some_arbitrary_filename.v"
     stub.write_text("module actual_module_name (input wire clk);\nendmodule\n", encoding="utf-8")
-    name = register_interface_profile_from_file(stub)
+    name, register_warnings = register_interface_profile_from_file(stub)
     assert name == "actual_module_name"
+    assert register_warnings == []
 
 
-def test_register_overwriting_existing_profile_warns(tmp_path):
+def test_register_overwriting_existing_profile_returns_warning_not_python_warning(tmp_path, recwarn):
+    """VF_INTERFACE_PROFILE_OVERWRITTEN is a config-level fact meant for
+    results.json / print_warn(), not a raw Python UserWarning traceback --
+    confirmed here with `recwarn` (fails the test if any warning at all is
+    emitted) rather than just checking the message's own absence."""
     from veriflow.models.interface_profile import _PROFILE_FACTORIES
 
     original_factory = _PROFILE_FACTORIES["semicolab"]
     stub = tmp_path / "semicolab.v"
     stub.write_text("module semicolab (input wire clk);\nendmodule\n", encoding="utf-8")
     try:
-        with pytest.warns(UserWarning, match="VF_INTERFACE_PROFILE_OVERWRITTEN"):
-            register_interface_profile_from_file(stub)
+        name, register_warnings = register_interface_profile_from_file(stub)
     finally:
         # Restore the real built-in definition regardless of outcome, so
         # later tests in the same process aren't affected by this overwrite.
         _PROFILE_FACTORIES["semicolab"] = original_factory
+
+    assert len(recwarn) == 0
+    assert name == "semicolab"
+    assert len(register_warnings) == 1
+    assert "VF_INTERFACE_PROFILE_OVERWRITTEN" in register_warnings[0]
+    assert "semicolab" in register_warnings[0]

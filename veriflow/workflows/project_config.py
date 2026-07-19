@@ -44,7 +44,11 @@ from veriflow.core.backends.registry import (
     get_synthesis_backend,
 )
 from veriflow.models.execution_profile import default_execution_profile
-from veriflow.models.interface_profile import get_interface_profile, register_interface_profile_from_file
+from veriflow.models.interface_profile import (
+    get_interface_profile,
+    register_interface_profile_from_file,
+    resolve_interface_definition,
+)
 from veriflow.models.pipeline_config import (
     DEFAULT_PIPELINE,
     PipelineConfig,
@@ -77,7 +81,14 @@ class ProjectInterfaceConfig:
             )
 
 
-def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfig | None:
+def _parse_interface_section(
+    data: dict, *, root: Path
+) -> tuple[ProjectInterfaceConfig | None, list[str]]:
+    """Returns (interface_config, config_warnings) -- config_warnings
+    collects VF_INTERFACE_NAME_MISMATCH / VF_INTERFACE_PROFILE_OVERWRITTEN
+    messages as plain strings (not `warnings.warn()`), so the caller
+    (`ProjectWorkflowConfig.from_dict`) can surface them in results.json /
+    CLI output instead of a raw Python UserWarning."""
     if "interface_name" in data:
         raise VeriFlowError(
             "Top-level 'interface_name' is not supported in Project Mode configuration.\n"
@@ -90,7 +101,7 @@ def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfi
     section = data.get("interface")
     if section is None:
         # omitted or `interface: null` — generic project, no interface check
-        return None
+        return None, []
 
     if not isinstance(section, dict):
         raise VeriFlowError(
@@ -122,7 +133,7 @@ def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfi
     if raw_name is None:
         # explicit `name: null` — generic project, no interface check
         # (a `definition:` alongside `name: null` is moot and ignored)
-        return None
+        return None, []
     if not isinstance(raw_name, str) or not raw_name.strip():
         raise VeriFlowError(
             "interface.name must be a non-empty string or null",
@@ -139,25 +150,27 @@ def _parse_interface_section(data: dict, *, root: Path) -> ProjectInterfaceConfi
                 code="VF_INTERFACE_CONFIG_INVALID",
                 details={"definition": raw_definition},
             )
-        definition_path = (root / raw_definition.strip()).resolve()
+        # An http(s):// URL resolves through the permanent local cache
+        # (download once, reuse forever -- see resolve_interface_definition);
+        # anything else is a local path, relative to `root` as before.
+        definition_path = resolve_interface_definition(raw_definition.strip(), root)
         # Registers the profile from the .v file; the name actually
         # registered is the module name parsed from that file, which may
         # differ from `name:` above.
-        registered_name = register_interface_profile_from_file(definition_path)
+        registered_name, config_warnings = register_interface_profile_from_file(definition_path)
         if registered_name != name:
-            warnings.warn(
+            config_warnings.append(
                 f"interface.name {name!r} differs from the module name "
                 f"{registered_name!r} parsed from interface.definition "
                 f"({definition_path}). Using {registered_name!r}. "
-                "[VF_INTERFACE_NAME_MISMATCH]",
-                stacklevel=2,
+                "[VF_INTERFACE_NAME_MISMATCH]"
             )
             name = registered_name
-        return ProjectInterfaceConfig(name=name)
+        return ProjectInterfaceConfig(name=name), config_warnings
 
     # Raises VF_INTERFACE_UNKNOWN for names not in the registry
     get_interface_profile(name)
-    return ProjectInterfaceConfig(name=name)
+    return ProjectInterfaceConfig(name=name), []
 
 
 @dataclass(frozen=True)
@@ -382,6 +395,10 @@ class ProjectWorkflowConfig:
     pipeline: PipelineConfig = field(default_factory=lambda: DEFAULT_PIPELINE)
     readme_template: Path | None = None
     root: Path = field(default_factory=lambda: Path("."))
+    # Config-parse-time warnings (currently: interface.definition's name
+    # mismatch/profile-overwrite) -- surfaced in results.json's "warnings"
+    # array and via print_warn(), not raised as Python UserWarning.
+    config_warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(
@@ -410,7 +427,7 @@ class ProjectWorkflowConfig:
         raw_tb = design.get("tb_sources") or []
         tb_sources = [root / p for p in raw_tb]
 
-        interface = _parse_interface_section(data, root=root)
+        interface, interface_warnings = _parse_interface_section(data, root=root)
         execution = _parse_execution_section(data)
         technology = _parse_technology_section(data, root=root)
         pipeline = _parse_pipeline_section(data)
@@ -450,6 +467,7 @@ class ProjectWorkflowConfig:
             readme_template=readme_template,
             runs_dir=runs_dir,
             root=Path(root),
+            config_warnings=interface_warnings,
         )
 
     @classmethod

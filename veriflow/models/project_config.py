@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from veriflow.core import VeriFlowError
@@ -23,6 +23,10 @@ class ProjectConfig:
     technology_name: str | None = None
     require_pdk: bool = False
     pipeline: PipelineConfig | None = None
+    # Config-parse-time warnings (currently: interface_definition's name
+    # mismatch/profile-overwrite) -- surfaced in the run's own results
+    # data and via print_warn(), not raised as Python UserWarning.
+    config_warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict, *, root: Path | None = None) -> "ProjectConfig":
@@ -57,6 +61,8 @@ class ProjectConfig:
         if isinstance(raw_name, str):
             raw_name = raw_name.strip() or None
 
+        config_warnings: list[str] = []
+
         raw_definition = data.get("interface_definition")
         if raw_name is not None and raw_definition is not None:
             if not isinstance(raw_definition, str) or not raw_definition.strip():
@@ -71,17 +77,23 @@ class ProjectConfig:
                     "(internal error: ProjectConfig.from_dict called without root=)",
                     code="VF_PROJECT_INTERFACE_CONFIG_INVALID",
                 )
-            from veriflow.models.interface_profile import register_interface_profile_from_file
+            from veriflow.models.interface_profile import (
+                register_interface_profile_from_file,
+                resolve_interface_definition,
+            )
 
-            definition_path = (Path(root) / raw_definition.strip()).resolve()
-            registered_name = register_interface_profile_from_file(definition_path)
+            # An http(s):// URL resolves through the permanent local cache
+            # (download once, reuse forever); anything else is a local
+            # path, relative to `root` as before.
+            definition_path = resolve_interface_definition(raw_definition.strip(), Path(root))
+            registered_name, register_warnings = register_interface_profile_from_file(definition_path)
+            config_warnings.extend(register_warnings)
             if registered_name != raw_name:
-                warnings.warn(
+                config_warnings.append(
                     f"interface_name {raw_name!r} differs from the module name "
                     f"{registered_name!r} parsed from interface_definition "
                     f"({definition_path}). Using {registered_name!r}. "
-                    "[VF_INTERFACE_NAME_MISMATCH]",
-                    stacklevel=2,
+                    "[VF_INTERFACE_NAME_MISMATCH]"
                 )
                 raw_name = registered_name
 
@@ -153,4 +165,5 @@ class ProjectConfig:
             technology_name=technology_name,
             require_pdk=require_pdk,
             pipeline=pipeline,
+            config_warnings=config_warnings,
         )

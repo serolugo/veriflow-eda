@@ -269,6 +269,17 @@ def build_parser() -> argparse.ArgumentParser:
     # doctor (tool availability check)
     sub.add_parser("doctor", help="Check EDA tool availability for all backends")
 
+    # interface (URL-sourced interface.definition cache management)
+    p_interface = sub.add_parser("interface", help="Manage cached URL-sourced interface definitions")
+    interface_sub = p_interface.add_subparsers(dest="interface_command")
+
+    p_interface_update = interface_sub.add_parser(
+        "update", help="Re-download a URL-sourced interface definition, overwriting the cache"
+    )
+    p_interface_update.add_argument("name", metavar="NAME", help="Interface profile name (e.g. semicolab)")
+
+    interface_sub.add_parser("list-cached", help="List all cached URL-sourced interface definitions")
+
     # pdk (PDK management namespace)
     p_pdk = sub.add_parser("pdk", help="PDK management commands")
     pdk_sub = p_pdk.add_subparsers(dest="pdk_command")
@@ -383,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
                 wrap_gen_result: dict | None = None
                 doctor_result: dict | None = None
                 pdk_result: dict | None = None
+                interface_result: dict | None = None
 
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
@@ -577,6 +589,29 @@ def main(argv: list[str] | None = None) -> int:
                     from veriflow.commands.doctor import cmd_doctor
                     exit_code, doctor_result = cmd_doctor(args)
 
+                elif args.command == "interface":
+                    interface_cmd = getattr(args, "interface_command", None)
+                    if interface_cmd is None:
+                        if json_mode:
+                            error_payload = {
+                                "status": "ERROR",
+                                "error": {
+                                    "code": "VF_UNKNOWN_COMMAND",
+                                    "message": "No interface subcommand specified",
+                                },
+                            }
+                        else:
+                            parser.print_help()
+                        exit_code = 1
+                    elif interface_cmd == "update":
+                        dispatched = True
+                        from veriflow.commands.interface import cmd_interface_update
+                        exit_code = cmd_interface_update(args)
+                    elif interface_cmd == "list-cached":
+                        dispatched = True
+                        from veriflow.commands.interface import cmd_interface_list_cached
+                        exit_code, interface_result = cmd_interface_list_cached(args)
+
                 elif args.command == "pdk":
                     pdk_cmd = getattr(args, "pdk_command", None)
                     if pdk_cmd is None:
@@ -663,6 +698,15 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload = {
                                 "status": "SUCCESS" if exit_code == 0 else "FAIL",
                                 "command": f"pdk {_pdk_cmd}",
+                            }
+                    elif args.command == "interface":
+                        _interface_cmd = getattr(args, "interface_command", None)
+                        if _interface_cmd == "list-cached" and interface_result is not None:
+                            result_payload = interface_result
+                        else:
+                            result_payload = {
+                                "status": "SUCCESS" if exit_code == 0 else "FAIL",
+                                "command": f"interface {_interface_cmd}",
                             }
 
             except VeriFlowError as e:

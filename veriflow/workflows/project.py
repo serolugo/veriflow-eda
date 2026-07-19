@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from veriflow.workflows.project_config import ProjectWorkflowConfig
 class ProjectRunResult:
     run_dir: Path
     result: RunResult
+    config_warnings: list[str] = field(default_factory=list)
 
 
 def _rel_to_root(path: Path, root: Path) -> str:
@@ -132,7 +133,7 @@ def _write_results_json(
             "synthesis": _stage_entry(result, "synthesis", run_dir, root),
         },
         "rtl_hash": _compute_rtl_hash(design.rtl_sources),
-        "warnings": _collect_warnings(result),
+        "warnings": [*config.config_warnings, *_collect_warnings(result)],
         "veriflow_version": __version__,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -273,4 +274,4 @@ class ProjectWorkflow:
 
         _write_results_json(self.config, run_dir, design, result)
 
-        return ProjectRunResult(run_dir=run_dir, result=result)
+        return ProjectRunResult(run_dir=run_dir, result=result, config_warnings=self.config.config_warnings)

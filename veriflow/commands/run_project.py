@@ -22,6 +22,8 @@ def _print_result(pr: ProjectRunResult) -> None:
     console.print(f"  [secondary]Status     [/secondary]  {status_tag}")
     console.print(f"  [secondary]-> results: {pr.run_dir / 'results.json'}[/secondary]")
 
+    for warning in pr.config_warnings:
+        print_warn(warning)
     for sr in pr.result.stages.values():
         for warning in sr.warnings or []:
             print_warn(warning)
