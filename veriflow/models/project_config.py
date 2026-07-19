@@ -21,6 +21,7 @@ class ProjectConfig:
     id_format: str = _DEFAULT_ID_FORMAT
     shuttle_name: str = ""
     technology_name: str | None = None
+    require_pdk: bool = False
     pipeline: PipelineConfig | None = None
 
     @classmethod
@@ -92,11 +93,22 @@ class ProjectConfig:
         )
 
         technology_name: str | None = None
+        require_pdk = False
         technology_section = data.get("technology")
         if isinstance(technology_section, dict):
             raw_tech_name = technology_section.get("name")
             if isinstance(raw_tech_name, str):
                 technology_name = raw_tech_name.strip() or None
+
+            raw_require_pdk = technology_section.get("require_pdk")
+            if raw_require_pdk is not None:
+                if not isinstance(raw_require_pdk, bool):
+                    raise VeriFlowError(
+                        "technology.require_pdk must be a boolean (true/false)",
+                        code="VF_PROJECT_TECHNOLOGY_CONFIG_INVALID",
+                        details={"require_pdk": raw_require_pdk},
+                    )
+                require_pdk = raw_require_pdk
 
         raw_tech_definition = data.get("technology_definition")
         if raw_tech_definition is not None:
@@ -139,5 +151,6 @@ class ProjectConfig:
             id_format=id_format,
             shuttle_name=data.get("shuttle_name", "") or "",
             technology_name=technology_name,
+            require_pdk=require_pdk,
             pipeline=pipeline,
         )

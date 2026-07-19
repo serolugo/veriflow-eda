@@ -194,3 +194,32 @@ def test_database_mode_technology_definition_name_mismatch_warns(tmp_path):
             root=tmp_path,
         )
     assert cfg.technology_name == "actual_name_db"
+
+
+# ── Database Mode: technology.require_pdk ─────────────────────────────────────
+
+
+def test_database_mode_require_pdk_true_parses():
+    cfg = ProjectConfig.from_dict(
+        {"interface_name": None, "technology": {"name": "sky130", "require_pdk": True}},
+    )
+    assert cfg.require_pdk is True
+    assert cfg.technology_name == "sky130"
+
+
+def test_database_mode_require_pdk_defaults_to_false():
+    cfg = ProjectConfig.from_dict({"interface_name": None, "technology": {"name": "sky130"}})
+    assert cfg.require_pdk is False
+
+
+def test_database_mode_require_pdk_defaults_false_with_no_technology_section():
+    cfg = ProjectConfig.from_dict({"interface_name": None})
+    assert cfg.require_pdk is False
+
+
+def test_database_mode_require_pdk_non_bool_fails():
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectConfig.from_dict(
+            {"interface_name": None, "technology": {"name": "sky130", "require_pdk": "true"}},
+        )
+    assert exc_info.value.code == "VF_PROJECT_TECHNOLOGY_CONFIG_INVALID"

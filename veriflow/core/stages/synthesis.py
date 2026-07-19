@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from veriflow.core import VeriFlowError
 from veriflow.core.backends.base import SynthesisBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 from veriflow.core.pipeline import PipelineStage
@@ -39,10 +40,22 @@ class SynthesisStage(PipelineStage):
             # A named technology with no liberty already set (the common case --
             # none of the built-in technology.yaml files vendor one) falls back
             # to whatever `veriflow pdk install` has put on disk. Missing PDK is
-            # a warning, not an error: synthesis still runs with generic mapping.
+            # a warning, not an error by default: synthesis still runs with
+            # generic mapping. `technology.require_pdk: true` (ExecutionProfile
+            # .require_pdk) turns this into a hard failure instead -- the caller
+            # explicitly wants no silent generic-synthesis fallback.
             liberty_path = get_liberty_path(technology.name)
             if liberty_path is not None:
                 technology = replace(technology, liberty=str(liberty_path))
+            elif self._profile.require_pdk:
+                raise VeriFlowError(
+                    f"Technology {technology.name!r} requires an installed PDK "
+                    "(require_pdk: true) but none was found. Run 'veriflow pdk "
+                    f"install {technology.name}' first, or set require_pdk: "
+                    "false to allow generic synthesis as a fallback.",
+                    code="VF_TECHNOLOGY_PDK_REQUIRED_NOT_INSTALLED",
+                    details={"technology": technology.name},
+                )
             else:
                 stage_warnings.append(
                     f"PDK for {technology.name!r} not found -- run: veriflow pdk install {technology.name} "

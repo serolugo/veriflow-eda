@@ -40,6 +40,7 @@ design:
 
 # technology:
 #   name: generic
+#   require_pdk: false   # if true, fail instead of falling back to generic synthesis
 
 # simulation:
 #   tb_top: ""          # required if tb_sources is set

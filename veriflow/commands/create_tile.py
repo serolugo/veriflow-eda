@@ -62,6 +62,9 @@ tb_description: |
 #   # omitting `pipeline:` entirely inherits project_config.yaml's pipeline
 #   # (or the current default if that's absent too: all three stages above, in order)
 
+# technology:           # optional -- name is database-wide (project_config.yaml); only require_pdk can be overridden here
+#   require_pdk: true    # omit to inherit project_config.yaml's require_pdk (default: false)
+
 # =============================================================================
 # RUN INFORMATION  (update before each run)
 # =============================================================================

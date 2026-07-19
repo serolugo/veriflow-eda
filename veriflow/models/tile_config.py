@@ -1,8 +1,51 @@
 from dataclasses import dataclass
 
+from veriflow.core import VeriFlowError
 from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipeline_section
 
 DEFAULT_TB_TOP_MODULE = "tb"
+
+
+def _parse_tile_technology_section(data: dict) -> bool | None:
+    """Parse tile_config.yaml's optional `technology:` section -- only
+    `require_pdk` is supported here (unlike Project Mode/database-level
+    `technology:`, a tile has no `name`/`definition` override of its own;
+    technology *name* stays database-wide, set only in project_config.yaml).
+
+    Returns None ("not set here" -- inherit project_config.yaml's
+    require_pdk) when the section is absent or present but empty/
+    `require_pdk` omitted.
+    """
+    section = data.get("technology")
+    if section is None:
+        return None
+    if not isinstance(section, dict):
+        raise VeriFlowError(
+            "tile technology section must be a mapping, e.g.:\n"
+            "    technology:\n"
+            "      require_pdk: true",
+            code="VF_TILE_TECHNOLOGY_CONFIG_INVALID",
+            details={"technology": section},
+        )
+    unknown_keys = sorted(set(section) - {"require_pdk"})
+    if unknown_keys:
+        raise VeriFlowError(
+            f"Unsupported keys in tile technology section: {', '.join(unknown_keys)}.\n"
+            "  Supported keys: 'require_pdk' (technology name is database-wide, "
+            "set in project_config.yaml, not per-tile).",
+            code="VF_TILE_TECHNOLOGY_CONFIG_INVALID",
+            details={"unknown_keys": unknown_keys},
+        )
+    raw_require_pdk = section.get("require_pdk")
+    if raw_require_pdk is None:
+        return None
+    if not isinstance(raw_require_pdk, bool):
+        raise VeriFlowError(
+            "technology.require_pdk must be a boolean (true/false)",
+            code="VF_TILE_TECHNOLOGY_CONFIG_INVALID",
+            details={"require_pdk": raw_require_pdk},
+        )
+    return raw_require_pdk
 
 
 @dataclass
@@ -24,6 +67,8 @@ class TileConfig:
     notes: str
     # ── Pipeline override (optional; None = inherit from project_config.yaml) ─
     pipeline: PipelineConfig | None = None
+    # ── Technology require_pdk override (optional; None = inherit) ───────────
+    require_pdk: bool | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "TileConfig":
@@ -32,6 +77,9 @@ class TileConfig:
         # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed
         # section. None means "not set here" -- inherit project_config.yaml's pipeline.
         pipeline = parse_optional_pipeline_section(data)
+        # Raises VF_TILE_TECHNOLOGY_CONFIG_INVALID for a malformed section.
+        # None means "not set here" -- inherit project_config.yaml's require_pdk.
+        require_pdk = _parse_tile_technology_section(data)
         return cls(
             tile_name=data.get("tile_name", "") or "",
             tile_author=data.get("tile_author", "") or "",
@@ -47,4 +95,5 @@ class TileConfig:
             main_change=data.get("main_change", "") or "",
             notes=data.get("notes", "") or "",
             pipeline=pipeline,
+            require_pdk=require_pdk,
         )

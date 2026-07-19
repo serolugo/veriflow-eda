@@ -270,6 +270,35 @@ section and `veriflow.models.pdk_manager`); until then, synthesis falls back to 
 script and prints a `VF_TECHNOLOGY_PDK_NOT_INSTALLED` warning (included in `results.json`'s
 `warnings` field) rather than failing.
 
+#### `technology.require_pdk` — fail instead of falling back to generic synthesis
+
+```yaml
+technology:
+  name: sky130
+  require_pdk: true
+```
+
+Default `false` (the behavior described above: missing PDK is a warning, synthesis still runs
+generically). Set `require_pdk: true` to make a missing PDK a hard failure instead —
+`VF_TECHNOLOGY_PDK_REQUIRED_NOT_INSTALLED`, raised by the synthesis stage *before* invoking
+yosys at all. This stops the run entirely (no `results.json` is written for that attempt) rather
+than returning a `FAIL` result — the same category as other configuration-level errors
+(`VF_TECHNOLOGY_UNKNOWN`, `VF_INTERFACE_UNKNOWN`), not "the RTL failed verification." Useful when
+a PASS is expected to mean "actually verified against the target PDK" (e.g. a shuttle's
+`db import-repo` precheck), where a silent generic-synthesis fallback would be misleading.
+
+Database Mode's `project_config.yaml` supports the same `technology.require_pdk` (as the
+database-wide default for every tile); a tile's own `tile_config.yaml` may override it with:
+
+```yaml
+technology:
+  require_pdk: false   # or true — only require_pdk can be set here, not name (database-wide)
+```
+
+Precedence: a tile's own `require_pdk` (if set) wins; otherwise the database's
+`project_config.yaml` value; otherwise `false`. Set either with `veriflow project set
+require-pdk true` / `veriflow db set require-pdk true` / `veriflow db tile set require-pdk true`.
+
 #### `technology.definition` — external technology profiles
 
 ```yaml

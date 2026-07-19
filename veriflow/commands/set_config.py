@@ -22,12 +22,13 @@ from veriflow.models.technology_profile import get_technology_profile
 from veriflow.ui.output import print_done
 
 _PROJECT_SET_KEYS = (
-    "interface", "technology", "top-module", "pipeline", "runs-dir",
+    "interface", "technology", "require-pdk", "top-module", "pipeline", "runs-dir",
     "rtl-sources", "tb-sources", "tb-top", "name", "author", "description", "version",
 )
-_DB_SET_KEYS = ("interface", "technology", "id-format", "prefix", "shuttle", "pipeline")
+_DB_SET_KEYS = ("interface", "technology", "require-pdk", "id-format", "prefix", "shuttle", "pipeline")
 _DB_TILE_SET_KEYS = (
     "top-module", "tb-top", "name", "author", "description", "tags", "objective", "pipeline",
+    "require-pdk",
 )
 
 # Same placeholder set format_tile_id() (veriflow/core/tile_id.py) accepts --
@@ -67,6 +68,19 @@ def _validate_interface_value(value: str) -> str | None:
 def _validate_technology_value(name: str) -> str:
     get_technology_profile(name)  # raises VF_TECHNOLOGY_UNKNOWN for an unregistered name
     return name
+
+
+def _parse_bool_value(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes"):
+        return True
+    if normalized in ("false", "0", "no"):
+        return False
+    raise VeriFlowError(
+        f"Invalid boolean value: {value!r}. Use 'true' or 'false'.",
+        code="VF_SET_BOOL_INVALID",
+        details={"value": value},
+    )
 
 
 def _parse_pipeline_value(value: str) -> list[dict]:
@@ -164,6 +178,8 @@ def project_set_config(config_path: str | Path, key: str, value: str) -> dict:
     elif key == "technology":
         _validate_technology_value(value)
         set_yaml_key(config_path, ("technology", "name"), value)
+    elif key == "require-pdk":
+        set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     elif key == "top-module":
         set_yaml_key(config_path, ("design", "top_module"), value)
     elif key == "pipeline":
@@ -221,6 +237,8 @@ def db_set_config(db_path: str | Path, key: str, value: str) -> dict:
     elif key == "technology":
         _validate_technology_value(value)
         set_yaml_key(config_path, ("technology", "name"), value)
+    elif key == "require-pdk":
+        set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     elif key == "id-format":
         _validate_id_format_value(value)
         set_yaml_key(config_path, ("id_format",), value, quoted=True)
@@ -276,6 +294,8 @@ def db_tile_set_config(db_path: str | Path, tile: str | int, key: str, value: st
     elif key == "pipeline":
         stages = _parse_pipeline_value(value)
         set_yaml_pipeline(config_path, stages)
+    elif key == "require-pdk":
+        set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     else:
         raise _unknown_key_error(key, _DB_TILE_SET_KEYS)
 

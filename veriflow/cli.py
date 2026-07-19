@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_set.add_argument(
         "key",
         help=(
-            "interface | technology | top-module | pipeline | runs-dir | "
+            "interface | technology | require-pdk | top-module | pipeline | runs-dir | "
             "rtl-sources | tb-sources | tb-top | name | author | description | version"
         ),
     )
@@ -234,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
         "set", help="Modify a field in project_config.yaml (comments/formatting preserved)"
     )
     p_db_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
-    p_db_set.add_argument("key", help="interface | technology | id-format | prefix | shuttle | pipeline")
+    p_db_set.add_argument("key", help="interface | technology | require-pdk | id-format | prefix | shuttle | pipeline")
     p_db_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
 
     p_db_ir = db_sub.add_parser(
@@ -262,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_tile_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_db_tile_set.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
     p_db_tile_set.add_argument(
-        "key", help="top-module | tb-top | name | author | description | tags | objective | pipeline"
+        "key", help="top-module | tb-top | name | author | description | tags | objective | pipeline | require-pdk"
     )
     p_db_tile_set.add_argument("value", help="New value")
 

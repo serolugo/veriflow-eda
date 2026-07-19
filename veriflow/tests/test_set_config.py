@@ -213,6 +213,35 @@ def test_project_set_technology_unknown_raises(tmp_path):
     assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
 
 
+def test_project_set_require_pdk_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "require-pdk", "true")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["technology"] == {"require_pdk": True}
+
+
+def test_project_set_require_pdk_false_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "require-pdk", "false")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["technology"] == {"require_pdk": False}
+
+
+def test_project_set_require_pdk_invalid_value_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "require-pdk", "yesplz")
+    assert exc_info.value.code == "VF_SET_BOOL_INVALID"
+
+
 def test_project_set_top_module_updates_yaml(tmp_path):
     from veriflow.commands.set_config import project_set_config
 
@@ -481,6 +510,15 @@ def test_db_set_technology_updates_nested_key(tmp_path):
     assert data["technology"] == {"name": "sky130"}
 
 
+def test_db_set_require_pdk_updates_nested_key(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    db_set_config(db, "require-pdk", "true")
+    data = yaml.safe_load((db / "project_config.yaml").read_text(encoding="utf-8"))
+    assert data["technology"] == {"require_pdk": True}
+
+
 def test_db_set_id_format_valid_updates_yaml(tmp_path):
     from veriflow.commands.set_config import db_set_config
 
@@ -689,6 +727,17 @@ def test_db_tile_set_pipeline_writes_correct_section(tmp_path):
     tile_cfg_path = db / "config" / f"tile_{tile_number}" / "tile_config.yaml"
     data = yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8"))
     assert data["pipeline"] == {"stages": [{"type": "connectivity"}, {"type": "synthesis"}]}
+
+
+def test_db_tile_set_require_pdk_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import db_tile_set_config
+
+    db = _init_db(tmp_path)
+    tile_number = _create_tile(db)
+    db_tile_set_config(db, tile_number, "require-pdk", "true")
+    tile_cfg_path = db / "config" / f"tile_{tile_number}" / "tile_config.yaml"
+    data = yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8"))
+    assert data["technology"] == {"require_pdk": True}
 
 
 def test_db_tile_set_unknown_key_raises(tmp_path):

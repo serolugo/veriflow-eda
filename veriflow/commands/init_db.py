@@ -28,6 +28,7 @@ description: |
 
 # technology:
 #   name: generic       # optional -- used by the {technology} id_format placeholder
+#   require_pdk: false  # if true, fail instead of falling back to generic synthesis (a tile may override)
 
 # pipeline:             # optional -- default stage list/order for all tiles in this database;
 #   stages:              #   a tile's own tile_config.yaml may override this completely

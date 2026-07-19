@@ -201,6 +201,7 @@ def build_project_flow(
             config.pipeline.backend_for("synthesis") or config.execution.synthesis_backend
         ),
         technology_name=config.technology.name,
+        require_pdk=config.technology.require_pdk,
     )
 
     stages = []

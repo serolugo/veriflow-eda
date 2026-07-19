@@ -235,6 +235,13 @@ class DatabaseWorkflow:
         if not effective_pipeline.has_stage("synthesis"):
             skip_synth = True
 
+        # require_pdk: tile_config.yaml's own technology.require_pdk (if set)
+        # overrides project_config.yaml's database-wide default -- same
+        # tile > project > default precedence as effective_pipeline above.
+        effective_require_pdk = (
+            tile_config.require_pdk if tile_config.require_pdk is not None else project_config.require_pdk
+        )
+
         _exec_defaults = default_execution_profile()
         pipeline_profile = ExecutionProfile(
             connectivity_backend=(
@@ -247,6 +254,7 @@ class DatabaseWorkflow:
                 effective_pipeline.backend_for("synthesis") or _exec_defaults.synthesis_backend
             ),
             technology_name=project_config.technology_name or _exec_defaults.technology_name,
+            require_pdk=effective_require_pdk,
         )
 
         # Validate only the tools needed by the stages that will actually run.

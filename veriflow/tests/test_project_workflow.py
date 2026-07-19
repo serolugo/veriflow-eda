@@ -1056,6 +1056,40 @@ def test_config_technology_non_string_name_fails(tmp_path):
     assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
 
 
+# ── technology.require_pdk ────────────────────────────────────────────────────
+
+
+def test_config_technology_require_pdk_true_parses(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": {"name": "sky130", "require_pdk": True}},
+        root=tmp_path,
+    )
+    assert cfg.technology.require_pdk is True
+    assert cfg.technology.name == "sky130"
+
+
+def test_config_technology_require_pdk_defaults_to_false(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(
+        {**_base_design(), "technology": {"name": "sky130"}},
+        root=tmp_path,
+    )
+    assert cfg.technology.require_pdk is False
+
+
+def test_config_technology_require_pdk_defaults_false_with_no_section(tmp_path):
+    cfg = ProjectWorkflowConfig.from_dict(_base_design(), root=tmp_path)
+    assert cfg.technology.require_pdk is False
+
+
+def test_config_technology_require_pdk_non_bool_fails(tmp_path):
+    with pytest.raises(VeriFlowError) as exc_info:
+        ProjectWorkflowConfig.from_dict(
+            {**_base_design(), "technology": {"name": "sky130", "require_pdk": "true"}},
+            root=tmp_path,
+        )
+    assert exc_info.value.code == "VF_TECHNOLOGY_CONFIG_INVALID"
+
+
 def test_config_unknown_connectivity_backend_fails(tmp_path):
     with pytest.raises(VeriFlowError) as exc_info:
         ProjectWorkflowConfig.from_dict(

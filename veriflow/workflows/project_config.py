@@ -188,9 +188,15 @@ class ProjectTechnologyConfig:
 
     ``name`` refers to a profile registered in
     ``veriflow.models.technology_profile``.
+
+    ``require_pdk``, when True, makes the synthesis stage fail explicitly
+    (``VF_TECHNOLOGY_PDK_REQUIRED_NOT_INSTALLED``) if the named technology's
+    PDK isn't installed, instead of silently falling back to generic
+    synthesis with a warning (the default, ``require_pdk: False``).
     """
 
     name: str = DEFAULT_TECHNOLOGY_NAME
+    require_pdk: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -277,13 +283,25 @@ def _parse_technology_section(data: dict, *, root: Path) -> ProjectTechnologyCon
             details={"technology": section},
         )
 
-    unknown_keys = sorted(set(section) - {"name", "definition"})
+    unknown_keys = sorted(set(section) - {"name", "definition", "require_pdk"})
     if unknown_keys:
         raise VeriFlowError(
             f"Unsupported keys in technology section: {', '.join(unknown_keys)}.\n"
-            "  Supported keys: 'name', 'definition'.",
+            "  Supported keys: 'name', 'definition', 'require_pdk'.",
             code="VF_TECHNOLOGY_CONFIG_INVALID",
             details={"unknown_keys": unknown_keys},
+        )
+
+    raw_require_pdk = section.get("require_pdk")
+    if raw_require_pdk is None:
+        require_pdk = False
+    elif isinstance(raw_require_pdk, bool):
+        require_pdk = raw_require_pdk
+    else:
+        raise VeriFlowError(
+            "technology.require_pdk must be a boolean (true/false)",
+            code="VF_TECHNOLOGY_CONFIG_INVALID",
+            details={"require_pdk": raw_require_pdk},
         )
 
     raw_definition = section.get("definition")
@@ -308,12 +326,12 @@ def _parse_technology_section(data: dict, *, root: Path) -> ProjectTechnologyCon
                 f"Using {name!r}. [VF_TECHNOLOGY_NAME_MISMATCH]",
                 stacklevel=2,
             )
-        return ProjectTechnologyConfig(name=name)
+        return ProjectTechnologyConfig(name=name, require_pdk=require_pdk)
 
     raw_name = section.get("name")
     if raw_name is None:
         # empty section or `name: null` — generic technology target
-        return ProjectTechnologyConfig()
+        return ProjectTechnologyConfig(require_pdk=require_pdk)
     if not isinstance(raw_name, str) or not raw_name.strip():
         raise VeriFlowError(
             "technology.name must be a non-empty string or null",
@@ -324,7 +342,7 @@ def _parse_technology_section(data: dict, *, root: Path) -> ProjectTechnologyCon
     name = raw_name.strip()
     # Raises VF_TECHNOLOGY_UNKNOWN for names not in the registry
     get_technology_profile(name)
-    return ProjectTechnologyConfig(name=name)
+    return ProjectTechnologyConfig(name=name, require_pdk=require_pdk)
 
 
 def _parse_pipeline_section(data: dict) -> PipelineConfig:

@@ -18,6 +18,10 @@ class ExecutionProfile:
     synthesis_backend: str = "yosys"
     # Technology target name — resolved via get_technology_profile()
     technology_name: str = DEFAULT_TECHNOLOGY_NAME
+    # If True, SynthesisStage fails explicitly (VF_TECHNOLOGY_PDK_REQUIRED_NOT_INSTALLED)
+    # when technology_name's PDK isn't installed, instead of warning + falling
+    # back to generic synthesis (the default).
+    require_pdk: bool = False
 
 
 def default_execution_profile() -> ExecutionProfile:

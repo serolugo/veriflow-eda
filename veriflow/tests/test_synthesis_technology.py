@@ -368,3 +368,109 @@ def test_stage_result_to_dict_omits_technology_fields_when_none():
     d = sr.to_dict()
     assert "technology" not in d
     assert "technology_version" not in d
+
+
+# ── require_pdk: fail (not warn) when the PDK isn't installed ────────────────
+
+
+def test_synthesis_stage_require_pdk_raises_when_not_installed(tmp_path):
+    from veriflow.core import VeriFlowError
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    profile = ExecutionProfile(technology_name="sky130", require_pdk=True)
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=None):
+        with pytest.raises(VeriFlowError) as exc_info:
+            stage.run(StageInput(design=design, context=ctx))
+
+    assert exc_info.value.code == "VF_TECHNOLOGY_PDK_REQUIRED_NOT_INSTALLED"
+    assert "sky130" in str(exc_info.value)
+    # Stopped before ever invoking the backend (before running yosys)
+    mock_backend.run_synthesis.assert_not_called()
+
+
+def test_synthesis_stage_require_pdk_passes_when_installed(tmp_path):
+    """require_pdk=True with the PDK actually installed: normal synthesis,
+    real liberty applied, no error at all."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130", require_pdk=True)
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    fake_liberty = tmp_path / "sky130.lib"
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=fake_liberty):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    called_technology = mock_backend.run_synthesis.call_args.kwargs["technology"]
+    assert called_technology.liberty == str(fake_liberty)
+    assert result.status == "PASS"
+    assert result.warnings is None
+
+
+def test_synthesis_stage_require_pdk_false_default_unchanged(tmp_path):
+    """require_pdk defaults to False -- current warn+generic-fallback
+    behavior is completely unchanged."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(technology_name="sky130")  # require_pdk defaults False
+    assert profile.require_pdk is False
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path", return_value=None):
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    assert result.status == "PASS"
+    assert result.warnings is not None
+    assert any("VF_TECHNOLOGY_PDK_NOT_INSTALLED" in w for w in result.warnings)
+
+
+def test_synthesis_stage_require_pdk_irrelevant_for_generic_technology(tmp_path):
+    """generic has no PDK to require -- require_pdk=True must not raise,
+    since get_liberty_path is never even consulted for it."""
+    from veriflow.core.stages.synthesis import SynthesisStage
+    from veriflow.framework.design import Design
+    from veriflow.framework.stage_input import StageInput
+    from veriflow.models.execution_profile import ExecutionProfile
+    from veriflow.models.stage_context import ExecutionContext
+
+    mock_backend = MagicMock()
+    mock_backend.run_synthesis.return_value = ("PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    profile = ExecutionProfile(require_pdk=True)  # technology_name defaults to "generic"
+    stage = SynthesisStage(profile=profile, backend=mock_backend)
+
+    design = Design(top_module="top", rtl_sources=[tmp_path / "top.v"])
+    ctx = ExecutionContext(run_dir=tmp_path)
+
+    with patch("veriflow.core.stages.synthesis.get_liberty_path") as mock_get_liberty:
+        result = stage.run(StageInput(design=design, context=ctx))
+
+    mock_get_liberty.assert_not_called()
+    assert result.status == "PASS"
+    assert result.warnings is None
