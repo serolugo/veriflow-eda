@@ -59,6 +59,85 @@ def test_doctor_exits_1_when_any_category_fails(capsys):
     assert rc == 1
 
 
+# ── A2. Multi-backend categories: one alternative down doesn't fail it ───────
+# (2026-07-19: xsim added as a second, alternative simulation backend --
+# doctor must not treat "one alternative is missing" the same as "the
+# whole category is down", as long as at least one backend in it works.)
+
+_MIXED_SIMULATION_REGISTRY = {
+    "icarus": _ok_backend_cls("iverilog"),
+    "xsim": _fail_backend_cls("xsim"),
+}
+_ALL_FAIL_SIMULATION_REGISTRY = {
+    "icarus": _fail_backend_cls("iverilog"),
+    "xsim": _fail_backend_cls("xsim"),
+}
+
+
+def test_doctor_exits_0_when_one_of_two_simulation_backends_available(capsys):
+    """icarus [OK] + xsim [FAIL] -- at least one simulation backend
+    works, so the category (and doctor overall) is fine."""
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _MIXED_SIMULATION_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY):
+        rc = main(["doctor"])
+    assert rc == 0
+
+
+def test_doctor_exits_1_when_all_simulation_backends_unavailable(capsys):
+    """icarus [FAIL] + xsim [FAIL] -- no simulation backend at all
+    works, so the category (and doctor overall) fails."""
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _ALL_FAIL_SIMULATION_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY):
+        rc = main(["doctor"])
+    assert rc == 1
+
+
+def test_doctor_exits_1_when_sole_synthesis_backend_unavailable(capsys):
+    """yosys [FAIL] -- synthesis has only one registered backend, so it
+    remains a hard requirement: no alternative to fall back on."""
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _FAIL_REGISTRY):
+        rc = main(["doctor"])
+    assert rc == 1
+
+
+def test_doctor_marks_unavailable_backend_optional_when_sibling_available(capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _MIXED_SIMULATION_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY):
+        main(["doctor"])
+    out = capsys.readouterr().out
+    assert "optional" in out.lower()
+
+
+def test_doctor_does_not_mark_sole_backend_optional_when_unavailable(capsys):
+    """A category with only one backend never gets the "(optional)" note
+    when it's down -- there's no alternative, so it's genuinely required."""
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _FAIL_REGISTRY):
+        main(["doctor"])
+    out = capsys.readouterr().out
+    assert "optional" not in out.lower()
+
+
+def test_doctor_json_status_reflects_category_level_logic(capsys):
+    with patch("veriflow.commands.doctor._CONNECTIVITY", _OK_REGISTRY), \
+         patch("veriflow.commands.doctor._SIMULATION",   _MIXED_SIMULATION_REGISTRY), \
+         patch("veriflow.commands.doctor._SYNTHESIS",    _OK_REGISTRY):
+        rc = main(["--json", "doctor"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert rc == 0
+    assert data["status"] == "OK"
+    by_name = {b["name"]: b for b in data["backends"]["simulation"]}
+    assert by_name["icarus"]["available"] is True
+    assert by_name["xsim"]["available"] is False
+
+
 # ── B. Text output ────────────────────────────────────────────────────────────
 
 def test_doctor_text_shows_ok_marker(capsys):

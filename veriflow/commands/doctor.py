@@ -45,11 +45,21 @@ def _technologies_report() -> list[dict]:
 def cmd_doctor(args: argparse.Namespace) -> tuple[int, dict]:
     """Implement `veriflow doctor`.
 
-    Returns (exit_code, result_dict). exit_code is 0 if all tools are
-    available, 1 if any are missing. Missing PDKs are reported but do not
-    affect exit_code -- synthesis falls back to generic mapping when a
-    PDK isn't installed (see SynthesisStage), so it's informational, not
-    a hard requirement like iverilog/yosys.
+    Returns (exit_code, result_dict). exit_code is 0 if every *category*
+    (connectivity/simulation/synthesis) has at least one fully-available
+    backend, 1 if any category has none at all. This is a category-level
+    criterion, not a backend-level one: a category can register more than
+    one backend for the same role (e.g. simulation's `icarus` and `xsim`,
+    alternatives to each other, not both required) -- one of them being
+    unavailable doesn't fail the run as long as another one in the same
+    category works. A category with only a single registered backend
+    (e.g. synthesis's `yosys` today) has no alternative to fall back on,
+    so that backend is effectively required, and its absence does fail
+    the category -- the exact same rule, just with nothing to average
+    over. Missing PDKs are reported but do not affect exit_code --
+    synthesis falls back to generic mapping when a PDK isn't installed
+    (see SynthesisStage), so it's informational, not a hard requirement
+    like iverilog/yosys.
     """
     categories = [
         ("connectivity", _CONNECTIVITY),
@@ -65,9 +75,14 @@ def cmd_doctor(args: argparse.Namespace) -> tuple[int, dict]:
         for backend_name, backend_cls in registry.items():
             backend = backend_cls()
             tools = backend.check_availability()
-            category_backends.append({"name": backend_name, "tools": tools})
-            if any(not t["available"] for t in tools):
-                all_ok = False
+            backend_available = all(t["available"] for t in tools)
+            category_backends.append({
+                "name": backend_name,
+                "tools": tools,
+                "available": backend_available,
+            })
+        if not any(b["available"] for b in category_backends):
+            all_ok = False
         report["backends"][category_name] = category_backends
 
     report["technologies"] = _technologies_report()
@@ -80,8 +95,17 @@ def cmd_doctor(args: argparse.Namespace) -> tuple[int, dict]:
 def _print_report(report: dict) -> None:
     for category_name, backends in report["backends"].items():
         console.print(f"\n\\[{category_name.upper()}]")
+        category_has_available = any(b["available"] for b in backends)
         for backend_info in backends:
-            console.print(f"  {backend_info['name']}")
+            label = backend_info["name"]
+            # Only shown for a backend that's down while a sibling in the
+            # same category still works -- i.e. it genuinely isn't
+            # blocking anything, not just "this one happens to be called
+            # xsim". A category with a single backend never gets this
+            # note: there's no alternative, so that backend is required.
+            if not backend_info["available"] and category_has_available:
+                label += "  [secondary](optional -- another backend in this category is available)[/secondary]"
+            console.print(f"  {label}")
             for t in backend_info["tools"]:
                 if t["available"]:
                     marker = "[pass]\\[OK][/pass]  "
