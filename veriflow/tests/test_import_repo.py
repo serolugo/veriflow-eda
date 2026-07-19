@@ -94,7 +94,7 @@ def _make_git_repo(
     return repo_dir
 
 
-def _make_db(tmp_path: Path, *, dirname: str = "mydb") -> Path:
+def _make_db(tmp_path: Path, *, dirname: str = "mydb", interface_name: str | None = None) -> Path:
     from veriflow.commands.init_db import cmd_init
 
     db_path = tmp_path / dirname
@@ -104,7 +104,7 @@ def _make_db(tmp_path: Path, *, dirname: str = "mydb") -> Path:
         "project_name": "Test DB",
         "repo": "",
         "description": "Test project.",
-        "interface_name": None,
+        "interface_name": interface_name,
     }
     (db_path / "project_config.yaml").write_text(
         yaml.dump(cfg, default_flow_style=False), encoding="utf-8"
@@ -239,3 +239,39 @@ def test_import_repo_different_branch_is_not_a_duplicate(tmp_path):
 
     assert first["tile_number"] == "0001"
     assert second["tile_number"] == "0002"
+
+
+# ── 6. Generic repo imported into an interface-requiring database ────────────
+
+
+def test_import_repo_generic_into_interface_database_blocked_by_default(tmp_path):
+    """A generic (no-interface) repo cloned into a database that requires
+    an interface is blocked -- inherited from project_import()'s
+    VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE check, confirmed end-to-end
+    through the whole clone+precheck+import flow."""
+    repo_dir = _make_git_repo(tmp_path)
+    db_path = _make_db(tmp_path, interface_name="semicolab")
+
+    backends = _patched_backends()
+    with backends[0], backends[1], backends[2], backends[3]:
+        with pytest.raises(VeriFlowError) as exc_info:
+            import_repo(str(repo_dir), db_path, branch="main")
+
+    assert exc_info.value.code == "VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE"
+    assert not (db_path / "config" / "tile_0001").exists()
+
+
+def test_import_repo_generic_into_interface_database_with_force(tmp_path):
+    """--force propagates from import_repo() through to project_import()'s
+    generic-to-interface-database check, same flag used for the
+    duplicate-import guard."""
+    repo_dir = _make_git_repo(tmp_path)
+    db_path = _make_db(tmp_path, interface_name="semicolab")
+
+    backends = _patched_backends()
+    with backends[0], backends[1], backends[2], backends[3]:
+        result = import_repo(str(repo_dir), db_path, branch="main", force=True)
+
+    assert result["tile_number"] == "0001"
+    assert len(result["warnings"]) == 1
+    assert "semicolab" in result["warnings"][0]

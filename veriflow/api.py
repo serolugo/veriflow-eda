@@ -314,6 +314,7 @@ def project_import(
     run_id: str | None = None,
     source_repo: str | None = None,
     source_branch: str | None = None,
+    force: bool = False,
 ) -> dict:
     """Import a verified Project Mode run into a Database Mode database as a
     new tile.
@@ -349,11 +350,18 @@ def project_import(
         highest-numbered run under runs_dir whose results.json reports
         status "PASS".
 
+    force, when True, downgrades VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE
+    (below) from an error to a warning appended to the returned dict's
+    "warnings" list, letting the import proceed anyway. It does not affect
+    VF_IMPORT_INTERFACE_MISMATCH -- two *declared but different* interfaces
+    is never something force can paper over.
+
     Raises:
         VeriFlowError(VF_IMPORT_NO_PASSING_RUN)      -- run_id is None and no run has status PASS
         VeriFlowError(VF_IMPORT_RUN_NOT_FOUND)        -- run_id given but missing / no results.json
         VeriFlowError(VF_IMPORT_RUN_NOT_PASSING)      -- run_id given but its status != PASS
-        VeriFlowError(VF_IMPORT_INTERFACE_MISMATCH)   -- project's interface_name != database's
+        VeriFlowError(VF_IMPORT_INTERFACE_MISMATCH)   -- project's interface_name != database's (both declared)
+        VeriFlowError(VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE) -- project has no interface, database requires one, force=False
         VeriFlowError(VF_DATABASE_CONFIG_YAML_ERROR)  -- destination project_config.yaml is malformed
         VeriFlowError(VF_IMPORT_RTL_SOURCE_MISSING)   -- a recorded RTL/TB source no longer exists on disk
         VeriFlowError(VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES) -- no recorded RTL source declares `module <top_module>`
@@ -422,6 +430,8 @@ def project_import(
         ) from exc
     db_project_config = ProjectConfig.from_dict(db_raw, root=db_path)
 
+    warnings_list: list[str] = []
+
     project_interface_name = results.get("interface_name")
     if project_interface_name is not None and project_interface_name != db_project_config.interface_name:
         raise VeriFlowError(
@@ -433,6 +443,34 @@ def project_import(
                 "project_interface_name": project_interface_name,
                 "db_interface_name": db_project_config.interface_name,
             },
+        )
+
+    # d.1b Generic project imported into an interface-requiring database --
+    # symmetric to the mismatch check above: "no interface declared" is
+    # itself incompatible when the destination requires one specific
+    # interface, since the RTL was never verified against that port
+    # contract. Unlike a technology mismatch (below), this isn't recoverable
+    # by just re-running something -- the tile's first `db run` connectivity
+    # check will simply fail against a contract the RTL was never checked
+    # against. Blocks by default; force=True downgrades to a warning.
+    if project_interface_name is None and db_project_config.interface_name is not None:
+        if not force:
+            raise VeriFlowError(
+                "Source project has no interface configured (generic), but "
+                "destination database requires interface "
+                f"{db_project_config.interface_name!r}. The imported tile "
+                "would fail its first db run. Configure the source project "
+                "with 'veriflow project set interface "
+                f"{db_project_config.interface_name}' (and ensure it passes "
+                "project run) before importing, or use --force to import "
+                "anyway (not recommended).",
+                code="VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE",
+                details={"db_interface_name": db_project_config.interface_name},
+            )
+        warnings_list.append(
+            "WARNING: tile imported as generic but database requires "
+            f"'{db_project_config.interface_name}' -- db run will likely "
+            "fail until the RTL is verified against this interface."
         )
 
     # d.2 Technology comparison (Gotcha B) -- warn, don't block. Unlike
@@ -447,7 +485,6 @@ def project_import(
     # didn't. Only compared when the destination database actually declares
     # a technology -- a database with no `technology:` section in
     # project_config.yaml imposes no constraint at all.
-    warnings_list: list[str] = []
     project_technology_name = (
         results.get("stages", {}).get("synthesis", {}).get("technology")
         or results.get("technology")
@@ -683,16 +720,24 @@ def import_repo(
         Path to the Project Mode veriflow.yaml, relative to the repo's root
         (default "veriflow.yaml").
     force : bool
-        Re-import repo_url+branch even if already imported into this
-        database (creates another, separate tile). Does not affect the
-        precheck -- a failing `project run` is always rejected regardless.
+        Passed straight through to `project_import()` in addition to its
+        own two uses here:
+        - Re-import repo_url+branch even if already imported into this
+          database (creates another, separate tile).
+        - Downgrade VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE (a generic repo
+          cloned into an interface-requiring database) to a warning instead
+          of blocking the import.
+        Does not affect the precheck -- a failing `project run` is always
+        rejected regardless, and never affects VF_IMPORT_INTERFACE_MISMATCH
+        (two declared-but-different interfaces is never forceable).
 
     Raises:
         VeriFlowError(VF_IMPORT_REPO_ALREADY_IMPORTED)  -- repo_url+branch already imported, force=False
         VeriFlowError(VF_IMPORT_REPO_CLONE_FAILED)      -- git clone failed (bad URL/branch/network)
         VeriFlowError(VF_IMPORT_REPO_NO_CONFIG)         -- config_path missing at the repo's root
         VeriFlowError(VF_IMPORT_REPO_PRECHECK_FAILED)   -- project run status != PASS
-        ... plus anything project_import() itself can raise (VF_IMPORT_INTERFACE_MISMATCH, etc.)
+        ... plus anything project_import() itself can raise (VF_IMPORT_INTERFACE_MISMATCH,
+        VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE, etc.)
     """
     import shutil
     import subprocess
@@ -748,7 +793,8 @@ def import_repo(
             )
 
         result = project_import(
-            cloned_config_path, db_path, source_repo=repo_url, source_branch=branch
+            cloned_config_path, db_path,
+            source_repo=repo_url, source_branch=branch, force=force,
         )
         result["source_repo"] = repo_url
         result["source_branch"] = branch

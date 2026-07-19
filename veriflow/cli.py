@@ -115,6 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="run_id",
         help="Specific run to import (default: latest run with status PASS)",
     )
+    p_project_import.add_argument(
+        "--force",
+        action="store_true",
+        help="Import a generic (no-interface) project into an interface-requiring "
+        "database anyway (default: blocked, since the tile's first db run would fail)",
+    )
 
     p_project_set = project_sub.add_parser(
         "set", help="Modify a field in veriflow.yaml (comments/formatting preserved)"

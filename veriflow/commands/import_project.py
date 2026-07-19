@@ -18,8 +18,9 @@ def cmd_import_project(args: argparse.Namespace) -> int:
     config_path = Path(getattr(args, "config", "veriflow.yaml"))
     db_path = Path(args.db)
     run_id = getattr(args, "run_id", None)
+    force = getattr(args, "force", False)
 
-    result = project_import(config_path, db_path, run_id=run_id)
+    result = project_import(config_path, db_path, run_id=run_id, force=force)
 
     console.print()
     console.print(f"  [secondary]Config  [/secondary]  [id]{result['config_path']}[/id]")

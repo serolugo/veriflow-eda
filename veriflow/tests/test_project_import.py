@@ -379,16 +379,53 @@ def test_import_missing_rtl_source_raises(tmp_path):
     assert "top.v" in str(exc_info.value)
 
 
-def test_import_interface_none_in_project_never_mismatches(tmp_path):
-    """A generic (no-interface) project can be imported into any database,
-    including one that declares an interface -- only a *declared* mismatch
-    (project sets X, db sets Y != X) should fail, per VF_IMPORT_INTERFACE_MISMATCH."""
+def test_import_generic_project_into_interface_database_blocked_by_default(tmp_path):
+    """A generic (no-interface) project imported into a database that
+    *requires* one interface is blocked by default (VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE),
+    not silently allowed through -- confirmed live: the tile got created,
+    was labeled with the database's interface (interface is database-wide,
+    not per-tile), and its first `db run` failed connectivity immediately
+    because the RTL was never verified against that contract. This is
+    symmetric to VF_IMPORT_INTERFACE_MISMATCH (declared-but-different is an
+    error) -- "undeclared" against a database that requires one is now also
+    an error, not a free pass."""
     config_path = _make_project(tmp_path, interface_name=None, with_tb=False)
     _run_project(config_path)
     db_path = _make_db(tmp_path, interface_name="semicolab")
 
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE"
+    assert "semicolab" in str(exc_info.value)
+
+    # No tile should have been created
+    assert not (db_path / "config" / "tile_0001").exists()
+
+
+def test_import_generic_project_into_interface_database_with_force(tmp_path):
+    config_path = _make_project(tmp_path, interface_name=None, with_tb=False)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, interface_name="semicolab")
+
+    result = project_import(config_path, db_path, force=True)
+
+    assert result["tile_number"] == "0001"
+    assert len(result["warnings"]) == 1
+    warning = result["warnings"][0]
+    assert "generic" in warning
+    assert "semicolab" in warning
+
+
+def test_import_generic_project_into_generic_database_still_works(tmp_path):
+    """Both sides generic (no interface declared anywhere) is the
+    legitimate case -- must keep working with no error or warning."""
+    config_path = _make_project(tmp_path, interface_name=None, with_tb=False)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path, interface_name=None)
+
     result = project_import(config_path, db_path)
     assert result["tile_number"] == "0001"
+    assert result["warnings"] == []
 
 
 # ── 2b. Technology comparison (Gotcha B: warn, don't block) ──────────────────
@@ -573,7 +610,7 @@ def test_cli_project_import_dispatches(tmp_path):
         rc = main(["project", "import", "--db", str(tmp_path / "db"), "--config", str(tmp_path / "veriflow.yaml")])
 
     mock_fn.assert_called_once_with(
-        Path(str(tmp_path / "veriflow.yaml")), Path(str(tmp_path / "db")), run_id=None
+        Path(str(tmp_path / "veriflow.yaml")), Path(str(tmp_path / "db")), run_id=None, force=False
     )
     assert rc == 0
 
@@ -589,7 +626,25 @@ def test_cli_project_import_forwards_run_id(tmp_path):
     with patch("veriflow.api.project_import", return_value=fake_result) as mock_fn:
         main(["project", "import", "--db", str(tmp_path / "db"), "--run", "run-003"])
 
-    mock_fn.assert_called_once_with(Path("veriflow.yaml"), Path(str(tmp_path / "db")), run_id="run-003")
+    mock_fn.assert_called_once_with(
+        Path("veriflow.yaml"), Path(str(tmp_path / "db")), run_id="run-003", force=False
+    )
+
+
+def test_cli_project_import_forwards_force_flag(tmp_path):
+    from veriflow.cli import main
+
+    fake_result = {
+        "tile_id": "TST-1", "tile_number": "0001",
+        "db_path": str(tmp_path / "db"), "config_path": str(tmp_path / "veriflow.yaml"),
+        "run_id": "run-001", "rtl_hash": {}, "warnings": ["WARNING: tile imported as generic ..."],
+    }
+    with patch("veriflow.api.project_import", return_value=fake_result) as mock_fn:
+        main(["project", "import", "--db", str(tmp_path / "db"), "--force"])
+
+    mock_fn.assert_called_once_with(
+        Path("veriflow.yaml"), Path(str(tmp_path / "db")), run_id=None, force=True
+    )
 
 
 def test_cli_project_import_output_includes_tile_id(tmp_path, capsys):

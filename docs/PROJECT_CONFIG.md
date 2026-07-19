@@ -358,7 +358,7 @@ Note: top-level `interface_name` is not supported — use the `interface` sectio
 Promotes a verified Project Mode run into a Database Mode database as a new tile:
 
 ```bash
-veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
+veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN] [--force]
 ```
 
 | Flag | Required | Description |
@@ -366,6 +366,7 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
 | `--db PATH` | yes | Path to the destination VeriFlow database directory. |
 | `--config PATH` | no | Path to the Project Mode config to import from. Default: `veriflow.yaml`. |
 | `--run run-NNN` | no | Specific run to import. Default: the highest-numbered run under `runs_dir` whose `results.json` reports `"status": "PASS"`. |
+| `--force` | no | Import a generic (no-interface) project into an interface-requiring database anyway (see `VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE` below). Does **not** bypass an interface *mismatch* (`VF_IMPORT_INTERFACE_MISMATCH`), which is always rejected. |
 
 ### What it validates before importing
 
@@ -376,10 +377,18 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
    whether picked automatically or named explicitly via `--run`.
 3. The destination database is structurally valid (same check `db run` uses —
    `project_config.yaml`, `tile_index.csv`, `records.csv`, `tiles/` must all exist).
-4. The imported run's `interface_name` (from its `results.json`) matches the database's
-   `project_config.yaml` `interface_name` — importing a run built against a different
-   interface than the database's own would silently corrupt tile consistency, so this is
-   rejected rather than allowed through.
+4. **Interface compatibility**, in two parts:
+   - *Mismatch*: the imported run's `interface_name` is set and differs from the database's
+     `interface_name` — e.g. project declares `semicolab`, database declares (or requires) a
+     different one. Always rejected (`VF_IMPORT_INTERFACE_MISMATCH`); `--force` does not
+     override this.
+   - *Generic into an interface-requiring database*: the imported run has **no** interface
+     configured at all, but the destination database **does** require one. Rejected by default
+     (`VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE`) — since interface is database-wide, not
+     per-tile, the tile would otherwise get created and labeled with the database's interface
+     without the RTL ever having been verified against that port contract, and its first
+     `db run` would fail connectivity immediately. `--force` downgrades this to a warning and
+     lets the import proceed anyway (not recommended — see below).
 
 ### What it only warns about (doesn't block the import)
 
@@ -395,6 +404,10 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
   it to `<top_module>.v` on copy, adding a warning. If no recorded source declares the module at
   all — which shouldn't happen if `project run` already passed — it raises
   `VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES` instead of producing a tile `db run` can never pass.
+- **Generic project into an interface-requiring database, with `--force`**: see item 4 above —
+  normally a hard error, `--force` downgrades it to a `"WARNING: tile imported as generic but
+  database requires '<interface>' — db run will likely fail until the RTL is verified against
+  this interface."` entry in `"warnings"` instead of blocking the import.
 
 ### What it copies into the new tile
 
@@ -420,7 +433,8 @@ it only reads from it.
 | `VF_IMPORT_NO_PASSING_RUN` | `--run` omitted and no run under `runs_dir` has `status: "PASS"` |
 | `VF_IMPORT_RUN_NOT_FOUND` | `--run` given but that run (or its `results.json`) doesn't exist |
 | `VF_IMPORT_RUN_NOT_PASSING` | `--run` given but that run's `status` isn't `"PASS"` |
-| `VF_IMPORT_INTERFACE_MISMATCH` | the run's `interface_name` differs from the database's `project_config.yaml` `interface_name` |
+| `VF_IMPORT_INTERFACE_MISMATCH` | both sides declare an interface, but they **differ** (e.g. project `semicolab`, database `other_if`) — always rejected, `--force` has no effect |
+| `VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE` | the project declares **no** interface at all, but the destination database requires one — rejected unless `--force` (downgrades to a warning) |
 | `VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES` | no recorded RTL source declares `module <top_module>` (rename couldn't be resolved) |
 | `VF_IMPORT_RTL_SOURCE_MISSING` | a recorded RTL/TB source file no longer exists on disk |
 | `VF_DATABASE_CONFIG_YAML_ERROR` | the destination database's `project_config.yaml` is malformed |
@@ -492,7 +506,7 @@ veriflow db import-repo --db ./database --repo <url-or-local-path> \
 | `--repo URL` | yes | Anything `git clone` accepts — an https/ssh URL, or a local path. |
 | `--branch NAME` | no | Branch to clone. Default: `main`. |
 | `--config PATH` | no | Path to `veriflow.yaml` **relative to the cloned repo's root**. Default: `veriflow.yaml`. Unrelated to the `VERIFLOW_CONFIG` env var, which is about the *local* project you're currently in, not the repo being cloned. |
-| `--force` | no | Re-import this exact repo+branch even if it was already imported into this database (creates a new, separate tile; the existing one is left untouched). |
+| `--force` | no | Two effects, both propagated straight through to `project_import`: (1) re-import this exact repo+branch even if it was already imported into this database (creates a new, separate tile; the existing one is left untouched); (2) import a generic (no-interface) repo into an interface-requiring database anyway (`VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE` below). Neither use bypasses the precheck or an interface *mismatch* — those are always enforced regardless of `--force`. |
 
 ### Flow
 
@@ -525,4 +539,5 @@ of the precheck: `--force` never lets a failing `project run` through; that gate
 | `VF_IMPORT_REPO_PRECHECK_FAILED` | `project run`'s status wasn't `PASS` |
 
 Plus anything `project_import` itself can raise (`VF_IMPORT_INTERFACE_MISMATCH`,
-`VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES`, `VF_IMPORT_RTL_SOURCE_MISSING`, etc.).
+`VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE`, `VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES`,
+`VF_IMPORT_RTL_SOURCE_MISSING`, etc.).
