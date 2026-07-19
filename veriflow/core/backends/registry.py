@@ -3,6 +3,7 @@ from __future__ import annotations
 from veriflow.core import VeriFlowError
 from veriflow.core.backends.base import ConnectivityBackend, SimulationBackend, SynthesisBackend
 from veriflow.core.backends.icarus import IcarusConnectivityBackend, IcarusSimulationBackend
+from veriflow.core.backends.xsim import XsimSimulationBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 
 _CONNECTIVITY: dict[str, type[ConnectivityBackend]] = {
@@ -11,6 +12,7 @@ _CONNECTIVITY: dict[str, type[ConnectivityBackend]] = {
 
 _SIMULATION: dict[str, type[SimulationBackend]] = {
     "icarus": IcarusSimulationBackend,
+    "xsim": XsimSimulationBackend,
 }
 
 _SYNTHESIS: dict[str, type[SynthesisBackend]] = {
@@ -22,7 +24,7 @@ _SYNTHESIS: dict[str, type[SynthesisBackend]] = {
 # future backend that forgets to register a display name still shows
 # *something* meaningful instead of raising.
 _CONNECTIVITY_TOOL_NAMES: dict[str, str] = {"icarus": "iverilog"}
-_SIMULATION_TOOL_NAMES: dict[str, str] = {"icarus": "iverilog/vvp"}
+_SIMULATION_TOOL_NAMES: dict[str, str] = {"icarus": "iverilog/vvp", "xsim": "xvlog/xelab/xsim"}
 _SYNTHESIS_TOOL_NAMES: dict[str, str] = {"yosys": "yosys"}
 
 

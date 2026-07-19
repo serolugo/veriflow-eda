@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from veriflow.core.backends.icarus import IcarusConnectivityBackend, IcarusSimulationBackend
+from veriflow.core.backends.xsim import XsimSimulationBackend
 from veriflow.core.backends.yosys import YosysSynthesisBackend
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -100,6 +101,87 @@ class TestIcarusSimulationAvailability:
         by_tool = {r["tool"]: r for r in result}
         assert by_tool["iverilog"]["available"] is True
         assert by_tool["vvp"]["available"] is False
+
+
+# ── XsimSimulationBackend ─────────────────────────────────────────────────────
+
+class TestXsimSimulationAvailability:
+    def test_all_three_not_in_path(self):
+        backend = XsimSimulationBackend()
+        with patch("veriflow.core.backends._tools.shutil.which", return_value=None):
+            result = backend.check_availability()
+        assert len(result) == 3
+        tools = {r["tool"] for r in result}
+        assert tools == {"xvlog", "xelab", "xsim"}
+        for entry in result:
+            assert entry["available"] is False
+            assert entry["version"] is None
+            assert entry["path"] is None
+            assert entry["error"] is not None
+
+    def test_all_three_available(self):
+        backend = XsimSimulationBackend()
+        with patch("veriflow.core.backends._tools.shutil.which",
+                   side_effect=lambda t: f"/opt/Vivado/bin/{t}"), \
+             patch("veriflow.core.backends._tools.subprocess.run",
+                   return_value=_fake_proc("Vivado Simulator 2024.1")):
+            result = backend.check_availability()
+        assert len(result) == 3
+        by_tool = {r["tool"]: r for r in result}
+        for tool in ("xvlog", "xelab", "xsim"):
+            assert by_tool[tool]["available"] is True
+            assert by_tool[tool]["path"] == f"/opt/Vivado/bin/{tool}"
+            assert by_tool[tool]["version"] == "Vivado Simulator 2024.1"
+
+    def test_partial_availability_xvlog_only(self):
+        """Only xvlog present -- xelab/xsim missing (e.g. a partial/broken
+        Vivado install) each report their own independent status."""
+        backend = XsimSimulationBackend()
+
+        def which_side(tool: str):
+            return "/opt/Vivado/bin/xvlog" if tool == "xvlog" else None
+
+        with patch("veriflow.core.backends._tools.shutil.which", side_effect=which_side), \
+             patch("veriflow.core.backends._tools.subprocess.run",
+                   return_value=_fake_proc("Vivado Simulator 2024.1")):
+            result = backend.check_availability()
+
+        by_tool = {r["tool"]: r for r in result}
+        assert by_tool["xvlog"]["available"] is True
+        assert by_tool["xelab"]["available"] is False
+        assert by_tool["xsim"]["available"] is False
+
+    def test_partial_availability_xsim_missing_only(self):
+        backend = XsimSimulationBackend()
+
+        def which_side(tool: str):
+            return None if tool == "xsim" else f"/opt/Vivado/bin/{tool}"
+
+        with patch("veriflow.core.backends._tools.shutil.which", side_effect=which_side), \
+             patch("veriflow.core.backends._tools.subprocess.run",
+                   return_value=_fake_proc("Vivado Simulator 2024.1")):
+            result = backend.check_availability()
+
+        by_tool = {r["tool"]: r for r in result}
+        assert by_tool["xvlog"]["available"] is True
+        assert by_tool["xelab"]["available"] is True
+        assert by_tool["xsim"]["available"] is False
+
+    def test_uses_version_flag(self):
+        """check_availability must probe with `-version` (Vivado CLI
+        convention), not iverilog/yosys's `-V`."""
+        backend = XsimSimulationBackend()
+        captured_flags = []
+
+        def fake_run(cmd, **kwargs):
+            captured_flags.append(cmd[1])
+            return _fake_proc("Vivado Simulator 2024.1")
+
+        with patch("veriflow.core.backends._tools.shutil.which", return_value="/opt/Vivado/bin/xvlog"), \
+             patch("veriflow.core.backends._tools.subprocess.run", side_effect=fake_run):
+            backend.check_availability()
+
+        assert captured_flags == ["-version", "-version", "-version"]
 
 
 # ── YosysSynthesisBackend ─────────────────────────────────────────────────────

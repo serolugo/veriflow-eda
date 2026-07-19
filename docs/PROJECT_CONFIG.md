@@ -230,13 +230,25 @@ individual key uses the defaults from `default_execution_profile()`:
 | Key | Default | Currently registered names |
 |---|---|---|
 | `connectivity_backend` | `icarus` | `icarus` |
-| `simulation_backend` | `icarus` | `icarus` |
+| `simulation_backend` | `icarus` | `icarus`, `xsim` |
 | `synthesis_backend` | `yosys` | `yosys` |
 
 Backend names must already be registered in `veriflow.core.backends.registry`; an unknown name
-fails with `VF_BACKEND_*_UNKNOWN`. This section introduces no new backends — today the only valid
-values are the defaults, and the section exists so future backends can be selected without a
-schema change.
+fails with `VF_BACKEND_*_UNKNOWN`.
+
+`xsim` runs simulation through Vivado's `xvlog`/`xelab`/`xsim` CLI tools instead of Icarus
+Verilog — **requires Vivado installed** and on `PATH` (`veriflow doctor` reports `[FAIL]` for
+all three sub-tools otherwise, same as any other missing-tool backend). Selected the same way
+as any other backend:
+
+```yaml
+execution:
+  simulation_backend: xsim
+```
+
+See `docs/CUSTOM_BACKENDS.md` for the full backend contract — how to add support for another
+commercial simulator (Xcelium, VCS, Questa, ...) without touching VeriFlow's core, using `xsim`
+itself as the worked example.
 
 ### `pipeline` (optional)
 
