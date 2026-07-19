@@ -92,6 +92,86 @@ def test_all_three_steps_run_in_the_same_temp_cwd(tmp_path):
     assert Path(cwds[0]) != tmp_path
 
 
+# ── Windows .bat resolution (2026-07-19 real-machine bug) ────────────────────
+
+
+def test_run_simulation_uses_resolved_bat_path_on_windows(tmp_path):
+    """Reproduces the real Windows bug end-to-end at the run_simulation
+    level (not just check_availability): shutil.which resolving each
+    tool to a "<tool>.BAT" launcher must be what's actually invoked, not
+    the bare name (which fails with FileNotFoundError under
+    CreateProcess/shell=False)."""
+    rtl, tb = _make_files(tmp_path)
+    calls: list[list[str]] = []
+
+    def which_side(tool):
+        return rf"C:\Xilinx\Vivado\2024.1\bin\{tool}.BAT"
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return _proc(0)
+
+    backend = XsimSimulationBackend()
+    with patch("veriflow.core.backends.xsim.shutil.which", side_effect=which_side), \
+         patch("veriflow.core.backends.xsim.subprocess.run", side_effect=fake_run):
+        status, _ = _run(backend, rtl, tb, tmp_path)
+
+    assert status == "COMPLETED"
+    assert len(calls) == 3
+    xvlog_cmd, xelab_cmd, xsim_cmd = calls
+    assert xvlog_cmd[0] == r"C:\Xilinx\Vivado\2024.1\bin\xvlog.BAT"
+    assert xelab_cmd[0] == r"C:\Xilinx\Vivado\2024.1\bin\xelab.BAT"
+    assert xsim_cmd[0] == r"C:\Xilinx\Vivado\2024.1\bin\xsim.BAT"
+    invoked = {c[0] for c in calls}
+    assert "xvlog" not in invoked
+    assert "xelab" not in invoked
+    assert "xsim" not in invoked
+
+
+def test_run_simulation_unix_path_unaffected(tmp_path):
+    """On Linux/macOS, shutil.which's result is already the correct
+    absolute path -- used directly, same as before this fix, no
+    functional difference from passing the bare name."""
+    rtl, tb = _make_files(tmp_path)
+    calls: list[list[str]] = []
+
+    def which_side(tool):
+        return f"/usr/local/bin/{tool}"
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return _proc(0)
+
+    backend = XsimSimulationBackend()
+    with patch("veriflow.core.backends.xsim.shutil.which", side_effect=which_side), \
+         patch("veriflow.core.backends.xsim.subprocess.run", side_effect=fake_run):
+        status, _ = _run(backend, rtl, tb, tmp_path)
+
+    assert status == "COMPLETED"
+    assert calls[0][0] == "/usr/local/bin/xvlog"
+    assert calls[1][0] == "/usr/local/bin/xelab"
+    assert calls[2][0] == "/usr/local/bin/xsim"
+
+
+def test_run_simulation_falls_back_to_bare_name_when_tool_not_found(tmp_path):
+    """shutil.which returning None (tool genuinely not installed) falls
+    back to the bare name -- unchanged from before this fix; missing-tool
+    detection happens upstream via check_availability()/validate_tools()."""
+    rtl, tb = _make_files(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return _proc(0)
+
+    backend = XsimSimulationBackend()
+    with patch("veriflow.core.backends.xsim.shutil.which", return_value=None), \
+         patch("veriflow.core.backends.xsim.subprocess.run", side_effect=fake_run):
+        _run(backend, rtl, tb, tmp_path)
+
+    assert calls[0][0] == "xvlog"
+
+
 # ── Failure short-circuiting ───────────────────────────────────────────────────
 
 

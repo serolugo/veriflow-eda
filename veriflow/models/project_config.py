@@ -10,6 +10,32 @@ from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipel
 
 _DEFAULT_ID_FORMAT = "{prefix}-{date}{tile_number}{version}{revision}"
 
+# Every top-level key project_config.yaml's parser actually reads.
+# "semicolab" (legacy) is deliberately excluded -- it's handled by its own
+# has_legacy check above, which raises before this set is ever consulted.
+_KNOWN_TOP_LEVEL_KEYS = frozenset({
+    "id_prefix", "project_name", "repo", "description",
+    "interface_name", "interface_definition",
+    "id_format", "shuttle_name",
+    "technology", "technology_definition",
+    "pipeline",
+})
+
+# Specific guidance for the one confirmed real-world mistake this check
+# exists for: Project Mode's veriflow.yaml has a real `execution:` section
+# (connectivity_backend/simulation_backend/synthesis_backend); Database
+# Mode's project_config.yaml has no such section at all -- backend
+# selection there is per-stage, via `pipeline.stages[].backend`. Writing
+# `execution:` here is silently ignored with no error (unknown top-level
+# keys aren't rejected, for forward-compatibility with future fields), so
+# without this warning a user can configure e.g. `execution.simulation_backend:
+# xsim` and have it do nothing at all, with zero indication why.
+_EXECUTION_KEY_HINT = (
+    "Database Mode specifies simulation backend per-stage via "
+    "pipeline.stages[].backend, not a top-level execution: section. "
+    "See docs/PROJECT_CONFIG.md."
+)
+
 
 @dataclass
 class ProjectConfig:
@@ -62,6 +88,16 @@ class ProjectConfig:
             raw_name = raw_name.strip() or None
 
         config_warnings: list[str] = []
+
+        unknown_keys = sorted(set(data) - _KNOWN_TOP_LEVEL_KEYS)
+        for key in unknown_keys:
+            if key == "execution":
+                config_warnings.append(f"Unknown key {key!r} in project_config.yaml -- {_EXECUTION_KEY_HINT}")
+            else:
+                config_warnings.append(
+                    f"Unknown key {key!r} in project_config.yaml -- ignored. "
+                    "See docs/PROJECT_CONFIG.md for the recognized project_config.yaml schema."
+                )
 
         raw_definition = data.get("interface_definition")
         if raw_name is not None and raw_definition is not None:

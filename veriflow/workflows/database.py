@@ -340,11 +340,12 @@ class DatabaseWorkflow:
         iverilog_version = detect_iverilog_version()
 
         # ── Non-fatal: tb_tile.v vs tile_config.yaml top_module sync check ────
-        # Seeded with project_config's own config-parse-time warnings
-        # (interface_definition name mismatch/profile-overwrite) -- same
-        # "surfaced in results, not a raw Python UserWarning" treatment as
-        # Project Mode's ProjectWorkflowConfig.config_warnings.
-        warnings: list[str] = list(project_config.config_warnings)
+        # Seeded with both config layers' own config-parse-time warnings
+        # (interface_definition name mismatch/profile-overwrite, unknown
+        # top-level keys) -- same "surfaced in results, not a raw Python
+        # UserWarning" treatment as Project Mode's ProjectWorkflowConfig
+        # .config_warnings.
+        warnings: list[str] = list(project_config.config_warnings) + list(tile_config.config_warnings)
         tb_mismatch = _check_tb_module_mismatch(tb_files, tile_config.top_module)
         if tb_mismatch:
             warnings.append(tb_mismatch)

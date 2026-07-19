@@ -167,6 +167,45 @@ class TestXsimSimulationAvailability:
         assert by_tool["xelab"]["available"] is True
         assert by_tool["xsim"]["available"] is False
 
+    def test_all_three_available_via_windows_bat_resolution(self):
+        """End-to-end reproduction of the real Windows bug: shutil.which
+        resolves each tool to its "<tool>.BAT" launcher (not a bare-name
+        executable) -- check_availability() must still report all three
+        as available, using the resolved .BAT path for the actual
+        subprocess call rather than the bare name that would fail under
+        CreateProcess/shell=False."""
+        backend = XsimSimulationBackend()
+        captured_cmds: list[list[str]] = []
+
+        def which_side(tool: str):
+            return rf"C:\Xilinx\Vivado\2024.1\bin\{tool}.BAT"
+
+        def fake_run(cmd, **kwargs):
+            captured_cmds.append(list(cmd))
+            return _fake_proc("Vivado Simulator v2024.1")
+
+        with patch("veriflow.core.backends._tools.shutil.which", side_effect=which_side), \
+             patch("veriflow.core.backends._tools.subprocess.run", side_effect=fake_run):
+            result = backend.check_availability()
+
+        by_tool = {r["tool"]: r for r in result}
+        for tool in ("xvlog", "xelab", "xsim"):
+            assert by_tool[tool]["available"] is True
+            assert by_tool[tool]["path"] == rf"C:\Xilinx\Vivado\2024.1\bin\{tool}.BAT"
+            assert by_tool[tool]["version"] == "Vivado Simulator v2024.1"
+
+        # Every actual subprocess invocation used the resolved .BAT path,
+        # never the bare tool name
+        invoked_argv0 = {cmd[0] for cmd in captured_cmds}
+        assert invoked_argv0 == {
+            r"C:\Xilinx\Vivado\2024.1\bin\xvlog.BAT",
+            r"C:\Xilinx\Vivado\2024.1\bin\xelab.BAT",
+            r"C:\Xilinx\Vivado\2024.1\bin\xsim.BAT",
+        }
+        assert "xvlog" not in invoked_argv0
+        assert "xelab" not in invoked_argv0
+        assert "xsim" not in invoked_argv0
+
     def test_uses_version_flag(self):
         """check_availability must probe with `-version` (Vivado CLI
         convention), not iverilog/yosys's `-V`."""
@@ -182,6 +221,71 @@ class TestXsimSimulationAvailability:
             backend.check_availability()
 
         assert captured_flags == ["-version", "-version", "-version"]
+
+
+# ── _check_tool: uses shutil.which's resolved path, not the bare name ────────
+# (2026-07-19: real Windows bug -- Vivado installs xvlog/xelab/xsim as a
+# same-named extensionless file alongside a "<tool>.bat" launcher.
+# shutil.which correctly finds ".../xvlog.BAT" (PATHEXT-aware search),
+# but subprocess.run(["xvlog", ...]) with the bare name fails with
+# FileNotFoundError ([WinError 2]) under CreateProcess/shell=False, which
+# doesn't apply PATHEXT the way shutil.which/cmd.exe do. Confirmed against
+# a real Vivado 2024.1 install on this machine before applying the fix.)
+
+class TestCheckToolUsesResolvedPath:
+    def test_windows_bat_resolution_is_passed_to_subprocess(self):
+        """shutil.which resolving to a same-named-plus-.bat path must be
+        what actually gets invoked, not the bare tool name."""
+        from veriflow.core.backends._tools import _check_tool
+
+        resolved = r"C:\Xilinx\Vivado\2024.1\bin\xvlog.BAT"
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            return _fake_proc("Vivado Simulator v2024.1")
+
+        with patch("veriflow.core.backends._tools.shutil.which", return_value=resolved), \
+             patch("veriflow.core.backends._tools.subprocess.run", side_effect=fake_run):
+            result = _check_tool("xvlog", version_flag="-version")
+
+        assert captured_cmd[0] == resolved
+        assert captured_cmd[0] != "xvlog"
+        assert result["available"] is True
+        assert result["path"] == resolved
+
+    def test_unix_style_path_unaffected(self):
+        """On Linux/macOS, shutil.which's result is already the correct
+        absolute path with no extension ambiguity -- behavior is
+        unchanged (same path used, no bare-name fallback ever needed)."""
+        from veriflow.core.backends._tools import _check_tool
+
+        resolved = "/usr/local/bin/xvlog"
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            return _fake_proc("Vivado Simulator v2024.1")
+
+        with patch("veriflow.core.backends._tools.shutil.which", return_value=resolved), \
+             patch("veriflow.core.backends._tools.subprocess.run", side_effect=fake_run):
+            result = _check_tool("xvlog", version_flag="-version")
+
+        assert captured_cmd[0] == resolved
+        assert result["available"] is True
+
+    def test_tool_genuinely_missing_still_reports_unavailable(self):
+        """shutil.which returning None is unaffected by this fix -- still
+        reported unavailable, no subprocess call attempted at all."""
+        from veriflow.core.backends._tools import _check_tool
+
+        with patch("veriflow.core.backends._tools.shutil.which", return_value=None), \
+             patch("veriflow.core.backends._tools.subprocess.run") as mock_run:
+            result = _check_tool("xvlog", version_flag="-version")
+
+        mock_run.assert_not_called()
+        assert result["available"] is False
+        assert result["path"] is None
 
 
 # ── YosysSynthesisBackend ─────────────────────────────────────────────────────

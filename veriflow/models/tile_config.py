@@ -1,9 +1,27 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from veriflow.core import VeriFlowError
 from veriflow.models.pipeline_config import PipelineConfig, parse_optional_pipeline_section
 
 DEFAULT_TB_TOP_MODULE = "tb"
+
+# Every top-level key tile_config.yaml's parser actually reads. Same
+# silent-unknown-key risk as project_config.yaml (models/project_config.py)
+# -- a tile_config.yaml with e.g. a stray `execution:` section would
+# otherwise be dropped with no error and no indication why it had no effect.
+_KNOWN_TOP_LEVEL_KEYS = frozenset({
+    "tile_name", "tile_author", "top_module", "tb_top_module",
+    "description", "ports", "usage_guide", "tb_description",
+    "run_author", "objective", "tags", "main_change", "notes",
+    "pipeline", "technology",
+})
+
+_EXECUTION_KEY_HINT = (
+    "Database Mode specifies simulation backend per-stage via "
+    "pipeline.stages[].backend (this tile's own pipeline: section may "
+    "override it), not a top-level execution: section. "
+    "See docs/PROJECT_CONFIG.md."
+)
 
 
 def _parse_tile_technology_section(data: dict) -> bool | None:
@@ -69,9 +87,24 @@ class TileConfig:
     pipeline: PipelineConfig | None = None
     # ── Technology require_pdk override (optional; None = inherit) ───────────
     require_pdk: bool | None = None
+    # Config-parse-time warnings (currently: unknown top-level keys) --
+    # surfaced in the run's own results data and via print_warn(), not
+    # raised as Python UserWarning. Same mechanism as ProjectConfig's.
+    config_warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "TileConfig":
+        config_warnings: list[str] = []
+        unknown_keys = sorted(set(data) - _KNOWN_TOP_LEVEL_KEYS)
+        for key in unknown_keys:
+            if key == "execution":
+                config_warnings.append(f"Unknown key {key!r} in tile_config.yaml -- {_EXECUTION_KEY_HINT}")
+            else:
+                config_warnings.append(
+                    f"Unknown key {key!r} in tile_config.yaml -- ignored. "
+                    "See docs/PROJECT_CONFIG.md for the recognized tile_config.yaml schema."
+                )
+
         raw_tb_top = data.get("tb_top_module")
         tb_top_module = raw_tb_top if raw_tb_top is not None else DEFAULT_TB_TOP_MODULE
         # Raises VF_PIPELINE_CONFIG_INVALID / VF_PIPELINE_STAGE_UNKNOWN for a malformed
@@ -96,4 +129,5 @@ class TileConfig:
             notes=data.get("notes", "") or "",
             pipeline=pipeline,
             require_pdk=require_pdk,
+            config_warnings=config_warnings,
         )

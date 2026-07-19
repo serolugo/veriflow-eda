@@ -277,6 +277,39 @@ handle (rare, but check your tool's docs for any daemon/server process it
 spawns — e.g. some tools start a background simulation kernel process),
 make sure that process has actually exited before `rmtree` runs.
 
+### A Windows gotcha that will very likely bite your tool too
+
+Confirmed against a real Vivado 2024.1 install: **always invoke
+`shutil.which(tool)`'s *resolved* path, never the bare tool name.**
+
+On Windows, several commercial EDA suites (Vivado's `xvlog`/`xelab`/`xsim`
+among them) install each CLI tool as a same-named extensionless file
+*alongside* a `"<tool>.bat"` launcher script — the `.bat` is the one that
+actually works. `shutil.which("xvlog")` already resolves this correctly
+(it does a full `PATHEXT`-aware search, same as `cmd.exe`), returning
+`...\xvlog.BAT`. But `subprocess.run(["xvlog", ...])` with the *bare*
+name and `shell=False` invokes Windows' `CreateProcess` directly, which
+has a loader-level special case for auto-appending `.exe` to a bare name
+(why tools that ship a real `.exe` — icarus, yosys — just work) but does
+**not** apply the fuller `PATHEXT` resolution that finds `.bat`/`.cmd`
+files. The result: `FileNotFoundError` (`[WinError 2]`) even though the
+tool is genuinely installed and `shutil.which` just found it moments
+earlier.
+
+```python
+def _resolve(tool: str) -> str:
+    return shutil.which(tool) or tool
+
+subprocess.run([_resolve("xvlog"), "-version"], ...)   # not subprocess.run(["xvlog", ...])
+```
+
+This costs nothing on Linux/macOS (`shutil.which`'s result there is
+already the same binary the bare name would have found) — there's no
+reason not to do this unconditionally, no `platform.system()` branching
+needed. Apply it both in `check_availability()` (via `_check_tool`,
+which already does this) and in every `run_*` subprocess invocation your
+backend makes.
+
 ---
 
 ## 6. Determining PASS/FAIL deterministically
@@ -355,6 +388,20 @@ _SNAPSHOT_NAME = "veriflow_sim_snapshot"
 _VCD_FILENAME = "waves.vcd"
 
 
+def _resolve(tool: str) -> str:
+    """Use shutil.which's own resolved path, not the bare tool name --
+    on Windows, Vivado installs xvlog/xelab/xsim as a same-named
+    extensionless file alongside a "<tool>.bat" launcher. shutil.which
+    already finds the right one (PATHEXT-aware search); subprocess.run
+    with the bare name does not (CreateProcess/shell=False only
+    auto-resolves ".exe", not ".bat"/".cmd"), and fails with
+    FileNotFoundError even though the tool is genuinely installed.
+    Confirmed against a real Vivado 2024.1 install. Falls back to the
+    bare name when the tool isn't found at all -- that case is meant to
+    be caught upstream via check_availability(), not here."""
+    return shutil.which(tool) or tool
+
+
 def _section(step: str, result: subprocess.CompletedProcess) -> str:
     header = f"=== {step} (exit code {result.returncode}) ==="
     body = (result.stdout or "") + (result.stderr or "")
@@ -383,7 +430,7 @@ class XsimSimulationBackend(SimulationBackend):
         try:
             # 1. xvlog -- compile RTL + TB sources together
             compile_cmd = (
-                ["xvlog"]
+                [_resolve("xvlog")]
                 + [f.as_posix() for f in rtl_files]
                 + [f.as_posix() for f in tb_files]
             )
@@ -396,7 +443,7 @@ class XsimSimulationBackend(SimulationBackend):
                 return "FAILED", {"sim_time": "", "seed": ""}
 
             # 2. xelab -- elaborate the testbench top into a named snapshot
-            elab_cmd = ["xelab", tb_top, "-s", _SNAPSHOT_NAME]
+            elab_cmd = [_resolve("xelab"), tb_top, "-s", _SNAPSHOT_NAME]
             elab_result = subprocess.run(
                 elab_cmd, capture_output=True, text=True, cwd=str(tmp_dir),
             )
@@ -407,7 +454,7 @@ class XsimSimulationBackend(SimulationBackend):
 
             # 3. xsim -- run the elaborated snapshot
             xsim_log_path = tmp_dir / "xsim_transcript.log"
-            run_cmd = ["xsim", _SNAPSHOT_NAME, "--runall", "--log", str(xsim_log_path)]
+            run_cmd = [_resolve("xsim"), _SNAPSHOT_NAME, "--runall", "--log", str(xsim_log_path)]
             run_result = subprocess.run(
                 run_cmd, capture_output=True, text=True, cwd=str(tmp_dir),
             )

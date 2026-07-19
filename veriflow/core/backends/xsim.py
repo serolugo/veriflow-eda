@@ -42,6 +42,27 @@ _SNAPSHOT_NAME = "veriflow_sim_snapshot"
 _VCD_FILENAME = "waves.vcd"
 
 
+def _resolve(tool: str) -> str:
+    """Return shutil.which(tool)'s resolved path, falling back to the bare
+    name if not found at all.
+
+    Same fix as `_check_tool` (core/backends/_tools.py): on Windows,
+    Vivado installs xvlog/xelab/xsim as a same-named extensionless file
+    alongside a "<tool>.bat" launcher. shutil.which correctly finds the
+    ".bat" (PATHEXT-aware search), but subprocess.run([tool, ...]) with
+    the bare name re-resolves it via CreateProcess (shell=False), which
+    doesn't apply PATHEXT the way shutil.which/cmd.exe do -- passing the
+    bare name fails with FileNotFoundError ([WinError 2]) even though the
+    tool is genuinely installed. Using the already-resolved path fixes
+    this on every platform (a no-op on Linux/macOS). Falling back to the
+    bare name when not found at all preserves today's behavior for a
+    genuinely-missing tool -- subprocess.run raises FileNotFoundError,
+    same as before this fix; that case is meant to be caught upstream via
+    check_availability()/validate_tools(), not silently handled here.
+    """
+    return shutil.which(tool) or tool
+
+
 def _section(step: str, result: subprocess.CompletedProcess) -> str:
     header = f"=== {step} (exit code {result.returncode}) ==="
     body = (result.stdout or "") + (result.stderr or "")
@@ -90,7 +111,7 @@ class XsimSimulationBackend(SimulationBackend):
             # icarus: no injection, no hidden include paths, no temp TB
             # sources).
             compile_cmd = (
-                ["xvlog"]
+                [_resolve("xvlog")]
                 + [f.as_posix() for f in rtl_files]
                 + [f.as_posix() for f in tb_files]
             )
@@ -103,7 +124,7 @@ class XsimSimulationBackend(SimulationBackend):
                 return "FAILED", {"sim_time": "", "seed": ""}
 
             # 2. xelab -- elaborate the testbench top into a named snapshot.
-            elab_cmd = ["xelab", tb_top, "-s", _SNAPSHOT_NAME]
+            elab_cmd = [_resolve("xelab"), tb_top, "-s", _SNAPSHOT_NAME]
             elab_result = subprocess.run(
                 elab_cmd, capture_output=True, text=True, cwd=str(tmp_dir),
             )
@@ -118,7 +139,7 @@ class XsimSimulationBackend(SimulationBackend):
             # read it back and fold it into the combined log alongside
             # this step's own captured stdout/stderr.
             xsim_log_path = tmp_dir / "xsim_transcript.log"
-            run_cmd = ["xsim", _SNAPSHOT_NAME, "--runall", "--log", str(xsim_log_path)]
+            run_cmd = [_resolve("xsim"), _SNAPSHOT_NAME, "--runall", "--log", str(xsim_log_path)]
             run_result = subprocess.run(
                 run_cmd, capture_output=True, text=True, cwd=str(tmp_dir),
             )

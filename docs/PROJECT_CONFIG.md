@@ -250,6 +250,39 @@ See `docs/CUSTOM_BACKENDS.md` for the full backend contract — how to add suppo
 commercial simulator (Xcelium, VCS, Questa, ...) without touching VeriFlow's core, using `xsim`
 itself as the worked example.
 
+#### ⚠️ `execution:` is Project Mode syntax only — Database Mode selects backends per-stage
+
+**This `execution:` section only exists in Project Mode's `veriflow.yaml`.** Database Mode's
+`project_config.yaml` and `tile_config.yaml` have **no `execution:` section at all** — writing
+one there is silently ignored (as of the fix below, it now produces a warning instead — see
+"Unrecognized top-level keys" further down). Database Mode selects a backend **per pipeline
+stage**, via `pipeline.stages[].backend:` (documented in the next section):
+
+```yaml
+# project_config.yaml or tile_config.yaml (Database Mode) — correct way to select xsim:
+pipeline:
+  stages:
+    - type: connectivity
+      backend: icarus
+    - type: simulation
+      backend: xsim
+    - type: synthesis
+      backend: yosys
+```
+
+```yaml
+# This does NOT work in Database Mode -- Project Mode syntax, wrong file:
+execution:
+  simulation_backend: xsim
+```
+
+This distinction matters in practice: a real bug was traced to exactly this mistake — a
+database's `project_config.yaml` had `execution: {simulation_backend: xsim}`, which was silently
+dropped, so every run used the default `icarus` backend instead of the intended `xsim`, with no
+error or warning at all (confirmed live: `results.json` recorded `"tool": "iverilog/vvp"`, and
+the simulation log's `$finish called at ... (1ps)` format is icarus/vvp's, never Vivado's). See
+`dev-docs/UNKNOWN_CONFIG_KEYS_FIX.md` for the full investigation.
+
 ### `pipeline` (optional)
 
 ```yaml
@@ -279,13 +312,38 @@ Rules:
   the output and in `results.json`, exactly as if you had omitted `interface`/`tb_sources` (or
   passed the matching `--skip-*` flag in Database Mode).
 - An unrecognized `type` value fails fast with `VF_PIPELINE_STAGE_UNKNOWN`.
-- `backend:` is optional per stage; omitting it uses the `execution` section's default for that
-  stage type (or the registry default if `execution` is also omitted).
+- `backend:` is optional per stage. **Project Mode** (`veriflow.yaml`): omitting it uses the
+  `execution` section's default for that stage type, or the registry default if `execution` is
+  also omitted. **Database Mode** (`project_config.yaml`/`tile_config.yaml`): there is no
+  `execution:` section at all — omitting `backend:` here always uses the registry default
+  directly. This is the *only* place Database Mode selects a non-default backend (e.g. `xsim`
+  instead of `icarus`) — see the `execution:` warning above.
 - Extra keys on a stage entry (for fields not implemented yet, e.g. a future `timeout:`) are
   ignored silently rather than rejected, so configs stay forward-compatible.
 - Connectivity/simulation still require their underlying precondition (`interface`/`tb_sources`)
   even when explicitly listed — listing `connectivity` with no `interface` section configured
   simply means that stage is skipped, same as leaving it out of `pipeline` entirely.
+
+#### Unrecognized top-level keys (Database Mode)
+
+`project_config.yaml` and `tile_config.yaml` (Database Mode) both warn — rather than silently
+ignoring — any top-level key that isn't part of their recognized schema. This is deliberately a
+warning, not an error, for forward-compatibility with fields not implemented yet: parsing
+continues normally, and the warning is added to the run's `config_warnings` (surfaced in
+`results.json`'s `"warnings"` array and printed via the same clean CLI output as any other
+config warning — never a raw Python `UserWarning`).
+
+`project_config.yaml`'s recognized top-level keys: `id_prefix`, `project_name`, `repo`,
+`description`, `interface_name`, `interface_definition`, `id_format`, `shuttle_name`,
+`technology`, `technology_definition`, `pipeline`.
+
+`tile_config.yaml`'s recognized top-level keys: `tile_name`, `tile_author`, `top_module`,
+`tb_top_module`, `description`, `ports`, `usage_guide`, `tb_description`, `run_author`,
+`objective`, `tags`, `main_change`, `notes`, `pipeline`, `technology`.
+
+An unrecognized `execution:` key specifically gets a targeted message pointing at
+`pipeline.stages[].backend` (the real fix for that exact mistake); any other unrecognized key
+gets a generic "ignored, see this doc" message.
 
 Common examples:
 
