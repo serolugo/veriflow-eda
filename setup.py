@@ -35,6 +35,7 @@ setup(
             "interfaces/*/*.v",
             "interfaces/*/*.yaml",
             "technologies/*.yaml",
+            "mcp_docs/*.md",
         ],
     },
     install_requires=[
@@ -50,6 +51,7 @@ setup(
     # `db set` / `db tile set` (veriflow/core/yaml_config_editor.py).
     # Without it, those commands fall back to a line-based text patch.
     "yaml-edit": ["ruamel.yaml"],
+    "mcp": ["fastmcp>=2.0"],
     },
     entry_points={
         "console_scripts": [

@@ -830,6 +830,240 @@ def test_db_tile_set_cli_json_mode_reports_nested_command(tmp_path):
     assert rc == 0
 
 
+# ── stage-backend: override one stage's backend without touching the rest ────
+
+def test_project_set_stage_backend_updates_only_target_stage(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+    from veriflow.core.yaml_config_editor import set_yaml_pipeline
+
+    config_path = _write_project_yaml(tmp_path)
+    set_yaml_pipeline(config_path, [
+        {"type": "connectivity", "backend": "icarus"},
+        {"type": "simulation"},
+        {"type": "synthesis"},
+    ])
+
+    project_set_config(config_path, "stage-backend", "simulation:xsim")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["pipeline"]["stages"] == [
+        {"type": "connectivity", "backend": "icarus"},
+        {"type": "simulation", "backend": "xsim"},
+        {"type": "synthesis"},
+    ]
+
+
+def test_project_set_stage_backend_materializes_default_pipeline_when_absent(tmp_path):
+    """No `pipeline:` section yet -- stage-backend must fall back to
+    DEFAULT_PIPELINE (all three stages) as the base to edit, not error out
+    or silently produce a pipeline with only the touched stage."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "stage-backend", "simulation:xsim")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["pipeline"]["stages"] == [
+        {"type": "connectivity"},
+        {"type": "simulation", "backend": "xsim"},
+        {"type": "synthesis"},
+    ]
+
+
+def test_project_set_stage_backend_stage_not_in_pipeline_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "pipeline", "connectivity,synthesis")  # no simulation
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "stage-backend", "simulation:xsim")
+    assert exc_info.value.code == "VF_STAGE_NOT_IN_PIPELINE"
+
+
+def test_project_set_stage_backend_unknown_backend_raises_with_valid_list(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "stage-backend", "simulation:not_a_real_backend")
+    assert exc_info.value.code == "VF_SET_STAGE_BACKEND_UNKNOWN"
+    msg = str(exc_info.value)
+    assert "icarus" in msg
+    assert "xsim" in msg
+
+
+def test_project_set_stage_backend_unknown_backend_for_synthesis_lists_only_synthesis_backends(tmp_path):
+    """The valid-backends list in the error is scoped to the stage's own
+    category -- a bogus synthesis backend shouldn't suggest simulation-only
+    names like xsim."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "stage-backend", "synthesis:vivado")
+    assert exc_info.value.code == "VF_SET_STAGE_BACKEND_UNKNOWN"
+    assert exc_info.value.details["valid_backends"] == ["yosys"]
+
+
+def test_project_set_stage_backend_invalid_format_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "stage-backend", "simulation-xsim")  # missing colon
+    assert exc_info.value.code == "VF_SET_STAGE_BACKEND_FORMAT_INVALID"
+
+    with pytest.raises(VeriFlowError) as exc_info2:
+        project_set_config(config_path, "stage-backend", "bogus_stage:xsim")
+    assert exc_info2.value.code == "VF_SET_STAGE_BACKEND_FORMAT_INVALID"
+
+
+def test_project_set_cli_stage_backend_dispatches_and_writes_file(tmp_path):
+    from veriflow.cli import main
+
+    config_path = _write_project_yaml(tmp_path)
+    rc = main(["project", "set", "stage-backend", "simulation:xsim", "--config", str(config_path)])
+    assert rc == 0
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["pipeline"]["stages"][1] == {"type": "simulation", "backend": "xsim"}
+
+
+def test_db_set_stage_backend_updates_only_target_stage(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+    from veriflow.core.yaml_config_editor import set_yaml_pipeline
+
+    db = _init_db(tmp_path)
+    config_path = db / "project_config.yaml"
+    set_yaml_pipeline(config_path, [
+        {"type": "connectivity"},
+        {"type": "simulation"},
+        {"type": "synthesis"},
+    ])
+
+    db_set_config(db, "stage-backend", "simulation:xsim")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["pipeline"]["stages"] == [
+        {"type": "connectivity"},
+        {"type": "simulation", "backend": "xsim"},
+        {"type": "synthesis"},
+    ]
+
+
+def test_db_tile_set_stage_backend_updates_only_target_stage(tmp_path):
+    from veriflow.commands.set_config import db_tile_set_config
+
+    db = _init_db(tmp_path)
+    tile_number = _create_tile(db)
+    db_tile_set_config(db, tile_number, "stage-backend", "simulation:xsim")
+
+    tile_cfg_path = db / "config" / f"tile_{tile_number}" / "tile_config.yaml"
+    data = yaml.safe_load(tile_cfg_path.read_text(encoding="utf-8"))
+    assert data["pipeline"]["stages"] == [
+        {"type": "connectivity"},
+        {"type": "simulation", "backend": "xsim"},
+        {"type": "synthesis"},
+    ]
+
+
+def test_db_tile_set_stage_backend_stage_not_in_pipeline_raises(tmp_path):
+    from veriflow.commands.set_config import db_tile_set_config
+
+    db = _init_db(tmp_path)
+    tile_number = _create_tile(db)
+    db_tile_set_config(db, tile_number, "pipeline", "connectivity,synthesis")
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        db_tile_set_config(db, tile_number, "stage-backend", "simulation:xsim")
+    assert exc_info.value.code == "VF_STAGE_NOT_IN_PIPELINE"
+
+
+# ── technology-strict: technology name + require_pdk=true in one call ────────
+
+def test_project_set_technology_strict_sets_name_and_require_pdk(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    project_set_config(config_path, "technology-strict", "sky130")
+
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["technology"] == {"name": "sky130", "require_pdk": True}
+
+
+def test_project_set_technology_strict_unknown_technology_raises(tmp_path):
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_set_config(config_path, "technology-strict", "not_a_real_tech")
+    assert exc_info.value.code == "VF_TECHNOLOGY_UNKNOWN"
+
+
+def test_db_set_technology_strict_sets_name_and_require_pdk(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    db_set_config(db, "technology-strict", "sky130")
+    data = yaml.safe_load((db / "project_config.yaml").read_text(encoding="utf-8"))
+    assert data["technology"] == {"name": "sky130", "require_pdk": True}
+
+
+def test_db_tile_set_technology_strict_not_a_supported_key(tmp_path):
+    """Deliberate: a tile has no `technology.name` of its own (it's
+    database-wide, see tile_config.py's `_parse_tile_technology_section`),
+    so `technology-strict` isn't offered at the tile level -- unlike
+    project/db, where both fields it writes are part of the real schema."""
+    from veriflow.commands.set_config import db_tile_set_config
+
+    db = _init_db(tmp_path)
+    tile_number = _create_tile(db)
+    with pytest.raises(VeriFlowError) as exc_info:
+        db_tile_set_config(db, tile_number, "technology-strict", "sky130")
+    assert exc_info.value.code == "VF_SET_KEY_UNKNOWN"
+
+
+# ── veriflow.api: project_init ────────────────────────────────────────────────
+
+def test_api_project_init_writes_scaffold(tmp_path):
+    from veriflow.api import project_init
+
+    config_path = tmp_path / "veriflow.yaml"
+    result = project_init(config_path)
+    assert result == {"config": str(config_path)}
+    assert config_path.is_file()
+
+
+def test_api_project_init_sets_top_module(tmp_path):
+    from veriflow.api import project_init
+
+    config_path = tmp_path / "veriflow.yaml"
+    result = project_init(config_path, top_module="counter8")
+    assert result == {"config": str(config_path), "top_module": "counter8"}
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["top_module"] == "counter8"
+
+
+def test_api_project_init_existing_file_raises_without_force(tmp_path):
+    from veriflow.api import project_init
+
+    config_path = tmp_path / "veriflow.yaml"
+    config_path.write_text("design:\n  top_module: existing\n", encoding="utf-8")
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_init(config_path)
+    assert exc_info.value.code == "VF_PROJECT_CONFIG_EXISTS"
+
+
+def test_api_project_init_force_overwrites(tmp_path):
+    from veriflow.api import project_init
+
+    config_path = tmp_path / "veriflow.yaml"
+    config_path.write_text("design:\n  top_module: existing\n", encoding="utf-8")
+    project_init(config_path, force=True)
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert data["design"]["top_module"] == ""
+
+
 # ── veriflow.api: project_set / db_set / db_tile_set ─────────────────────────
 
 def test_api_project_set_writes_file(tmp_path):

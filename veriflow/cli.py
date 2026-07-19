@@ -22,6 +22,9 @@ Usage:
     veriflow pdk status
     veriflow pdk versions <name>
     veriflow pdk remove <name> [--dry-run]
+    veriflow context
+    veriflow mcp serve
+    veriflow mcp install --client <claude-code|claude-desktop>
 """
 
 import argparse
@@ -128,11 +131,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_project_set.add_argument(
         "key",
         help=(
-            "interface | technology | require-pdk | top-module | pipeline | runs-dir | "
-            "rtl-sources | tb-sources | tb-top | name | author | description | version"
+            "interface | technology | technology-strict | require-pdk | top-module | pipeline | "
+            "stage-backend | runs-dir | rtl-sources | tb-sources | tb-top | name | author | "
+            "description | version"
         ),
     )
-    p_project_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
+    p_project_set.add_argument(
+        "value",
+        help=(
+            "New value (e.g. a profile name, comma-separated stage types for pipeline, or "
+            "'<stage_type>:<backend_name>' for stage-backend, e.g. 'simulation:xsim')"
+        ),
+    )
     p_project_set.add_argument(
         "--config", default=_default_config_path(), metavar="PATH",
         help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
@@ -234,8 +244,20 @@ def build_parser() -> argparse.ArgumentParser:
         "set", help="Modify a field in project_config.yaml (comments/formatting preserved)"
     )
     p_db_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
-    p_db_set.add_argument("key", help="interface | technology | require-pdk | id-format | prefix | shuttle | pipeline")
-    p_db_set.add_argument("value", help="New value (e.g. a profile name, or comma-separated stage types for pipeline)")
+    p_db_set.add_argument(
+        "key",
+        help=(
+            "interface | technology | technology-strict | require-pdk | id-format | prefix | "
+            "shuttle | pipeline | stage-backend"
+        ),
+    )
+    p_db_set.add_argument(
+        "value",
+        help=(
+            "New value (e.g. a profile name, comma-separated stage types for pipeline, or "
+            "'<stage_type>:<backend_name>' for stage-backend, e.g. 'simulation:xsim')"
+        ),
+    )
 
     p_db_ir = db_sub.add_parser(
         "import-repo", help="Clone a git repo, precheck it, and import it as a new tile"
@@ -262,9 +284,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_db_tile_set.add_argument("--db", required=True, metavar="PATH", help="Path to the VeriFlow database directory")
     p_db_tile_set.add_argument("--tile", required=True, metavar="XXXX", help="Tile number (e.g. 0001)")
     p_db_tile_set.add_argument(
-        "key", help="top-module | tb-top | name | author | description | tags | objective | pipeline | require-pdk"
+        "key",
+        help=(
+            "top-module | tb-top | name | author | description | tags | objective | pipeline | "
+            "stage-backend | require-pdk"
+        ),
     )
-    p_db_tile_set.add_argument("value", help="New value")
+    p_db_tile_set.add_argument(
+        "value",
+        help="New value (or '<stage_type>:<backend_name>' for stage-backend, e.g. 'simulation:xsim')",
+    )
 
     # doctor (tool availability check)
     sub.add_parser("doctor", help="Check EDA tool availability for all backends")
@@ -340,6 +369,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite config file if it already exists",
     )
 
+    # context (consolidated LLM context text)
+    sub.add_parser("context", help="Print consolidated context text for pasting into a chat/agent without MCP")
+
+    # mcp (Model Context Protocol server namespace)
+    p_mcp = sub.add_parser("mcp", help="MCP server commands")
+    mcp_sub = p_mcp.add_subparsers(dest="mcp_command")
+
+    mcp_sub.add_parser("serve", help="Start the MCP server (stdio transport, blocking)")
+
+    p_mcp_install = mcp_sub.add_parser("install", help="Register VeriFlow's MCP server with an MCP client")
+    p_mcp_install.add_argument(
+        "--client", required=True, choices=["claude-code", "claude-desktop"],
+        help="MCP client to register with",
+    )
+
     return parser
 
 
@@ -395,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
                 doctor_result: dict | None = None
                 pdk_result: dict | None = None
                 interface_result: dict | None = None
+                mcp_result: dict | None = None
 
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
@@ -655,6 +700,34 @@ def main(argv: list[str] | None = None) -> int:
                         from veriflow.commands.pdk import cmd_pdk_remove
                         exit_code = cmd_pdk_remove(args)
 
+                elif args.command == "context":
+                    dispatched = True
+                    from veriflow.commands.context import cmd_context
+                    exit_code = cmd_context(args)
+
+                elif args.command == "mcp":
+                    mcp_cmd = getattr(args, "mcp_command", None)
+                    if mcp_cmd is None:
+                        if json_mode:
+                            error_payload = {
+                                "status": "ERROR",
+                                "error": {
+                                    "code": "VF_UNKNOWN_COMMAND",
+                                    "message": "No mcp subcommand specified",
+                                },
+                            }
+                        else:
+                            parser.print_help()
+                        exit_code = 1
+                    elif mcp_cmd == "serve":
+                        dispatched = True
+                        from veriflow.commands.mcp import cmd_mcp_serve
+                        exit_code = cmd_mcp_serve(args)
+                    elif mcp_cmd == "install":
+                        dispatched = True
+                        from veriflow.commands.mcp import cmd_mcp_install
+                        exit_code, mcp_result = cmd_mcp_install(args)
+
                 else:
                     if json_mode:
                         error_payload = {
@@ -707,6 +780,18 @@ def main(argv: list[str] | None = None) -> int:
                             result_payload = {
                                 "status": "SUCCESS" if exit_code == 0 else "FAIL",
                                 "command": f"interface {_interface_cmd}",
+                            }
+                    elif args.command == "context":
+                        from veriflow.llms_txt import generate_llms_txt
+                        result_payload = {"status": "SUCCESS", "content": generate_llms_txt()}
+                    elif args.command == "mcp":
+                        _mcp_cmd = getattr(args, "mcp_command", None)
+                        if _mcp_cmd == "install" and mcp_result is not None:
+                            result_payload = mcp_result
+                        else:
+                            result_payload = {
+                                "status": "SUCCESS" if exit_code == 0 else "FAIL",
+                                "command": f"mcp {_mcp_cmd}",
                             }
 
             except VeriFlowError as e:

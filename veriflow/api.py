@@ -1133,17 +1133,48 @@ def db_get_run(db_path: str | Path, tile: str | int, run: str | int) -> dict:
     return result.to_dict()
 
 
+def project_init(
+    config_path: str | Path = "veriflow.yaml", *, top_module: str | None = None, force: bool = False
+) -> dict:
+    """Scaffold a new, commented veriflow.yaml (Project Mode) at
+    *config_path*, optionally setting `design.top_module` in the same call.
+
+    Returns {"config": str(config_path)} (plus "top_module" if it was set).
+    Raises VeriFlowError(VF_PROJECT_CONFIG_EXISTS) if config_path already
+    exists and force is False.
+    """
+    import argparse
+
+    from veriflow.commands.init_project import cmd_init_project
+
+    config_path = _normalize_path(config_path)
+    cmd_init_project(argparse.Namespace(config=str(config_path), force=force))
+
+    result: dict = {"config": str(config_path)}
+    if top_module:
+        from veriflow.commands.set_config import project_set_config
+
+        project_set_config(config_path, "top-module", top_module)
+        result["top_module"] = top_module
+    return result
+
+
 def project_set(config_path: str | Path, key: str, value: str) -> dict:
     """Modify a field in veriflow.yaml (Project Mode) without hand-editing
     YAML -- comments and formatting elsewhere in the file are preserved.
 
     Returns {"key": key, "value": value, "config": str(config_path)}.
 
-    Supported keys: interface, technology, top-module, pipeline, runs-dir.
-    Raises VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported key,
-    VeriFlowError(VF_SET_INTERFACE_INVALID) / VF_TECHNOLOGY_UNKNOWN /
-    VF_PIPELINE_STAGE_UNKNOWN for an invalid value, or
-    VeriFlowError(VF_PROJECT_CONFIG_NOT_FOUND) if config_path doesn't exist.
+    Supported keys: interface, technology, technology-strict (technology +
+    require_pdk=true in one call), require-pdk, top-module, pipeline,
+    stage-backend (override one stage's backend, e.g.
+    "simulation:xsim", without touching the rest of the pipeline),
+    runs-dir. Raises VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported
+    key, VeriFlowError(VF_SET_INTERFACE_INVALID) / VF_TECHNOLOGY_UNKNOWN /
+    VF_PIPELINE_STAGE_UNKNOWN / VF_SET_STAGE_BACKEND_FORMAT_INVALID /
+    VF_SET_STAGE_BACKEND_UNKNOWN / VF_STAGE_NOT_IN_PIPELINE for an invalid
+    value, or VeriFlowError(VF_PROJECT_CONFIG_NOT_FOUND) if config_path
+    doesn't exist.
     """
     from veriflow.commands.set_config import project_set_config
 
@@ -1156,11 +1187,13 @@ def db_set(db_path: str | Path, key: str, value: str) -> dict:
 
     Returns {"key": key, "value": value, "config": str(config_path)}.
 
-    Supported keys: interface, technology, id-format, prefix, shuttle,
-    pipeline. Raises VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported
-    key, or a value-specific code (VF_SET_INTERFACE_INVALID,
-    VF_TECHNOLOGY_UNKNOWN, VF_ID_FORMAT_INVALID, VF_PIPELINE_STAGE_UNKNOWN)
-    for an invalid value.
+    Supported keys: interface, technology, technology-strict, require-pdk,
+    id-format, prefix, shuttle, pipeline, stage-backend. Raises
+    VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported key, or a
+    value-specific code (VF_SET_INTERFACE_INVALID, VF_TECHNOLOGY_UNKNOWN,
+    VF_ID_FORMAT_INVALID, VF_PIPELINE_STAGE_UNKNOWN,
+    VF_SET_STAGE_BACKEND_FORMAT_INVALID, VF_SET_STAGE_BACKEND_UNKNOWN,
+    VF_STAGE_NOT_IN_PIPELINE) for an invalid value.
     """
     from veriflow.commands.set_config import db_set_config
 
@@ -1174,8 +1207,10 @@ def db_tile_set(db_path: str | Path, tile: str | int, key: str, value: str) -> d
     Returns {"key": key, "value": value, "tile": tile_number_str, "config": ...}.
 
     Supported keys: top-module, tb-top, name, author, description, tags,
-    objective, pipeline. Raises VeriFlowError(VF_TILE_NUMBER_INVALID) if
-    *tile* isn't numeric, VeriFlowError(VF_TILE_CONFIG_NOT_FOUND) if the
+    objective, pipeline, stage-backend, require-pdk. No key sets a tile's
+    technology *name* -- that's database-wide (see `db_set`); a tile can
+    only override `require_pdk`. Raises VeriFlowError(VF_TILE_NUMBER_INVALID)
+    if *tile* isn't numeric, VeriFlowError(VF_TILE_CONFIG_NOT_FOUND) if the
     tile doesn't exist, VeriFlowError(VF_SET_KEY_UNKNOWN) for an
     unsupported key.
     """

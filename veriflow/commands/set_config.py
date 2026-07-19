@@ -14,22 +14,40 @@ import argparse
 import warnings
 from pathlib import Path
 
+import yaml
+
 from veriflow.core import VeriFlowError
-from veriflow.core.yaml_config_editor import set_yaml_key, set_yaml_pipeline
+from veriflow.core.backends.registry import _CONNECTIVITY, _SIMULATION, _SYNTHESIS
+from veriflow.core.yaml_config_editor import set_yaml_key, set_yaml_nested_keys, set_yaml_pipeline
 from veriflow.models.interface_profile import has_interface_profile
-from veriflow.models.pipeline_config import VALID_STAGE_TYPES
+from veriflow.models.pipeline_config import DEFAULT_PIPELINE, PipelineConfig, VALID_STAGE_TYPES
 from veriflow.models.technology_profile import get_technology_profile
 from veriflow.ui.output import print_done
 
 _PROJECT_SET_KEYS = (
-    "interface", "technology", "require-pdk", "top-module", "pipeline", "runs-dir",
-    "rtl-sources", "tb-sources", "tb-top", "name", "author", "description", "version",
+    "interface", "technology", "technology-strict", "require-pdk", "top-module", "pipeline",
+    "stage-backend", "runs-dir", "rtl-sources", "tb-sources", "tb-top", "name", "author",
+    "description", "version",
 )
-_DB_SET_KEYS = ("interface", "technology", "require-pdk", "id-format", "prefix", "shuttle", "pipeline")
+_DB_SET_KEYS = (
+    "interface", "technology", "technology-strict", "require-pdk", "id-format", "prefix",
+    "shuttle", "pipeline", "stage-backend",
+)
 _DB_TILE_SET_KEYS = (
     "top-module", "tb-top", "name", "author", "description", "tags", "objective", "pipeline",
-    "require-pdk",
+    "stage-backend", "require-pdk",
 )
+
+# stage type -> registry dict of backend_name -> backend class, used to
+# validate `stage-backend`'s <backend_name> and to list valid options for
+# that stage's category in the error message (mirrors pipeline_builder.py's
+# stage-type-to-registry mapping -- VALID_STAGE_TYPES' three entries line up
+# 1:1 with these three registries).
+_STAGE_BACKEND_REGISTRY = {
+    "connectivity": _CONNECTIVITY,
+    "simulation": _SIMULATION,
+    "synthesis": _SYNTHESIS,
+}
 
 # Same placeholder set format_tile_id() (veriflow/core/tile_id.py) accepts --
 # kept in sync manually since id_format validation here is a pre-flight
@@ -100,6 +118,80 @@ def _parse_pipeline_value(value: str) -> list[dict]:
                 details={"type": stage_type, "valid_types": list(VALID_STAGE_TYPES)},
             )
     return [{"type": stage_type} for stage_type in types]
+
+
+def _validate_stage_backend_value(value: str) -> tuple[str, str]:
+    """Parses `stage-backend`'s "<stage_type>:<backend_name>" value.
+    Returns (stage_type, backend_name). Raises VeriFlowError
+    (VF_SET_STAGE_BACKEND_FORMAT_INVALID / VF_SET_STAGE_BACKEND_UNKNOWN)."""
+    stage_type, sep, backend_name = value.partition(":")
+    stage_type = stage_type.strip()
+    backend_name = backend_name.strip()
+    if not sep or stage_type not in VALID_STAGE_TYPES or not backend_name:
+        raise VeriFlowError(
+            f"Invalid stage-backend value: {value!r}. Expected format "
+            "'<stage_type>:<backend_name>', e.g. 'simulation:xsim'. "
+            f"Valid stage types: {', '.join(VALID_STAGE_TYPES)}",
+            code="VF_SET_STAGE_BACKEND_FORMAT_INVALID",
+            details={"value": value, "valid_types": list(VALID_STAGE_TYPES)},
+        )
+    registry = _STAGE_BACKEND_REGISTRY[stage_type]
+    if backend_name not in registry:
+        raise VeriFlowError(
+            f"Unknown {stage_type} backend: {backend_name!r}. "
+            f"Available {stage_type} backends: {', '.join(sorted(registry))}",
+            code="VF_SET_STAGE_BACKEND_UNKNOWN",
+            details={
+                "stage_type": stage_type,
+                "backend": backend_name,
+                "valid_backends": sorted(registry),
+            },
+        )
+    return stage_type, backend_name
+
+
+def _stage_to_dict(stage) -> dict:
+    d = {"type": stage.type}
+    if stage.backend:
+        d["backend"] = stage.backend
+    return d
+
+
+def _load_current_pipeline_stages(config_path: Path) -> list[dict]:
+    """Current `pipeline.stages` as a list of {"type", ["backend"]} dicts,
+    read directly from *config_path* (a plain, read-only yaml.safe_load --
+    not the comment-preserving editor, which is write-only). Falls back to
+    DEFAULT_PIPELINE (all three stage types, no backend override) when the
+    file has no `pipeline:` section yet."""
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    pipeline_section = raw.get("pipeline")
+    if isinstance(pipeline_section, dict) and pipeline_section.get("stages"):
+        parsed = PipelineConfig.from_dict(pipeline_section)
+    else:
+        parsed = DEFAULT_PIPELINE
+    return [_stage_to_dict(s) for s in parsed.stages]
+
+
+def _apply_stage_backend(config_path: Path, value: str) -> None:
+    """Implements the `stage-backend` key: update only the named stage's
+    `backend` field in the current pipeline, leaving every other stage (and
+    its own backend, if any) untouched. Raises VeriFlowError
+    (VF_STAGE_NOT_IN_PIPELINE) if *stage_type* isn't part of the current
+    pipeline -- add it first via the `pipeline` key."""
+    stage_type, backend_name = _validate_stage_backend_value(value)
+    stages = _load_current_pipeline_stages(config_path)
+    for stage in stages:
+        if stage["type"] == stage_type:
+            stage["backend"] = backend_name
+            break
+    else:
+        raise VeriFlowError(
+            f"Stage {stage_type!r} is not in the current pipeline for {config_path}. "
+            f"Add it first, e.g. `pipeline` = a comma-separated list including {stage_type!r}.",
+            code="VF_STAGE_NOT_IN_PIPELINE",
+            details={"stage_type": stage_type, "config": str(config_path)},
+        )
+    set_yaml_pipeline(config_path, stages)
 
 
 def _validate_id_format_value(value: str) -> str:
@@ -178,6 +270,9 @@ def project_set_config(config_path: str | Path, key: str, value: str) -> dict:
     elif key == "technology":
         _validate_technology_value(value)
         set_yaml_key(config_path, ("technology", "name"), value)
+    elif key == "technology-strict":
+        _validate_technology_value(value)
+        set_yaml_nested_keys(config_path, "technology", {"name": value, "require_pdk": True})
     elif key == "require-pdk":
         set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     elif key == "top-module":
@@ -185,6 +280,8 @@ def project_set_config(config_path: str | Path, key: str, value: str) -> dict:
     elif key == "pipeline":
         stages = _parse_pipeline_value(value)
         set_yaml_pipeline(config_path, stages)
+    elif key == "stage-backend":
+        _apply_stage_backend(config_path, value)
     elif key == "runs-dir":
         set_yaml_key(config_path, ("output", "runs_dir"), value)
     elif key == "rtl-sources":
@@ -237,6 +334,9 @@ def db_set_config(db_path: str | Path, key: str, value: str) -> dict:
     elif key == "technology":
         _validate_technology_value(value)
         set_yaml_key(config_path, ("technology", "name"), value)
+    elif key == "technology-strict":
+        _validate_technology_value(value)
+        set_yaml_nested_keys(config_path, "technology", {"name": value, "require_pdk": True})
     elif key == "require-pdk":
         set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     elif key == "id-format":
@@ -249,6 +349,8 @@ def db_set_config(db_path: str | Path, key: str, value: str) -> dict:
     elif key == "pipeline":
         stages = _parse_pipeline_value(value)
         set_yaml_pipeline(config_path, stages)
+    elif key == "stage-backend":
+        _apply_stage_backend(config_path, value)
     else:
         raise _unknown_key_error(key, _DB_SET_KEYS)
 
@@ -294,6 +396,8 @@ def db_tile_set_config(db_path: str | Path, tile: str | int, key: str, value: st
     elif key == "pipeline":
         stages = _parse_pipeline_value(value)
         set_yaml_pipeline(config_path, stages)
+    elif key == "stage-backend":
+        _apply_stage_backend(config_path, value)
     elif key == "require-pdk":
         set_yaml_key(config_path, ("technology", "require_pdk"), _parse_bool_value(value))
     else:
