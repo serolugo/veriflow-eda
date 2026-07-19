@@ -525,3 +525,118 @@ license error visible in the log file — not a crash, and not a status
 that looks like a design defect when it wasn't one. Users debugging a
 `"FAILED"` run will read the log either way; a license error there is no
 different from a syntax error in that respect.
+
+---
+
+## 9. Setting up an already-shipped backend
+
+Sections 1–8 are for *writing* a new backend. If you just need to get an
+already-implemented one working on your own machine, this section is for
+you.
+
+### Vivado (`xsim`) setup
+
+`xsim` is `icarus`'s alternative simulation backend (§4 shows how to
+select it). It needs Vivado installed, and its `bin/` directory on
+`PATH` — VeriFlow itself installs nothing here (see §8's licensing note;
+the same "VeriFlow doesn't manage licenses" applies to installation
+too). Validated end-to-end in this repo against a real Vivado 2024.1
+install on Windows.
+
+#### Windows
+
+Vivado's CLI tools live under `C:\Xilinx\Vivado\<version>\bin`, e.g.:
+
+```
+C:\Xilinx\Vivado\2024.1\bin
+```
+
+**Add it permanently** (recommended): Windows Settings → search "Edit
+the environment variables for your account" (or Control Panel → System →
+Advanced system settings → Environment Variables) → select `Path` under
+"User variables" (or "System variables" for all users) → **Edit** → **New**
+→ paste the path above → OK through every dialog. **Restart any open
+terminal/IDE** afterward — PATH changes never apply to already-running
+shells.
+
+**Add it temporarily**, for one PowerShell session only (lost when that
+window closes):
+
+```powershell
+$env:PATH += ";C:\Xilinx\Vivado\2024.1\bin"
+```
+
+**Verify the PATH entry resolved correctly:**
+
+```powershell
+where.exe xvlog
+```
+
+Expect to see **both** `xvlog` (the extensionless file) and `xvlog.bat`
+listed. Vivado ships both, and it's specifically the `.bat` VeriFlow
+needs to actually invoke — see "A Windows gotcha that will very likely
+bite your tool too" above (§5) for exactly why the bare name alone isn't
+enough, and how VeriFlow already handles it (`shutil.which`'s own
+resolution, confirmed against this same install).
+
+**Confirm VeriFlow sees it:**
+
+```powershell
+veriflow doctor
+```
+
+`[SIMULATION] > xsim` should show `[OK]` for `xvlog`, `xelab`, and
+`xsim`, each with `Vivado Simulator v<version>` as the version string. If
+it still shows `[FAIL]` right after editing PATH, open a fresh terminal
+(and/or restart your IDE) — this is almost always a stale-PATH shell, not
+a real problem with the install.
+
+#### Linux / macOS
+
+*Not exercised end-to-end in this environment as of this writing —
+documented from Vivado's standard installation layout, not independently
+verified here.*
+
+Vivado typically installs to `/opt/Xilinx/Vivado/<version>` (or wherever
+was chosen at install time). Either:
+
+- add `<install_dir>/bin` to `PATH` directly (e.g. in `~/.bashrc`/
+  `~/.zshrc` for a permanent entry), or
+- source Vivado's own environment script each session, as Xilinx
+  documents:
+  ```sh
+  source /opt/Xilinx/Vivado/<version>/settings64.sh
+  ```
+
+Same verification command either way:
+
+```sh
+veriflow doctor
+```
+
+#### `` `timescale `` compatibility — a real finding from live testing
+
+Vivado's `xsim` is **stricter than Icarus** about `` `timescale ``
+declarations: if some modules in a design declare one and others don't,
+elaboration fails with something like:
+
+> Module X doesn't have a timescale but at least one module in design
+> has a timescale (XSIM 43-4099)
+
+Icarus doesn't enforce this consistency at all — a design that runs
+cleanly under `icarus` can fail immediately under `xsim` for exactly this
+reason, with nothing actually wrong in the RTL itself.
+
+**Recommendation**: declare `` `timescale 1ns/1ps `` (or whatever value
+your testbench actually uses) at the top of **every** `.v` file in the
+project — not just the testbench — for compatibility across backends,
+rather than relying on Icarus's more permissive default.
+
+### Questa (Mentor/Siemens) setup
+
+**Planned, not yet implemented.** VeriFlow has no `QuestaSimulationBackend`
+today — this entry exists so the intent is visible without promising
+something that isn't there yet. §1–§8 above document the exact contract
+a `QuestaSimulationBackend` would need to satisfy; `XsimSimulationBackend`
+(§7) is the closest existing reference for a multi-tool commercial
+simulation flow (compile → elaborate → run), which Questa also follows.

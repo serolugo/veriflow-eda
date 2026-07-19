@@ -3,6 +3,11 @@
 VeriFlow requires **iverilog** (Icarus Verilog) and **yosys**, installed
 independently. oss-cad-suite is not used or required.
 
+**Optional**: `xsim` (Vivado) is an alternative simulation backend to
+`iverilog` — not required, only needed if you actually select it
+(`pipeline.stages[].backend: xsim` in Database Mode, `execution.simulation_backend:
+xsim` in Project Mode). See "xsim (Vivado) — optional" below.
+
 Verify the installation with:
 
 ```sh
@@ -94,6 +99,25 @@ This Windows machine has iverilog 14.0 and yosys 0.63 available through
 oss-cad-suite (`C:\Users\Roman\oss-cad-suite\bin\`). MSYS2 is not installed
 locally; the winget+MSYS2 method is verified in CI
 (`windows-latest` on GitHub Actions).
+
+---
+
+## xsim (Vivado) — optional
+
+`xsim` is an alternative simulation backend to `iverilog` — not required
+for VeriFlow to work, only if you select it. Setup is Vivado-specific
+(add its `bin/` directory to `PATH`, permanently or per-session) and
+platform-dependent enough that it's documented in full, with a validated
+Windows walkthrough, in
+[`CUSTOM_BACKENDS.md`'s "Setting up an already-shipped backend" section](CUSTOM_BACKENDS.md#9-setting-up-an-already-shipped-backend)
+rather than duplicated here. Same verification command either way:
+
+```sh
+veriflow doctor
+```
+
+`[SIMULATION] > xsim` should show `[OK]` for `xvlog`/`xelab`/`xsim` once
+set up correctly.
 
 ---
 
