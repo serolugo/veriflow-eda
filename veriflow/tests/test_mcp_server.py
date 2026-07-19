@@ -19,8 +19,10 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from veriflow import mcp_server
-from veriflow.core import VeriFlowError
+pytest.importorskip("fastmcp")  # optional dep (setup.py's `mcp` extra) -- see mcp_server.py's _StubMCP
+
+from veriflow import mcp_server  # noqa: E402
+from veriflow.core import VeriFlowError  # noqa: E402
 
 skip_no_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not found in PATH")
 

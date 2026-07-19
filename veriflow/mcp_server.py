@@ -27,11 +27,50 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastmcp import FastMCP
-
 from veriflow.core import VeriFlowError
 
-mcp = FastMCP(name="VeriFlow")
+try:
+    from fastmcp import FastMCP
+
+    FASTMCP_AVAILABLE = True
+except ImportError:
+    FASTMCP_AVAILABLE = False
+
+
+class _StubMCP:
+    """Stand-in for a real FastMCP instance when the `fastmcp` package
+    isn't installed (it's an optional dependency -- setup.py's `mcp`
+    extra). Every `@mcp.tool`/`@mcp.resource` decorator below still needs
+    somewhere to attach to at import time so the module itself stays
+    importable -- e.g. so `veriflow doctor`/other non-MCP commands keep
+    working in a `pip install veriflow-eda` (no extras) environment, and so
+    test collection doesn't fail before test files get a chance to skip.
+    Both decorators are pure no-ops here: they register nothing and return
+    the wrapped function/resource unchanged, same as `@mcp.tool`'s own
+    "registers as a side effect, returns the function unchanged" contract
+    (see this module's own docstring) -- so every tool function below
+    remains a plain, directly callable Python function either way. Actually
+    *serving* the tools over MCP (`main()`) is a separate, later failure
+    point -- see its own FASTMCP_AVAILABLE check -- since that's the only
+    place a stubbed-out registration would actually matter."""
+
+    def tool(self, fn=None, **kwargs):
+        if fn is not None:
+            return fn
+
+        def decorator(f):
+            return f
+
+        return decorator
+
+    def resource(self, *args, **kwargs):
+        def decorator(f):
+            return f
+
+        return decorator
+
+
+mcp = FastMCP(name="VeriFlow") if FASTMCP_AVAILABLE else _StubMCP()
 
 
 def _error(exc: VeriFlowError) -> dict:
@@ -619,7 +658,19 @@ def main() -> None:
     JSON-RPC protocol itself -- any stray console output there would
     corrupt it, so it's silenced for the lifetime of the server, the same
     way cli.py's own --json mode silences it (console.quiet is a real
-    Rich Console attribute, not project-specific)."""
+    Rich Console attribute, not project-specific).
+
+    Raises VeriFlowError(VF_MCP_FASTMCP_NOT_INSTALLED) if the optional
+    `fastmcp` dependency isn't installed -- the module itself still
+    imports fine without it (see `_StubMCP` above), so this is the actual
+    point of failure, at run time rather than at import time."""
+    if not FASTMCP_AVAILABLE:
+        raise VeriFlowError(
+            "fastmcp is required for the MCP server -- install with: "
+            "pip install veriflow-eda[mcp]",
+            code="VF_MCP_FASTMCP_NOT_INSTALLED",
+        )
+
     from veriflow.ui.output import console
 
     console.quiet = True

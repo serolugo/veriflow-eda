@@ -57,7 +57,7 @@ jobs:
 
       # ── Shared ───────────────────────────────────────────────────────────────
       - name: Install veriflow (editable)
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,mcp]"
 
       - name: Verify tools (veriflow doctor)
         run: python -m veriflow.cli doctor

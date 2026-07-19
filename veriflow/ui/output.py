@@ -6,6 +6,7 @@ Styled output helpers used by all VeriFlow commands.
 
 from pathlib import Path
 from rich.console import Console
+from rich.markup import escape as _escape_markup
 from rich.table import Table
 from rich.text import Text
 from rich.box import Box
@@ -82,8 +83,14 @@ def print_error(message: str) -> None:
 
 def print_cli_error(message: str) -> None:
     """Print the top-level `[ERROR] <message>` line used by the CLI's central
-    error handler (cli.py), in pastel red, to stderr."""
-    error_console.print(f"[error]\\[ERROR][/error] {message}")
+    error handler (cli.py), in pastel red, to stderr.
+
+    *message* comes from a VeriFlowError raised anywhere in the codebase --
+    not a fixed string this module controls -- so it's escaped before
+    interpolation: an unescaped `[...]` inside it (e.g. a literal
+    "pip install veriflow-eda[mcp]") would otherwise be parsed as Rich
+    markup and silently swallowed instead of printed."""
+    error_console.print(f"[error]\\[ERROR][/error] {_escape_markup(message)}")
 
 
 def print_step(prefix: str, message: str) -> None:
