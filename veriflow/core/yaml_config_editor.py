@@ -301,28 +301,73 @@ def _set_yaml_key_ruamel(
     old_value = node.get(key_path[-1])
     if (
         isinstance(value, list)
-        and not isinstance(old_value, list)
+        and not _is_block_style(old_value)
         and hasattr(node, "ca")
         and key_path[-1] in node.ca.items
     ):
-        # Replacing a scalar/flow value (e.g. `rtl_sources: []  # comment`)
-        # with a multi-line block sequence while keeping that value's
-        # attached end-of-line comment confuses ruamel's comment-anchoring:
-        # the comment stays put but the new list's items get dumped several
+        # Replacing a scalar/flow value (e.g. `rtl_sources: []  # comment`,
+        # or a hand-written `rtl_sources: [a.v, b.v]  # comment`) with a
+        # multi-line block sequence while keeping that value's attached
+        # end-of-line comment confuses ruamel's comment-anchoring: the
+        # comment stays put but the new list's items get dumped several
         # lines further down (after the next few keys/comments), landing
-        # nowhere near the key they belong to even though the file still
-        # parses correctly. Dropping the comment when shifting shape from
-        # flow/scalar to block avoids that -- a stale inline hint next to a
-        # field the user just populated for real has served its purpose
-        # anyway. Only guards this specific flow-to-block transition: an
-        # existing block *list* being replaced by a new one (the common
-        # case after the first `project set rtl-sources`) is unaffected and
-        # already round-trips its surrounding comments correctly on its own.
+        # nowhere near the key they belong to -- confusing on its own, and
+        # actively corrupting if a *later* edit inserts any new active
+        # top-level key ahead of that stranded position (e.g. uncommenting
+        # `# interface:`): that new key terminates the mapping's
+        # value-scanning before the parser ever reaches the orphaned
+        # sequence, producing invalid YAML
+        # (`ParserError: expected <block end>, but found
+        # '<block sequence start>'`) that only surfaces on the *next* read,
+        # not at the `set` call that caused it (see
+        # dev-docs/SMOKE_TEST_FINDINGS.md, 2026-07-19).
+        #
+        # Dropping the comment when shifting shape from flow/scalar to
+        # block avoids that -- a stale inline hint next to a field the user
+        # just populated for real has served its purpose anyway.
+        #
+        # `_is_block_style` (not a bare `isinstance(old_value, list)`) is
+        # what decides whether this transition needs guarding: an empty
+        # flow list (`rtl_sources: []`, the scaffold default) is *already*
+        # `isinstance(..., list)` == True, so a plain list check never
+        # fires here for the single most common case -- the very first
+        # `project set rtl-sources`/`tb-sources` call against a fresh
+        # scaffold. Only an *existing block* list being replaced by a new
+        # one (the common case after the *second* `project set
+        # rtl-sources`) is genuinely unaffected and already round-trips its
+        # surrounding comments correctly on its own -- that's the one case
+        # this guard must NOT fire for, to avoid dropping a comment that
+        # doesn't need dropping.
         del node.ca.items[key_path[-1]]
 
     node[key_path[-1]] = value
 
     _dump_ruamel(data, path, yaml)
+
+
+def _is_block_style(value: Any) -> bool:
+    """True only when *value* is an existing ruamel block-style sequence
+    (multi-line `- item`) or mapping -- the one shape whose comments
+    already round-trip safely on their own (see the guard above).
+
+    Everything else needs the guard's protection:
+      - A plain Python scalar or `None` (no `.fa` attribute at all) -- the
+        original scalar-to-list transition the guard was written for.
+      - An *empty* flow collection (`rtl_sources: []`): ruamel has nothing
+        to record a style for, so `fa.flow_style()` is `None`, not `False`
+        -- this is the exact case the pre-fix `isinstance(old_value, list)`
+        check let slip through, since `[]` already satisfies `isinstance`.
+      - An explicit non-empty flow collection (`rtl_sources: [a, b]`):
+        `fa.flow_style()` is `True`.
+
+    Only a real ruamel `.fa.flow_style() is False` -- set exclusively by
+    the block-sequence/mapping parser -- means "already block style,
+    nothing to fix."
+    """
+    fa = getattr(value, "fa", None)
+    if fa is None:
+        return False
+    return fa.flow_style() is False
 
 
 def _set_yaml_pipeline_ruamel(path: Path, stages: list[dict]) -> None:

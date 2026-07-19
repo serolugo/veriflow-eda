@@ -1243,6 +1243,174 @@ def test_yaml_editor_ruamel_null_value(tmp_path):
     assert data["a"] is None
 
 
+# ── yaml_config_editor: ruamel regression (2026-07-19) -- empty flow list ────
+# guard bypass corrupting the document across sequential `set` calls. Found by
+# scripts/smoke_test_e2e.py -- see dev-docs/SMOKE_TEST_FINDINGS.md.
+#
+# Root cause: `_set_yaml_key_ruamel`'s guard that clears a key's stale
+# trailing comment before replacing its value with a new block-style list
+# checked `not isinstance(old_value, list)` -- but the scaffold's own
+# default (`rtl_sources: []`) is *already* a list (an empty one, ruamel
+# reports `fa.flow_style() is None` for it, not a real block sequence), so
+# the guard never fired for the single most common case: the very first
+# `project set rtl-sources ...`/`tb-sources ...` call against a fresh
+# scaffold. The stale comment then causes ruamel to dump the new list's
+# items far away from their own key (still technically parseable YAML on
+# its own) -- but the NEXT `set` call that inserts any new active top-level
+# key ahead of that stranded position (uncommenting `# interface:`, adding
+# `pipeline:`, ...) terminates the mapping's value-scanning early, breaking
+# the document into invalid YAML (`ParserError: expected <block end>, but
+# found '<block sequence start>'`) -- silently: the `set` call that tips it
+# over reports success, the corruption only surfaces on the *next* read.
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_yaml_editor_ruamel_empty_flow_list_replaced_by_block_list_stays_valid_and_in_place(tmp_path):
+    """Minimal repro at the set_yaml_key level (no project_set involved):
+    an empty flow list with a multi-line trailing comment -- the exact
+    shape of the scaffold's `rtl_sources: []` -- replaced by a populated
+    block list must round-trip as valid YAML, with the new items landing
+    right after their own key, not appended after unrelated later content."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "design:\n"
+        '  top_module: ""        # required -- name of the RTL top module\n'
+        "  rtl_sources: []       # required -- list of RTL source file paths,\n"
+        "                        # relative to this file's directory\n"
+        "\n"
+        "# interface:\n"
+        '#   name: ""            # optional\n',
+        encoding="utf-8",
+    )
+    set_yaml_key(path, ("design", "rtl_sources"), ["counter.v", "top.v"])
+    text = path.read_text(encoding="utf-8")
+
+    data = yaml.safe_load(text)  # must not raise -- this alone catches the corruption
+    assert data["design"]["rtl_sources"] == ["counter.v", "top.v"]
+
+    lines = text.splitlines()
+    key_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("rtl_sources:"))
+    item_idx = next(i for i, line in enumerate(lines) if "counter.v" in line)
+    # The list items must land right after their own key (allowing for the
+    # sibling `# interface:` comment block that follows in real scaffolds),
+    # not several sections away -- a loose bound that would fail hard
+    # against the pre-fix behavior (observed landing 10+ lines away, after
+    # unrelated commented sections).
+    assert item_idx - key_idx <= 3, f"rtl_sources items landed {item_idx - key_idx} lines after their key"
+
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_yaml_editor_ruamel_nonempty_flow_list_replaced_by_block_list_stays_valid(tmp_path):
+    """Same hazard, for a hand-written non-empty flow list (`[a, b]`) --
+    the pre-fix guard's `isinstance(old_value, list)` check skipped this
+    case too (True for any list, empty or not), even though it hits the
+    identical ruamel comment-anchoring bug."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "design:\n"
+        "  rtl_sources: [old.v]  # a comment\n"
+        "\n"
+        "# interface:\n"
+        '#   name: ""\n',
+        encoding="utf-8",
+    )
+    set_yaml_key(path, ("design", "rtl_sources"), ["a.v", "b.v", "c.v"])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))  # must not raise
+    assert data["design"]["rtl_sources"] == ["a.v", "b.v", "c.v"]
+
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_yaml_editor_ruamel_block_list_replaced_by_block_list_keeps_comment(tmp_path):
+    """The already-safe case (block list -> block list, e.g. a second
+    `project set rtl-sources ...` call) must be unaffected by the fix --
+    still no unnecessary comment-clearing."""
+    from veriflow.core.yaml_config_editor import set_yaml_key
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "design:\n"
+        "  rtl_sources:  # a comment\n"
+        "    - old.v\n",
+        encoding="utf-8",
+    )
+    set_yaml_key(path, ("design", "rtl_sources"), ["new.v"])
+    text = path.read_text(encoding="utf-8")
+    assert "# a comment" in text
+    data = yaml.safe_load(text)
+    assert data["design"]["rtl_sources"] == ["new.v"]
+
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_project_set_sequential_calls_yield_valid_yaml_after_every_call(tmp_path):
+    """The exact repro sequence scripts/smoke_test_e2e.py found: on a real
+    project init scaffold, `rtl-sources` (list, replacing the scaffold's
+    `rtl_sources: []`) followed by `interface`/`technology`/`pipeline`
+    (each uncommenting or appending a new top-level key) must leave valid,
+    re-parseable YAML after EVERY single call -- not just at the end. This
+    is the coverage gap that let the bug ship: every pre-existing test
+    called exactly one `*_set_config()` per fresh scaffold."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    calls = [
+        ("top-module", "smoke_top"),
+        ("rtl-sources", "counter.v,top.v"),
+        ("interface", "null"),
+        ("technology", "generic"),
+        ("pipeline", "connectivity,simulation,synthesis"),
+    ]
+    for key, value in calls:
+        project_set_config(config_path, key, value)
+        text = config_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(text)  # must not raise after ANY call in the sequence
+        assert data is not None, f"YAML went empty after set {key}={value!r}"
+
+    final = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert final["design"]["top_module"] == "smoke_top"
+    assert final["design"]["rtl_sources"] == ["counter.v", "top.v"]
+    assert final["interface"] is None
+    assert final["technology"] == {"name": "generic"}
+    assert final["pipeline"] == {
+        "stages": [{"type": "connectivity"}, {"type": "simulation"}, {"type": "synthesis"}]
+    }
+
+
+@pytest.mark.skipif(not _HAS_RUAMEL, reason="ruamel.yaml not installed in this environment")
+def test_project_set_long_mixed_type_sequence_yields_valid_yaml_after_every_call(tmp_path):
+    """Regression coverage for the class of bug, not just the one repro:
+    7 sequential `set` calls mixing every value shape `project set`
+    produces (string, list, bool, null/clear, nested list-of-dicts,
+    block scalar) on the same file, re-parsing after each one."""
+    from veriflow.commands.set_config import project_set_config
+
+    config_path = _write_project_yaml(tmp_path)
+    calls = [
+        ("top-module", "top"),                              # scalar
+        ("rtl-sources", "a.v,b.v"),                          # list (from empty flow default)
+        ("require-pdk", "true"),                             # bool
+        ("tb-sources", "tb_a.v"),                            # list (from empty flow default)
+        ("interface", "null"),                               # explicit null / clear
+        ("pipeline", "connectivity,synthesis"),              # nested list-of-dicts
+        ("description", "A short description."),             # block scalar
+    ]
+    for key, value in calls:
+        project_set_config(config_path, key, value)
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))  # must not raise
+        assert data is not None, f"YAML went empty after set {key}={value!r}"
+        assert data["design"]["top_module"] == "top"  # earlier fields survive every later edit
+
+    final = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert final["design"]["rtl_sources"] == ["a.v", "b.v"]
+    assert final["technology"] == {"require_pdk": True}
+    assert final["design"]["tb_sources"] == ["tb_a.v"]
+    assert final["interface"] is None
+    assert final["pipeline"] == {"stages": [{"type": "connectivity"}, {"type": "synthesis"}]}
+    assert final["metadata"]["description"].strip() == "A short description."
+
+
 # ── yaml_config_editor: text-patch fallback (no ruamel.yaml) ─────────────────
 
 def test_yaml_editor_fallback_updates_existing_top_level_key(tmp_path):
