@@ -5,6 +5,7 @@
   <a href="https://pypi.org/project/veriflow-eda/"><img src="https://img.shields.io/pypi/v/veriflow-eda.svg" alt="PyPI"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://github.com/serolugo/veriflow/blob/main/LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://serolugo.github.io/veriflow/"><img src="https://img.shields.io/badge/docs-mkdocs-blue" alt="Docs"></a>
 </p>
 
 RTL verification and documentation framework for multi-project ASIC chip design. Automates interface/connectivity checking, simulation, and synthesis using open-source tooling (with real PDK-backed technology mapping and pluggable backends), and generates structured run records per execution.

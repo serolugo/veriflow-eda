@@ -1,5 +1,6 @@
 site_name: VeriFlow
 site_description: Lightweight RTL verification and documentation framework
+site_url: https://serolugo.github.io/veriflow/
 docs_dir: docs
 
 theme:

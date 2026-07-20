@@ -79,6 +79,7 @@ setup(
         "Homepage": "https://github.com/serolugo/veriflow",
         "Repository": "https://github.com/serolugo/veriflow",
         "Issues": "https://github.com/serolugo/veriflow/issues",
-        "Changelog": "https://github.com/serolugo/veriflow/blob/main/CHANGELOG.md",
+        "Changelog": "https://github.com/serolugo/veriflow/blob/main/docs/CHANGELOG.md",
+        "Documentation": "https://serolugo.github.io/veriflow/",
     },
 )
