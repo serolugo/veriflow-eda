@@ -24,14 +24,20 @@ nav:
   - Home: index.md
   - Getting Started:
     - Installation: INSTALL.md
+    - Quick Reference: QUICKREF.md
   - User Guide:
-    - Database Mode: MANUAL.md
     - Project Mode: PROJECT_CONFIG.md
+    - Database Mode: MANUAL.md
     - Wrap (init/generate/wizard): user-guide/wrap.md
     - Doctor: user-guide/doctor.md
-    - Quick Reference: QUICKREF.md
+    - PDK Management: user-guide/pdk.md
+    - Interface Profiles: user-guide/interface.md
   - Reference:
     - All Commands: reference/commands.md
+    - System Specification: SPECS.md
     - Architecture: ARCHITECTURE.md
+  - Agents & Automation:
+    - MCP Server: MCP_SERVER.md
+  - Custom Backends: CUSTOM_BACKENDS.md
   - TileBench: TILEBENCH.md
   - Changelog: CHANGELOG.md

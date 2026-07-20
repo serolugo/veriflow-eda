@@ -39,8 +39,30 @@ veriflow db list-tiles --db ./database
 veriflow db list-runs  --db ./database --tile 0001
 veriflow db show-run   --db ./database --tile 0001 --run run-001
 
-# Run tests
-python -m veriflow.tests.runner
+# Edit config without hand-editing YAML (comments/formatting preserved)
+veriflow db set --db ./database technology sky130
+veriflow db tile set --db ./database --tile 0001 stage-backend simulation:xsim
+veriflow project set interface semicolab
+
+# Import a verified run into a database as a new tile
+veriflow project import --db ./database
+veriflow db import-repo --repo https://github.com/user/repo --db ./database
+
+# PDK management
+veriflow pdk list
+veriflow pdk install sky130
+veriflow pdk status
+
+# Interface profiles fetched from a URL
+veriflow interface list-cached
+veriflow interface update <name>
+
+# MCP server / LLM context
+veriflow mcp install --client claude-code
+veriflow context > context.txt
+
+# Run tests (repo checkout only)
+python -m pytest veriflow/tests -q
 ```
 
 ---
@@ -72,8 +94,51 @@ Every `db run` always writes `tiles/<tile_id>/runs/run-NNN/results.json` regardl
 veriflow doctor
 ```
 
-Verifies that iverilog, vvp, and yosys are installed and in PATH. Run after installation and
-as a first troubleshooting step if `db run` fails. See [User Guide → Doctor](user-guide/doctor.md).
+Verifies that iverilog, vvp, and yosys are installed and in PATH, plus PDK install status for
+every registered technology (`[TECHNOLOGIES]` section). Run after installation and as a first
+troubleshooting step if `db run` fails. See [User Guide → Doctor](user-guide/doctor.md).
+
+---
+
+## PDK management
+
+```bash
+veriflow pdk list                  # status: OK / NOT INSTALLED / INSTALLED, NO LIBERTY
+veriflow pdk install sky130        # sky130/gf180 need: pip install veriflow-eda[pdks]
+veriflow pdk update sky130
+veriflow pdk status                # like list, plus resolved liberty paths
+veriflow pdk remove sky130 --dry-run
+```
+
+Select a technology per project/database with `technology: {name: sky130}` (or
+`veriflow db set technology sky130`); `require_pdk: true` (`technology-strict` shortcut) hard-fails
+synthesis instead of silently falling back to generic mapping when the PDK isn't installed. See
+[User Guide → PDK Management](user-guide/pdk.md).
+
+---
+
+## Backends (icarus / xsim)
+
+```bash
+veriflow project set stage-backend simulation:xsim   # per-stage override, Project Mode
+veriflow db set --db ./database stage-backend simulation:xsim   # same, Database Mode
+```
+
+`icarus` (Icarus Verilog) is the default for connectivity and simulation; `yosys` for synthesis —
+neither is configurable per stage. `xsim` (Vivado) is an alternative simulation backend. See
+[Custom Backends](CUSTOM_BACKENDS.md) for setup and writing your own backend.
+
+---
+
+## MCP server / agents
+
+```bash
+veriflow mcp install --client claude-code      # or --client claude-desktop
+veriflow context > context.txt                 # plain-text fallback, no MCP needed
+```
+
+Gives an AI assistant direct tool calls into VeriFlow (run verification, read results, edit
+config) instead of shelling out and parsing text. See [Agents & Automation → MCP Server](MCP_SERVER.md).
 
 ---
 
@@ -99,6 +164,22 @@ Set via `interface_name` in `database/project_config.yaml`. Applies to the entir
 | `interface_name: null` | Generic project — any RTL module, no connectivity check |
 
 Project Mode uses an `interface:` section in `veriflow.yaml` instead (`name: semicolab`, or omit the section for a generic project).
+
+**Your own profile** — a local `.v` port-list stub or an `http(s)://` URL (cached permanently after
+the first fetch):
+
+```yaml
+interface:
+  name: tinytapeout
+  definition: ./interfaces/tinytapeout_if.v          # or an https:// URL
+```
+
+```bash
+veriflow interface update tinytapeout      # force re-download a URL-sourced definition
+veriflow interface list-cached             # every cached URL, profile name, download date
+```
+
+See [User Guide → Interface Profiles](user-guide/interface.md) for the full mechanism.
 
 ---
 

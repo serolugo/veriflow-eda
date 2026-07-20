@@ -7,19 +7,20 @@
   <a href="https://github.com/serolugo/veriflow/blob/main/LICENCE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
-Lightweight RTL verification and documentation framework for multi-project ASIC chip design. Automates interface/connectivity checking, simulation, and synthesis using open-source tooling, and generates structured run records per execution.
+RTL verification and documentation framework for multi-project ASIC chip design. Automates interface/connectivity checking, simulation, and synthesis using open-source tooling (with real PDK-backed technology mapping and pluggable backends), and generates structured run records per execution.
 
 ---
 
 ## Features
 
 - **Two operating modes** — Project Mode (`veriflow project run`, single `veriflow.yaml` config) and Database Mode (`veriflow db ...`, tile database with full run history)
-- **Interface profiles** — optional structural port-contract checking; the built-in `semicolab` profile verifies the nine-port Semicolab convention. Projects with no interface configured skip the connectivity check.
-- **Simulation** — compiles RTL and self-contained user testbenches together and captures VCD waveforms
-- **Synthesis** — validates RTL with Yosys, reports cell count, detects inferred latches
-- **Auto-documentation** — generates `manifest.yaml`, `results.json`, `summary.md`, `notes.md`, and `README.md` per run (Database Mode)
-- **Run history** — full CSV records per tile and per run
-- **Version tracking** — `bump-version` and `bump-revision` with preserved history
+- **Interface profiles** — built-in `semicolab` (nine-port structural contract), or your own — a local `.v` stub or an `http(s)://` URL, cached permanently after the first fetch. Projects with no interface configured skip the connectivity check.
+- **Technology / PDK management** — `sky130`, `gf180`, `ihp130`, or `generic`, or an external `technology.yaml`; PDKs are installed and tracked by `veriflow pdk` (no manual `PDK_ROOT` setup)
+- **Configurable pipeline & backends** — reorder/omit connectivity, simulation, synthesis per project (`pipeline:`), and pick a backend per stage — Icarus (default) or Vivado's `xsim`, see [docs/CUSTOM_BACKENDS.md](docs/CUSTOM_BACKENDS.md)
+- **Multi-project import** — `db import-repo` clones a contributor's repo, runs it as a real precheck, and imports a passing result into the shared database as a new tile; `project import` does the same for a repo you've already cloned
+- **MCP server for AI assistants** — `veriflow mcp install` gives Claude Code/Desktop (or any MCP client) direct tool calls into VeriFlow instead of shelling out; `veriflow context` gives the same background to any chat without MCP — see [docs/MCP_SERVER.md](docs/MCP_SERVER.md)
+- **Auto-documentation** — generates `manifest.yaml`, `results.json`, `summary.md`, `notes.md`, and `README.md` per run (Database Mode), plus a submission-ready README via `generate-readme`
+- **Run history & version tracking** — full CSV records per tile and per run; `bump-version`/`bump-revision` with preserved history
 
 ---
 
@@ -420,22 +421,28 @@ See [docs/TILEBENCH.md](https://github.com/serolugo/veriflow/blob/main/docs/TILE
 
 | Document | Description |
 |---|---|
-| [SPECS.md](https://github.com/serolugo/veriflow/blob/main/docs/SPECS.md) | Full system specification |
+| [INSTALL.md](https://github.com/serolugo/veriflow/blob/main/docs/INSTALL.md) | EDA tools, `xsim`, and PDK installation, per platform |
 | [PROJECT_CONFIG.md](https://github.com/serolugo/veriflow/blob/main/docs/PROJECT_CONFIG.md) | Project Mode `veriflow.yaml` configuration reference |
-| [DESIGN.md](https://github.com/serolugo/veriflow/blob/main/docs/DESIGN.md) | Detailed technical design |
-| [ARCHITECTURE.md](https://github.com/serolugo/veriflow/blob/main/docs/ARCHITECTURE.md) | Architecture reference |
-| [MANUAL.md](https://github.com/serolugo/veriflow/blob/main/docs/MANUAL.md) | Complete user manual |
+| [MANUAL.md](https://github.com/serolugo/veriflow/blob/main/docs/MANUAL.md) | Complete user manual (Database Mode + Project Mode) |
+| [CUSTOM_BACKENDS.md](https://github.com/serolugo/veriflow/blob/main/docs/CUSTOM_BACKENDS.md) | Configuring `xsim`/Vivado per stage, or wiring up your own backend |
+| [MCP_SERVER.md](https://github.com/serolugo/veriflow/blob/main/docs/MCP_SERVER.md) | MCP server setup for AI assistants, and `veriflow context` without MCP |
+| [reference/commands.md](https://github.com/serolugo/veriflow/blob/main/docs/reference/commands.md) | Master table of all eight command namespaces |
 | [QUICKREF.md](https://github.com/serolugo/veriflow/blob/main/docs/QUICKREF.md) | Quick reference card |
+| [SPECS.md](https://github.com/serolugo/veriflow/blob/main/docs/SPECS.md) | Full system specification |
+| [ARCHITECTURE.md](https://github.com/serolugo/veriflow/blob/main/docs/ARCHITECTURE.md) | Architecture and internal module reference for contributors |
+| [CHANGELOG.md](https://github.com/serolugo/veriflow/blob/main/docs/CHANGELOG.md) | Release history |
+
+Rendered documentation site: the same `docs/` tree is published with mkdocs
+(`mkdocs.yml` at the repo root).
 
 ---
 
 ## Tests
 
-```bash
-python -m veriflow.tests.runner
-# Expected current result: 720 passed, 0 failed
+Only relevant for a repo checkout (not needed for a `pip install
+veriflow-eda` install):
 
-# Or with pytest (collects the full suite):
+```bash
 python -m pytest veriflow/tests -q
 ```
 

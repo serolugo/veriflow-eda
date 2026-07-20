@@ -388,14 +388,8 @@ The connectivity check is independent of testbenches: it compiles the RTL togeth
 
 ## 14. Tests
 
-Standalone suite at `tests/runner.py`. Does not require pytest.
-
-```bash
-python -m veriflow.tests.runner
-# Expected: 193 passed, 0 failed
-```
-
-The same tests can be collected with pytest:
+Only relevant for a repo checkout (not needed for a `pip install
+veriflow-eda` install). Run the full suite with pytest:
 
 ```bash
 python -m pytest veriflow/tests -q

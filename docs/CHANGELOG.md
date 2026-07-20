@@ -5,6 +5,149 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] - 2026-07-19
+
+A single working session's worth of additions on top of `1.0.0` — PDK-backed technology mapping,
+externalized interfaces/technologies, a configurable per-stage pipeline, multi-project import,
+an MCP server for AI assistants, and three passes of security/traceability/consistency hardening.
+`__version__` has not been bumped yet; these changes are otherwise complete and tested (full
+suite green, `mkdocs build --strict` clean).
+
+### Highlights
+
+**PDK management (`veriflow pdk`)**
+
+VeriFlow now installs and tracks real PDKs itself under `~/.veriflow/pdks/<technology>/` — no
+manual `PDK_ROOT` or liberty path environment variables. Seven subcommands: `list`, `install`,
+`update`, `status`, `path`, `versions`, `remove`. `sky130`/`gf180` are fetched via
+[volare](https://pypi.org/project/volare/) (the `pdks` extra, `pip install veriflow-eda[pdks]`);
+`ihp130` is cloned directly via `git`. `veriflow doctor` gained a `[TECHNOLOGIES]` section
+reporting install status for every registered technology alongside EDA tool availability — a
+missing PDK never fails `doctor`'s exit code. New `technology.require_pdk` (`technology-strict`
+`set` shortcut) hard-fails synthesis instead of silently falling back to generic mapping when the
+selected technology's PDK isn't installed.
+
+**Externalized interfaces and technologies**
+
+`interface.definition:`/`interface_definition:` and `technology.definition:`/
+`technology_definition:` now accept a path to your own profile — no longer limited to the
+built-in `semicolab` interface or `sky130`/`gf180`/`ihp130`/`generic` technologies.
+`interface.definition:` additionally accepts an `http(s)://` URL, resolved through a permanent
+local cache (`~/.veriflow/interfaces/cache/`, keyed by URL hash) — fetched once, read from disk
+forever after. New `veriflow interface update`/`interface list-cached` commands manage that
+cache.
+
+**Configurable pipeline and per-stage backends**
+
+`pipeline:` (`veriflow.yaml`/`project_config.yaml`/`tile_config.yaml`) selects which stage types
+run, in what order, and lets each stage declare its own `backend:` override
+(`pipeline.stages[].backend: xsim`) — instead of one fixed connectivity → simulation → synthesis
+order with a single backend per role for the whole run. `project set stage-backend <type>:<backend>`
+(and the `db set`/`db tile set` equivalents) set this without hand-editing YAML.
+
+**`xsim` (Vivado) backend + custom backend guide**
+
+A second simulation backend alongside Icarus — `xvlog`/`xelab`/`xsim`. New
+[docs/CUSTOM_BACKENDS.md](CUSTOM_BACKENDS.md) documents setting it up and writing your own backend
+from scratch.
+
+**Multi-project import (`project import` / `db import-repo`)**
+
+`project import` promotes a verified Project Mode run into a Database Mode database as a new
+tile, copying its RTL/TB sources and `results.json` (as `imported_run.json`) for traceability.
+`db import-repo` does the same starting from a git URL: clones the repo, runs its own `project
+run` as a real precheck, and imports the passing result — for shuttle organizers importing
+directly from a contributor's repo.
+
+**`generate-readme` + `shuttle_spec.yaml` + `apply-spec`**
+
+`project generate-readme` renders a submission-ready `README.md` from a project's latest passing
+run. `project apply-spec` applies a `shuttle_spec.yaml`'s fields (interface, technology, metadata)
+onto `veriflow.yaml` in one call, for shuttle organizers distributing a common submission spec to
+contributors.
+
+**MCP server for AI assistants**
+
+`veriflow mcp install --client claude-code` (or `claude-desktop`) registers VeriFlow as an MCP
+server; `veriflow mcp serve` is the server itself (stdio transport, launched automatically by the
+client). Exposes 22 tools covering every namespace (`project`/`db run`, `set`, `import`, `wrap`,
+`pdk`/interface/technology listing, ...) as typed, structured tool calls, plus 7 resources serving
+VeriFlow's own docs on demand. `veriflow context` remains the non-MCP fallback — a plain-text
+context dump for pasting into a chat with no tool access, now dynamically generated from `cli.py`'s
+own `argparse` tree so it can't silently drift from the real CLI. See
+[docs/MCP_SERVER.md](MCP_SERVER.md).
+
+**`--skip-*`/`--only-*`/`--waves` on `project run`**
+
+Project Mode's `run` command gained the same `--skip-check`/`--skip-sim`/`--skip-synth`/
+`--only-check`/`--only-sim`/`--only-synth`/`--waves` flags Database Mode's `db run` already had —
+closing a consistency gap between the two modes' CLI surfaces.
+
+**`VERIFLOW_CONFIG` environment variable**
+
+Project Mode commands that default to `./veriflow.yaml` now also honor `VERIFLOW_CONFIG` when
+`--config` isn't passed explicitly, matching how Database Mode commands default to `--db`.
+
+**New run statuses: `PARTIAL` and `NOT_RUN`**
+
+`results.json`'s `status` now has three values, not two: `PASS` (every configured stage actually
+ran and passed), `PARTIAL` (every stage that ran passed, but at least one configured stage type
+didn't run at all), or `FAIL`. Project Mode's per-stage `stages[].status` can also read `NOT_RUN`
+(the stage was configured but never got a turn because an earlier stage FAILed) as distinct from
+`SKIPPED` (never configured, or an explicit `--skip-*`). Both modes now share one status-derivation
+implementation (`veriflow.framework.status.derive_run_status`) instead of two independent, silently
+diverging copies.
+
+### Fixed — security and traceability
+
+Three review passes closed 6 security findings and 4 traceability findings, all with regression
+tests and empirical before/after reproduction of the original issue:
+
+- **Path traversal** — `wrapper_name`, `tile_id` (via `shuttle_name`/`id_prefix`), and
+  `readme_template`/`--template` are now validated to stay inside their intended directory
+  (`core/path_safety.py`, `VF_UNSAFE_PATH`) before any file is written — including a
+  cross-platform fix so a Windows drive-letter absolute path is rejected the same way on
+  Linux/macOS hosts, not just natively on Windows.
+- **Git transport restriction** — `db import-repo`/`pdk install ihp130` now validate the clone URL
+  against an explicit `http`/`https`/local-path allowlist (`core/git_safety.py`,
+  `VF_IMPORT_REPO_URL_SCHEME_NOT_ALLOWED`), rejecting git's own `ext::`/`fd::` remote-helper
+  syntax (arbitrary local command execution) and any other scheme.
+- **Consent for externally-fetched interfaces** — `db import-repo` no longer silently fetches a
+  cloned repo's `interface.definition:` URL from a third origin the importer never named; blocked
+  by default (`VF_IMPORT_REPO_EXTERNAL_INTERFACE_URL`) unless `--allow-external-interface` is
+  passed.
+- **Download size limit** — URL-sourced interface definitions are now capped (~1MB,
+  `VF_INTERFACE_URL_TOO_LARGE`), checked via `Content-Length` and enforced during a chunked read
+  even when the header is absent or lies.
+- **`rtl_hash` integrity** — `results.json`'s `rtl_hash` is now snapshotted at the *start* of a
+  run instead of after every stage finishes, narrowing the window between "what was verified" and
+  "what got hashed." `project import` now recomputes the SHA256 of the RTL bytes actually copied
+  into the tile and rejects the import (`VF_IMPORT_RTL_HASH_MISMATCH`, no `--force` override) if
+  they don't match the run's recorded hash — closing a gap where a source file edited between
+  `project run` and `project import` went undetected.
+- **Status falsification** — closed the `PARTIAL`/`NOT_RUN` gap described above: a run where every
+  stage was skipped (via `--skip-*` flags or simply never configured) used to report a vacuous
+  `"PASS"` in Project Mode; it now correctly reports `"PARTIAL"`.
+
+### Fixed — Project/Database Mode consistency
+
+A systematic audit and fix pass aligned config validation, error codes, CLI flags, and the
+`api.py` surface between the two modes where they had silently diverged (e.g. an unknown
+top-level config key now warns in both modes; `stage-backend`/`technology-strict` work identically
+via `project set`/`db set`/`db tile set`).
+
+### Documentation
+
+Full documentation audit and remediation across two passes: `docs/` reorganized into a
+discoverable `mkdocs.yml` nav (Getting Started / User Guide / Reference / Agents & Automation /
+Custom Backends / Changelog) covering every page that existed but wasn't linked; broken
+installation/verification instructions fixed; `README.md`/`docs/index.md` rewritten to reflect
+the current feature set; `docs/ARCHITECTURE.md` and `docs/DESIGN.md` (previously ~90% duplicated)
+consolidated into one updated architecture reference. See dev-docs/DOCS_AUDIT_FINAL.md for the
+full record.
+
+---
+
 ## [1.0.0] - 2026-06-15
 
 First public release. VeriFlow is a lightweight RTL verification and documentation

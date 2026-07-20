@@ -121,6 +121,13 @@ all -- e.g. a generic project with no interface/testbench, or an
 explicit `--skip-*` flag), or `FAIL` (something that ran did not pass).
 A `FAIL`/`PARTIAL` result is normal, valid data describing a
 verification outcome, not an error condition.
+
+If you have MCP tools available (prefixed `veriflow_*`, e.g.
+`veriflow_project_run`, `veriflow_db_set`), prefer those over shelling
+out to the CLI commands below -- they're the same operations as real,
+typed tool calls with structured results instead of text to parse. This
+context exists for the case where no MCP tools are available. See
+docs/MCP_SERVER.md for the full tool list and setup.
 """
 
 _CONFIG_SCHEMA = """\

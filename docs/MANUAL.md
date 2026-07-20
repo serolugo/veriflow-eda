@@ -6,8 +6,8 @@ VeriFlow V1 is an RTL verification framework designed for the multi-project ASIC
 
 VeriFlow has two operating modes:
 
-- **Database Mode** (`veriflow db ...`) — a tile database with indexed run history and generated documentation. This manual focuses on Database Mode.
-- **Project Mode** (`veriflow project run`) — verifies a local project directory described by a single `veriflow.yaml` file. See [PROJECT_CONFIG.md](PROJECT_CONFIG.md).
+- **Database Mode** (`veriflow db ...`) — a tile database with indexed run history and generated documentation. Sections 1-13 of this manual cover Database Mode end to end.
+- **Project Mode** (`veriflow project run`) — verifies a local project directory described by a single `veriflow.yaml` file, no database needed. Covered in [section 14](#14-project-mode) of this manual, and in full schema detail in [PROJECT_CONFIG.md](PROJECT_CONFIG.md).
 
 **Internal components:**
 - **VeriTile** — verification engine (iverilog + Yosys)
@@ -35,18 +35,24 @@ yosys --version
 
 ## 3. Installation
 
-Extract the zip into your project, then install:
-
 ```bash
-pip install -e .
+pip install veriflow-eda
 ```
 
-This registers the `veriflow` command globally. Verify everything works:
+This registers the `veriflow` command globally. Verify everything works
+(EDA tools, and any installed PDKs):
+
 ```bash
-python -m veriflow.tests.runner
+veriflow doctor
 ```
 
-Expected result: `193 passed, 0 failed`.
+Exit code `0` means every required tool is available. See
+[INSTALL.md](INSTALL.md) for platform-specific setup of `iverilog`/`yosys`,
+optional backends (`xsim`), and PDK installation (`sky130`/`gf180`/`ihp130`).
+
+Developing VeriFlow itself (repo checkout, not a `pip install`)? Use
+`pip install -e .` instead, and see [section 11](#11-tests) for running the
+test suite.
 
 ---
 
@@ -106,6 +112,39 @@ interface_definition: ./interfaces/tinytapeout_if.v
 See [14.6](#146-custom-interface-profiles-interfacedefinition) for the full
 explanation (written from Project Mode's `veriflow.yaml`, but the mechanism —
 and the `.v` stub format — is identical for both modes).
+
+### 4.2b Configuring without hand-editing YAML (`db set`)
+
+`veriflow db set` edits `project_config.yaml` from the command line instead —
+comments and formatting are preserved (a ruamel round-trip edit, not a
+rewrite from scratch):
+
+```bash
+veriflow db set --db ./database <key> <value>
+```
+
+| Key | Sets | Example |
+|---|---|---|
+| `interface` | `interface_name` | `veriflow db set --db ./database interface semicolab` (or `null` for a generic database) |
+| `technology` | `technology.name` | `veriflow db set --db ./database technology sky130` |
+| `technology-strict` | `technology.require_pdk` (shortcut) | `veriflow db set --db ./database technology-strict sky130` — sets `technology.name: sky130` **and** `technology.require_pdk: true` in one call |
+| `require-pdk` | `technology.require_pdk` on its own | `veriflow db set --db ./database require-pdk true` |
+| `id-format` | `id_format` | `veriflow db set --db ./database id-format "{prefix}-{date}{tile_number}{version}{revision}"` |
+| `prefix` | `id_prefix` | `veriflow db set --db ./database prefix MST130-01` |
+| `shuttle` | `shuttle_name` | `veriflow db set --db ./database shuttle "Shuttle 2026a"` |
+| `pipeline` | `pipeline.stages` | `veriflow db set --db ./database pipeline connectivity,synthesis` (see [4.4](#44-configure-the-pipeline-pipeline)) |
+| `stage-backend` | one stage's `pipeline.stages[].backend` | `veriflow db set --db ./database stage-backend simulation:xsim` |
+| `project-name` | `project_name` | `veriflow db set --db ./database project-name "My Chip"` |
+| `repo` | `repo` | `veriflow db set --db ./database repo https://github.com/user/repo` |
+| `description` | `description` | `veriflow db set --db ./database description "Chip project description."` |
+
+`technology-strict` and `require-pdk` both write `technology.require_pdk`;
+`technology-strict` is the shortcut for "select this technology **and**
+refuse to silently fall back to generic synthesis if its PDK isn't
+installed" in one command — see [14.8](#148-pdk-management-veriflow-pdk).
+
+The equivalent for a single tile (rather than the whole database) is
+`db tile set` — see [5.2b](#52b-configuring-a-tile-without-hand-editing-yaml-db-tile-set).
 
 ### 4.3 Customize the tile ID format (`id_format`)
 
@@ -259,6 +298,35 @@ pipeline:
 
 Omit it to inherit the database's `pipeline` (or the current default if the database doesn't
 set one either).
+
+### 5.2b Configuring a tile without hand-editing YAML (`db tile set`)
+
+`veriflow db tile set` edits one tile's `tile_config.yaml` — same
+comment/formatting-preserving edit as `db set` (see
+[4.2b](#42b-configuring-without-hand-editing-yaml-db-set)), scoped to a
+single tile instead of the whole database:
+
+```bash
+veriflow db tile set --db ./database --tile 0001 <key> <value>
+```
+
+| Key | Sets | Example |
+|---|---|---|
+| `top-module` | `top_module` | `veriflow db tile set --db ./database --tile 0001 top-module adder_tile` |
+| `tb-top` | `tb_top_module` | `veriflow db tile set --db ./database --tile 0001 tb-top tb` |
+| `name` | `tile_name` | `veriflow db tile set --db ./database --tile 0001 name "Adder Tile"` |
+| `author` | `tile_author` | `veriflow db tile set --db ./database --tile 0001 author Sebastian` |
+| `description` | `description` | `veriflow db tile set --db ./database --tile 0001 description "32-bit adder tile."` |
+| `tags` | `tags` | `veriflow db tile set --db ./database --tile 0001 tags initial` |
+| `objective` | `objective` | `veriflow db tile set --db ./database --tile 0001 objective "Initial verification"` |
+| `pipeline` | `pipeline.stages` (overrides the database's, see [5.2](#52-configure-the-tile)) | `veriflow db tile set --db ./database --tile 0001 pipeline connectivity,synthesis` |
+| `stage-backend` | one stage's `pipeline.stages[].backend` | `veriflow db tile set --db ./database --tile 0001 stage-backend simulation:xsim` |
+| `require-pdk` | `technology.require_pdk` for this tile only | `veriflow db tile set --db ./database --tile 0001 require-pdk true` |
+
+`require-pdk` is the only technology key settable per tile — a tile has no
+`technology.name` of its own (technology is database-wide, set via
+`db set technology`); a tile can only tighten the PDK requirement for
+itself, not pick a different one.
 
 ### 5.3 Add the RTL
 
@@ -552,11 +620,16 @@ Complete history of all runs across all tiles. Each run appends a row with: Tile
 
 ## 11. Tests
 
+Only relevant if you've cloned the repository (not needed for a `pip install
+veriflow-eda` install). Run the suite with pytest:
+
 ```bash
-python -m veriflow.tests.runner
+python -m pytest veriflow/tests -q
 ```
 
-Tests use `tempfile.mkdtemp()` for isolated environments and clean up after themselves. The standalone runner needs no pytest or external tools (run tests execute without iverilog/yosys). The suite can also be collected with pytest: `python -m pytest veriflow/tests -q`.
+Tests use `tempfile.mkdtemp()` for isolated environments and clean up after
+themselves; most don't require `iverilog`/`yosys` to be installed (they mock
+the EDA backends).
 
 ---
 
