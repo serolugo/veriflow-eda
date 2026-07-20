@@ -78,6 +78,39 @@ def test_project_run_config_defaults_to_veriflow_yaml():
     assert args.config == "veriflow.yaml"
 
 
+def test_project_run_parses_skip_and_only_and_waves_flags():
+    """Finding 5 (dev-docs/MODE_CONSISTENCY_AUDIT.md): `project run` gained
+    the same --skip-*/--only-*/--waves flags `db run` already had, with the
+    same literal flag names."""
+    from veriflow.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args([
+        "project", "run", "--config", "x.yaml",
+        "--skip-check", "--skip-sim", "--skip-synth",
+        "--only-check", "--only-sim", "--only-synth", "--waves",
+    ])
+    assert args.skip_check is True
+    assert args.skip_sim is True
+    assert args.skip_synth is True
+    assert args.only_check is True
+    assert args.only_sim is True
+    assert args.only_synth is True
+    assert args.waves is True
+
+
+def test_project_run_skip_and_only_and_waves_default_to_false():
+    from veriflow.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args(["project", "run"])
+    assert args.skip_check is False
+    assert args.skip_sim is False
+    assert args.skip_synth is False
+    assert args.only_check is False
+    assert args.only_sim is False
+    assert args.only_synth is False
+    assert args.waves is False
+
+
 def test_db_init_still_parses_unchanged():
     from veriflow.cli import build_parser
     parser = build_parser()
@@ -366,4 +399,179 @@ def test_missing_default_config_exits_nonzero(tmp_path, monkeypatch):
     assert rc != 0
     output = stderr_buf.getvalue()
     assert "Traceback" not in output
+
+
+# ── F. --skip-*/--only-*/--waves (Finding 5, 2026-07-19) ─────────────────────
+# dev-docs/MODE_CONSISTENCY_AUDIT.md: `project run` previously had no way to
+# run a partial pipeline or open the waveform viewer at all -- `db run` had
+# both. These exercise the real ProjectWorkflow/Flow/stage-skip machinery
+# (only the EDA backends are mocked, not the workflow itself), unlike
+# sections A-E above which mock the whole ProjectWorkflow class.
+
+def _make_full_pipeline_project(tmp_path: Path) -> Path:
+    """A project with an interface (connectivity eligible) and tb_sources
+    (simulation eligible) so all three stages are normally in the pipeline
+    -- lets skip_*/only_* actually skip something, rather than a stage
+    that was already going to be SKIPPED regardless (e.g. connectivity with
+    no interface configured)."""
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    (project_dir / "top.v").write_text("module top; endmodule\n", encoding="utf-8")
+    (project_dir / "tb_top.v").write_text("module tb; endmodule\n", encoding="utf-8")
+    cfg_path = project_dir / "veriflow.yaml"
+    cfg_path.write_text(
+        "design:\n"
+        "  top_module: top\n"
+        "  rtl_sources:\n    - top.v\n"
+        "  tb_sources:\n    - tb_top.v\n"
+        "interface:\n  name: semicolab\n"
+        "simulation:\n  tb_top: tb\n",
+        encoding="utf-8",
+    )
+    return cfg_path
+
+
+def _conn_backend(status="PASS"):
+    from veriflow.core.backends.base import ConnectivityBackend
+    b = MagicMock(spec=ConnectivityBackend)
+    b.run_connectivity.return_value = status
+    return b
+
+
+def _sim_backend(status="COMPLETED"):
+    from veriflow.core.backends.base import SimulationBackend
+    b = MagicMock(spec=SimulationBackend)
+    b.run_simulation.return_value = (status, {})
+    return b
+
+
+def _synth_backend(status="PASS"):
+    from veriflow.core.backends.base import SynthesisBackend
+    b = MagicMock(spec=SynthesisBackend)
+    b.run_synthesis.return_value = (status, {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False})
+    return b
+
+
+def _patched_project_backends():
+    return (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch("veriflow.workflows.project.get_connectivity_backend", return_value=_conn_backend()),
+        patch("veriflow.workflows.project.get_simulation_backend", return_value=_sim_backend()),
+        patch("veriflow.workflows.project.get_synthesis_backend", return_value=_synth_backend()),
+    )
+
+
+def test_cmd_run_project_only_check_skips_sim_and_synth(tmp_path):
+    from veriflow.commands.run_project import cmd_run_project
+    cfg_path = _make_full_pipeline_project(tmp_path)
+
+    patches = _patched_project_backends()
+    for p in patches:
+        p.start()
+    try:
+        exit_code, result_data = cmd_run_project(cfg_path, only_check=True, json_mode=True)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert exit_code == 0
+    assert result_data["stages"]["connectivity"]["status"] == "PASS"
+    assert result_data["stages"]["simulation"]["status"] == "SKIPPED"
+    assert result_data["stages"]["synthesis"]["status"] == "SKIPPED"
+
+
+def test_cmd_run_project_skip_synth_only_skips_synthesis(tmp_path):
+    from veriflow.commands.run_project import cmd_run_project
+    cfg_path = _make_full_pipeline_project(tmp_path)
+
+    patches = _patched_project_backends()
+    for p in patches:
+        p.start()
+    try:
+        exit_code, result_data = cmd_run_project(cfg_path, skip_synth=True, json_mode=True)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert exit_code == 0
+    assert result_data["stages"]["connectivity"]["status"] == "PASS"
+    assert result_data["stages"]["simulation"]["status"] == "PASS"
+    assert result_data["stages"]["synthesis"]["status"] == "SKIPPED"
+
+
+def test_cmd_run_project_only_synth_skips_check_and_sim(tmp_path):
+    from veriflow.commands.run_project import cmd_run_project
+    cfg_path = _make_full_pipeline_project(tmp_path)
+
+    patches = _patched_project_backends()
+    for p in patches:
+        p.start()
+    try:
+        exit_code, result_data = cmd_run_project(cfg_path, only_synth=True, json_mode=True)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert exit_code == 0
+    assert result_data["stages"]["connectivity"]["status"] == "SKIPPED"
+    assert result_data["stages"]["simulation"]["status"] == "SKIPPED"
+    assert result_data["stages"]["synthesis"]["status"] == "PASS"
+
+
+def test_cmd_run_project_no_flags_runs_everything(tmp_path):
+    """Sanity check: with no skip/only flags, all three stages still run
+    (nothing about the new plumbing changes the default no-flags path)."""
+    from veriflow.commands.run_project import cmd_run_project
+    cfg_path = _make_full_pipeline_project(tmp_path)
+
+    patches = _patched_project_backends()
+    for p in patches:
+        p.start()
+    try:
+        exit_code, result_data = cmd_run_project(cfg_path, json_mode=True)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert exit_code == 0
+    assert result_data["stages"]["connectivity"]["status"] == "PASS"
+    assert result_data["stages"]["simulation"]["status"] == "PASS"
+    assert result_data["stages"]["synthesis"]["status"] == "PASS"
+
+
+def test_project_run_waves_with_non_interactive_raises_clean_error(tmp_path):
+    """Same guard `db run --waves --non-interactive` already has
+    (VF_NON_INTERACTIVE_VIEWER_DISABLED, exit code 2) -- ported to
+    `project run --waves`."""
+    import io
+    import contextlib
+    from veriflow.cli import main
+
+    cfg_path = _make_full_pipeline_project(tmp_path)
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        rc = main(["--non-interactive", "project", "run", "--config", str(cfg_path), "--waves"])
+    assert rc == 2
+    assert "Waveform viewer" in buf.getvalue()
+
+
+def test_cmd_run_project_waves_launches_viewer_when_wave_file_exists(tmp_path):
+    from veriflow.commands.run_project import cmd_run_project
+    cfg_path = _make_full_pipeline_project(tmp_path)
+
+    patches = _patched_project_backends()
+    for p in patches:
+        p.start()
+    try:
+        with patch("veriflow.core.sim_runner.launch_waves") as mock_launch:
+            exit_code, result_data = cmd_run_project(cfg_path, waves=True, json_mode=True)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert exit_code == 0
+    sim_waves = result_data["stages"]["simulation"]["waves"]
+    if sim_waves is None:
+        pytest.skip("mocked simulation backend reported no wave artifact -- nothing to launch")
+    mock_launch.assert_called_once()
     assert "FileNotFoundError" not in output

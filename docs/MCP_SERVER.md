@@ -76,6 +76,8 @@ per session, and talks to it over stdio.
 | `veriflow_list_interface_profiles` | List registered interface profiles and their ports |
 | `veriflow_list_technology_profiles` | List registered technologies and their PDK status |
 | `veriflow_list_pdks` | List PDK install status with install hints |
+| `veriflow_db_init` | Initialize a new VeriFlow database |
+| `veriflow_create_tile` | Create a new tile entry in a database |
 | `veriflow_db_list_tiles` | List all tiles in a database |
 | `veriflow_db_list_runs` | List all runs for one tile |
 | `veriflow_db_get_run` | Read one tile run's persisted result |

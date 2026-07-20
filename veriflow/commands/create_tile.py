@@ -113,7 +113,7 @@ def cmd_create_tile(
     except yaml.YAMLError as exc:
         raise VeriFlowError(
             f"YAML parse error in {project_cfg_path}:\n  {exc}",
-            code="VF_TILE_CONFIG_YAML_ERROR",
+            code="VF_DATABASE_CONFIG_YAML_ERROR",
             details={"path": str(project_cfg_path)},
         ) from exc
     project_config = ProjectConfig.from_dict(raw, root=db)

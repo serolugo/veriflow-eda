@@ -340,7 +340,15 @@ class TestWrapConfigYamlError:
 
 
 class TestDatabaseTileConfigYamlError:
-    """DatabaseWorkflow.run_tile: malformed tile_config.yaml -> VF_DATABASE_CONFIG_YAML_ERROR."""
+    """DatabaseWorkflow.run_tile: malformed tile_config.yaml -> VF_TILE_CONFIG_YAML_ERROR.
+
+    VF_TILE_CONFIG_YAML_ERROR (not VF_DATABASE_CONFIG_YAML_ERROR) since
+    dev-docs/MODE_CONSISTENCY_AUDIT.md's Finding 4 fix: each YAML-parse-error
+    code now corresponds unambiguously to one file -- VF_TILE_CONFIG_YAML_ERROR
+    for tile_config.yaml, VF_DATABASE_CONFIG_YAML_ERROR for project_config.yaml
+    (see TestDatabaseProjectConfigYamlError / TestCreateTileProjectConfigYamlError
+    below, both of which parse project_config.yaml and both now use
+    VF_DATABASE_CONFIG_YAML_ERROR)."""
 
     def _make_db_with_tile(self, tmp_path: Path):
         from veriflow.commands.init_db import cmd_init
@@ -370,7 +378,7 @@ class TestDatabaseTileConfigYamlError:
         tile_cfg.write_text(_MALFORMED_YAML, encoding="utf-8")
         with pytest.raises(VeriFlowError) as exc_info:
             DatabaseWorkflow(db).run_tile("0001")
-        assert exc_info.value.code == "VF_DATABASE_CONFIG_YAML_ERROR"
+        assert exc_info.value.code == "VF_TILE_CONFIG_YAML_ERROR"
 
     def test_tile_config_malformed_yaml_message_contains_path(self, tmp_path):
         from veriflow.workflows.database import DatabaseWorkflow
@@ -434,7 +442,15 @@ class TestDatabaseProjectConfigYamlError:
 
 
 class TestCreateTileProjectConfigYamlError:
-    """cmd_create_tile: malformed project_config.yaml -> VF_TILE_CONFIG_YAML_ERROR."""
+    """cmd_create_tile: malformed project_config.yaml -> VF_DATABASE_CONFIG_YAML_ERROR.
+
+    VF_DATABASE_CONFIG_YAML_ERROR (not VF_TILE_CONFIG_YAML_ERROR -- this
+    file is project_config.yaml, not tile_config.yaml) since
+    dev-docs/MODE_CONSISTENCY_AUDIT.md's Finding 4 fix: create_tile.py's own
+    project_config.yaml parse now uses the same code
+    workflows/database.py's project_config.yaml parse already used
+    (TestDatabaseProjectConfigYamlError above) -- previously it used
+    VF_TILE_CONFIG_YAML_ERROR by mistake, a misleading duplicate."""
 
     def _make_db(self, tmp_path: Path) -> Path:
         from veriflow.commands.init_db import cmd_init
@@ -455,7 +471,7 @@ class TestCreateTileProjectConfigYamlError:
         (db / "project_config.yaml").write_text(_MALFORMED_YAML, encoding="utf-8")
         with pytest.raises(VeriFlowError) as exc_info:
             cmd_create_tile(db)
-        assert exc_info.value.code == "VF_TILE_CONFIG_YAML_ERROR"
+        assert exc_info.value.code == "VF_DATABASE_CONFIG_YAML_ERROR"
 
     def test_malformed_message_contains_path(self, tmp_path):
         from veriflow.commands.create_tile import cmd_create_tile

@@ -364,6 +364,34 @@ def _parse_pipeline_section(data: dict) -> PipelineConfig:
     return parse_optional_pipeline_section(data) or DEFAULT_PIPELINE
 
 
+# Every top-level key veriflow.yaml's parser actually reads. Same
+# silent-unknown-key risk Database Mode's project_config.yaml/tile_config.yaml
+# already guard against (models/project_config.py, models/tile_config.py) --
+# a veriflow.yaml with a typo'd top-level key (`desing:`, `tecnhology:`, a
+# misremembered `metadata:`) used to be dropped with no error and no
+# indication why it had no effect (dev-docs/MODE_CONSISTENCY_AUDIT.md,
+# Finding 1). `metadata:` is included even though ProjectWorkflowConfig
+# itself never reads it -- it's read separately by api.py's
+# `_readme_render_context()` for `generate-readme`, but it's still a real,
+# recognized part of the veriflow.yaml schema.
+_KNOWN_TOP_LEVEL_KEYS = frozenset({
+    "design", "interface", "execution", "technology", "simulation",
+    "output", "pipeline", "metadata", "readme_template",
+})
+
+
+def _unknown_top_level_key_warnings(data: dict) -> list[str]:
+    """Warn -- don't silently drop -- any top-level key not part of the
+    recognized veriflow.yaml schema. Mirrors ProjectConfig.from_dict's /
+    TileConfig.from_dict's identical check for Database Mode."""
+    unknown_keys = sorted(set(data) - _KNOWN_TOP_LEVEL_KEYS)
+    return [
+        f"Unknown key {key!r} in veriflow.yaml -- ignored. "
+        "See docs/PROJECT_CONFIG.md for the recognized veriflow.yaml schema."
+        for key in unknown_keys
+    ]
+
+
 def _parse_readme_template(data: dict, *, root: Path) -> Path | None:
     """`readme_template:` -- optional path to a custom Jinja2 template for
     `veriflow project generate-readme`, resolved relative to *root* (the
@@ -427,6 +455,8 @@ class ProjectWorkflowConfig:
         raw_tb = design.get("tb_sources") or []
         tb_sources = [root / p for p in raw_tb]
 
+        config_warnings = _unknown_top_level_key_warnings(data)
+
         interface, interface_warnings = _parse_interface_section(data, root=root)
         execution = _parse_execution_section(data)
         technology = _parse_technology_section(data, root=root)
@@ -467,7 +497,7 @@ class ProjectWorkflowConfig:
             readme_template=readme_template,
             runs_dir=runs_dir,
             root=Path(root),
-            config_warnings=interface_warnings,
+            config_warnings=[*config_warnings, *interface_warnings],
         )
 
     @classmethod

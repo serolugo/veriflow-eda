@@ -555,6 +555,77 @@ def test_db_set_pipeline_writes_correct_section(tmp_path):
     assert data["pipeline"] == {"stages": [{"type": "connectivity"}, {"type": "synthesis"}]}
 
 
+# ── db set: project-name / repo / description (Finding 2, 2026-07-19) ────────
+# dev-docs/MODE_CONSISTENCY_AUDIT.md: project_config.yaml's project_name/repo/
+# description are active (non-commented) scaffold fields with no `db set` key
+# at all before this -- unlike Project Mode's fully-covered metadata.name/
+# author/description/version.
+
+def test_db_set_project_name_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    result = db_set_config(db, "project-name", "Shuttle A")
+    assert result == {"key": "project-name", "value": "Shuttle A", "config": str(db / "project_config.yaml")}
+    data = yaml.safe_load((db / "project_config.yaml").read_text(encoding="utf-8"))
+    assert data["project_name"] == "Shuttle A"
+
+
+def test_db_set_repo_updates_yaml(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    db_set_config(db, "repo", "https://github.com/example/shuttle-a")
+    data = yaml.safe_load((db / "project_config.yaml").read_text(encoding="utf-8"))
+    assert data["repo"] == "https://github.com/example/shuttle-a"
+
+
+def test_db_set_description_updates_yaml_as_block_scalar(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    db_set_config(db, "description", "A shuttle for testing VeriFlow.")
+    text = (db / "project_config.yaml").read_text(encoding="utf-8")
+    assert "description: |" in text
+    data = yaml.safe_load(text)
+    assert data["description"].strip() == "A shuttle for testing VeriFlow."
+
+
+def test_db_set_project_name_repo_description_are_in_valid_keys():
+    from veriflow.commands.set_config import _DB_SET_KEYS
+
+    for key in ("project-name", "repo", "description"):
+        assert key in _DB_SET_KEYS
+
+
+def test_db_set_unknown_key_error_lists_project_name_repo_description(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+
+    db = _init_db(tmp_path)
+    with pytest.raises(VeriFlowError) as exc_info:
+        db_set_config(db, "bogus", "value")
+    msg = str(exc_info.value)
+    assert "project-name" in msg
+    assert "repo" in msg
+    assert "description" in msg
+
+
+def test_db_set_result_loads_via_real_config_parser_with_new_fields(tmp_path):
+    from veriflow.commands.set_config import db_set_config
+    from veriflow.models.project_config import ProjectConfig
+
+    db = _init_db(tmp_path)
+    db_set_config(db, "project-name", "Shuttle A")
+    db_set_config(db, "repo", "https://github.com/example/shuttle-a")
+    db_set_config(db, "description", "A shuttle for testing VeriFlow.")
+
+    raw = yaml.safe_load((db / "project_config.yaml").read_text(encoding="utf-8"))
+    cfg = ProjectConfig.from_dict(raw)
+    assert cfg.project_name == "Shuttle A"
+    assert cfg.repo == "https://github.com/example/shuttle-a"
+    assert cfg.description.strip() == "A shuttle for testing VeriFlow."
+
+
 def test_db_set_unknown_key_raises_with_valid_keys_listed(tmp_path):
     from veriflow.commands.set_config import db_set_config
 

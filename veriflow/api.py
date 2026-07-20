@@ -1067,6 +1067,64 @@ def list_pdks() -> list[dict]:
     return pdks
 
 
+def db_init(db_path: str | Path, *, force: bool = False) -> dict:
+    """Initialize a new VeriFlow database (Database Mode) at *db_path*.
+
+    Scaffolds `tiles/`, `config/`, `project_config.yaml`, `tile_index.csv`,
+    and `records.csv`. Counterpart to `project_init()` -- Database Mode had
+    no equivalent entry in `veriflow.api` before this (only
+    `veriflow.commands.init_db.cmd_init`, outside the public API surface an
+    agent/caller would normally look in -- dev-docs/MODE_CONSISTENCY_AUDIT.md,
+    Finding 13).
+
+    Returns {"db_path", "project_config", "tile_index", "records"} (all
+    absolute paths, as strings). Raises VeriFlowError (no explicit code --
+    same as the underlying `cmd_init`) if db_path already exists and force
+    is False.
+    """
+    from veriflow.commands.init_db import cmd_init
+
+    db = _normalize_path(db_path)
+    cmd_init(db, force=force)
+
+    return {
+        "db_path": str(db),
+        "project_config": str(db / "project_config.yaml"),
+        "tile_index": str(db / "tile_index.csv"),
+        "records": str(db / "records.csv"),
+    }
+
+
+def create_tile(
+    db_path: str | Path, top_module: str | None = None, tile_author: str | None = None
+) -> dict:
+    """Create a new tile entry in a Database Mode database at *db_path*.
+
+    Thin wrapper around `commands.create_tile.cmd_create_tile` (already a
+    plain Python function, not a `cmd_*(args: argparse.Namespace)` --
+    reused directly, not reimplemented). Counterpart to `project_init()` --
+    Database Mode had no `veriflow.api` entry for tile creation before this
+    (dev-docs/MODE_CONSISTENCY_AUDIT.md, Finding 13).
+
+    top_module: RTL top module name. Required when the database's
+    configured interface profile needs testbench scaffolding (raises
+    VeriFlowError(VF_TILE_TOP_MODULE_REQUIRED) when missing).
+
+    Returns {"tile_id", "tile_number", "path"} (`path`: the new tile's
+    directory under `tiles/`, as a string).
+    """
+    from veriflow.commands.create_tile import cmd_create_tile
+
+    db = _normalize_path(db_path)
+    result = cmd_create_tile(db, top_module=top_module or "", tile_author=tile_author or "")
+
+    return {
+        "tile_id": result["tile_id"],
+        "tile_number": result["tile_number"],
+        "path": str(db / "tiles" / result["tile_id"]),
+    }
+
+
 def db_list_tiles(db_path: str | Path) -> list[dict]:
     """List all tiles registered in a Database Mode database.
 
@@ -1188,7 +1246,8 @@ def db_set(db_path: str | Path, key: str, value: str) -> dict:
     Returns {"key": key, "value": value, "config": str(config_path)}.
 
     Supported keys: interface, technology, technology-strict, require-pdk,
-    id-format, prefix, shuttle, pipeline, stage-backend. Raises
+    id-format, prefix, shuttle, pipeline, stage-backend, project-name, repo,
+    description. Raises
     VeriFlowError(VF_SET_KEY_UNKNOWN) for an unsupported key, or a
     value-specific code (VF_SET_INTERFACE_INVALID, VF_TECHNOLOGY_UNKNOWN,
     VF_ID_FORMAT_INVALID, VF_PIPELINE_STAGE_UNKNOWN,

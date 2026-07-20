@@ -190,7 +190,7 @@ class DatabaseWorkflow:
         except yaml.YAMLError as exc:
             raise VeriFlowError(
                 f"YAML parse error in {tile_cfg_path}:\n  {exc}",
-                code="VF_DATABASE_CONFIG_YAML_ERROR",
+                code="VF_TILE_CONFIG_YAML_ERROR",
                 details={"path": str(tile_cfg_path)},
             ) from exc
 

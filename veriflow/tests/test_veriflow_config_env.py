@@ -80,7 +80,7 @@ def test_project_run_actually_reads_the_env_var_resolved_path(tmp_path, monkeypa
     from veriflow.workflows.project_config import ProjectWorkflowConfig
 
     with patch("veriflow.commands.run_project.cmd_run_project") as mock_cmd:
-        mock_cmd.return_value = 0
+        mock_cmd.return_value = (0, None)  # (exit_code, result_data) -- see Finding 3
         main(["project", "run"])
         called_config_path = mock_cmd.call_args[0][0]
 

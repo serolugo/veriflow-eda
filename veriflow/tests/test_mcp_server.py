@@ -364,6 +364,59 @@ def test_project_init_error_envelope_when_file_exists(tmp_path, monkeypatch):
     assert result["error"]["code"] == "VF_PROJECT_CONFIG_EXISTS"
 
 
+# ── veriflow_db_init / veriflow_create_tile (Finding 13, 2026-07-19) ─────────
+
+def test_db_init_tool_success(tmp_path):
+    db_path = tmp_path / "database"
+    result = mcp_server.veriflow_db_init(str(db_path))
+    assert "error" not in result
+    assert result["db_path"] == str(db_path)
+    assert (db_path / "project_config.yaml").is_file()
+
+
+def test_db_init_tool_error_envelope_when_exists_without_force(tmp_path):
+    db_path = tmp_path / "database"
+    mcp_server.veriflow_db_init(str(db_path))
+    result = mcp_server.veriflow_db_init(str(db_path))
+    assert result["status"] == "ERROR"
+
+
+def test_db_init_tool_force_overwrites(tmp_path):
+    db_path = tmp_path / "database"
+    mcp_server.veriflow_db_init(str(db_path))
+    result = mcp_server.veriflow_db_init(str(db_path), force=True)
+    assert "error" not in result
+
+
+def test_create_tile_tool_success(tmp_path):
+    db_path = tmp_path / "database"
+    mcp_server.veriflow_db_init(str(db_path))
+    _fill_project_config(db_path, interface_name=None)
+
+    result = mcp_server.veriflow_create_tile(str(db_path), top_module="my_tile", tile_author="Ada")
+    assert "error" not in result
+    assert result["tile_number"] == "0001"
+    assert (db_path / "config" / "tile_0001" / "tile_config.yaml").is_file()
+
+
+def test_create_tile_tool_error_envelope_for_missing_database(tmp_path):
+    result = mcp_server.veriflow_create_tile(str(tmp_path / "no_such_db"))
+    assert result["status"] == "ERROR"
+
+
+def test_db_init_then_create_tile_tool_end_to_end(tmp_path):
+    """The two new tools compose the way an agent would actually chain
+    them: init the database, then create a tile in it, without any
+    manual YAML editing in between."""
+    db_path = tmp_path / "database"
+    init_result = mcp_server.veriflow_db_init(str(db_path))
+    _fill_project_config(Path(init_result["db_path"]), interface_name=None)
+
+    tile_result = mcp_server.veriflow_create_tile(init_result["db_path"], top_module="top")
+    assert "error" not in tile_result
+    assert tile_result["tile_number"] == "0001"
+
+
 def test_project_set_tool_success(tmp_path):
     config_path = _make_project(tmp_path)
     result = mcp_server.veriflow_project_set(str(config_path), "technology", "sky130")

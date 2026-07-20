@@ -96,6 +96,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Path to project config file (default: veriflow.yaml, or $VERIFLOW_CONFIG if set)",
     )
+    p_project_run.add_argument("--skip-check",  action="store_true", help="Skip connectivity check")
+    p_project_run.add_argument("--skip-sim",    action="store_true", help="Skip simulation")
+    p_project_run.add_argument("--skip-synth",  action="store_true", help="Skip synthesis")
+    p_project_run.add_argument("--only-check",  action="store_true", help="Run connectivity check only")
+    p_project_run.add_argument("--only-sim",    action="store_true", help="Run simulation only")
+    p_project_run.add_argument("--only-synth",  action="store_true", help="Run synthesis only")
+    p_project_run.add_argument("--waves",       action="store_true", help="Launch waveform viewer after simulation")
 
     p_project_init = project_sub.add_parser("init", help="Generate a commented veriflow.yaml scaffold")
     p_project_init.add_argument("--config", default="veriflow.yaml", metavar="PATH", help="Output config file path (default: veriflow.yaml)")
@@ -248,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
         "key",
         help=(
             "interface | technology | technology-strict | require-pdk | id-format | prefix | "
-            "shuttle | pipeline | stage-backend"
+            "shuttle | pipeline | stage-backend | project-name | repo | description"
         ),
     )
     p_db_set.add_argument(
@@ -434,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 dispatched = False
                 run_result: dict | None = None
+                project_run_result: dict | None = None
                 db_read_result: dict | None = None
                 wrap_gen_result: dict | None = None
                 doctor_result: dict | None = None
@@ -444,9 +452,25 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "project":
                     project_cmd = getattr(args, "project_command", None)
                     if project_cmd == "run":
+                        if non_interactive and args.waves:
+                            raise VeriFlowError(
+                                "Waveform viewer cannot be launched in non-interactive mode",
+                                code="VF_NON_INTERACTIVE_VIEWER_DISABLED",
+                                exit_code=2,
+                            )
                         dispatched = True
                         from veriflow.commands.run_project import cmd_run_project
-                        exit_code = cmd_run_project(Path(args.config))
+                        exit_code, project_run_result = cmd_run_project(
+                            Path(args.config),
+                            skip_check=args.skip_check,
+                            skip_sim=args.skip_sim,
+                            skip_synth=args.skip_synth,
+                            only_check=args.only_check,
+                            only_sim=args.only_sim,
+                            only_synth=args.only_synth,
+                            waves=args.waves,
+                            json_mode=json_mode,
+                        )
                     elif project_cmd == "init":
                         dispatched = True
                         from veriflow.commands.init_project import cmd_init_project
@@ -744,6 +768,9 @@ def main(argv: list[str] | None = None) -> int:
                             "status": "PASS" if exit_code == 0 else "FAIL",
                             "command": args.command,
                         }
+                        _project_cmd = getattr(args, "project_command", None)
+                        if _project_cmd == "run" and project_run_result is not None:
+                            result_payload["run_result"] = project_run_result
                     elif args.command == "db":
                         _db_cmd = getattr(args, "db_command", None)
                         if _db_cmd == "tile":

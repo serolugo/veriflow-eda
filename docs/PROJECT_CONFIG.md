@@ -339,14 +339,20 @@ if it's `SKIPPED` today — `VF_STAGE_NOT_IN_PIPELINE` otherwise), and the backe
 registered for that stage's category (`VF_SET_STAGE_BACKEND_UNKNOWN` lists the valid options
 otherwise).
 
-#### Unrecognized top-level keys (Database Mode)
+#### Unrecognized top-level keys (both modes)
 
-`project_config.yaml` and `tile_config.yaml` (Database Mode) both warn — rather than silently
-ignoring — any top-level key that isn't part of their recognized schema. This is deliberately a
-warning, not an error, for forward-compatibility with fields not implemented yet: parsing
-continues normally, and the warning is added to the run's `config_warnings` (surfaced in
-`results.json`'s `"warnings"` array and printed via the same clean CLI output as any other
-config warning — never a raw Python `UserWarning`).
+`veriflow.yaml` (Project Mode), `project_config.yaml`, and `tile_config.yaml` (Database Mode)
+all warn — rather than silently ignoring — any top-level key that isn't part of their recognized
+schema. This is deliberately a warning, not an error, for forward-compatibility with fields not
+implemented yet: parsing continues normally, and the warning is added to `config_warnings`
+(surfaced in `results.json`'s `"warnings"` array and printed via the same clean CLI output as any
+other config warning — never a raw Python `UserWarning`). Project Mode gained this check later
+than Database Mode (`dev-docs/MODE_CONSISTENCY_AUDIT.md`, Finding 1) — before that, a typo'd
+top-level key in `veriflow.yaml` (`desing:`, `tecnhology:`, a misremembered `metadata:`) was
+dropped with no indication at all, unlike the other two files.
+
+`veriflow.yaml`'s recognized top-level keys: `design`, `interface`, `execution`, `technology`,
+`simulation`, `output`, `pipeline`, `metadata`, `readme_template`.
 
 `project_config.yaml`'s recognized top-level keys: `id_prefix`, `project_name`, `repo`,
 `description`, `interface_name`, `interface_definition`, `id_format`, `shuttle_name`,
@@ -356,9 +362,11 @@ config warning — never a raw Python `UserWarning`).
 `tb_top_module`, `description`, `ports`, `usage_guide`, `tb_description`, `run_author`,
 `objective`, `tags`, `main_change`, `notes`, `pipeline`, `technology`.
 
-An unrecognized `execution:` key specifically gets a targeted message pointing at
-`pipeline.stages[].backend` (the real fix for that exact mistake); any other unrecognized key
-gets a generic "ignored, see this doc" message.
+An unrecognized `execution:` key in `project_config.yaml`/`tile_config.yaml` specifically gets a
+targeted message pointing at `pipeline.stages[].backend` (the real fix for that exact mistake,
+since `execution:` is *not* a typo in Project Mode's `veriflow.yaml` — it's a real section there);
+any other unrecognized key, in any of the three files, gets a generic "ignored, see this doc"
+message.
 
 Common examples:
 
@@ -505,7 +513,9 @@ The parser fails fast with stable `VeriFlowError` codes, including:
 | Code | Cause |
 |---|---|
 | `VF_PROJECT_CONFIG_NOT_FOUND` | config file does not exist at the given path |
-| `VF_PROJECT_CONFIG_YAML_ERROR` | config file exists but contains invalid YAML (parse error) |
+| `VF_PROJECT_CONFIG_YAML_ERROR` | `veriflow.yaml` (Project Mode) exists but contains invalid YAML (parse error) |
+| `VF_DATABASE_CONFIG_YAML_ERROR` | `project_config.yaml` (Database Mode, database-wide) exists but contains invalid YAML -- raised both by `db run`/`db create-tile`'s own read of this file (`workflows/database.py`, `commands/create_tile.py`) and by `project import`'s read of the *destination* database's copy (§`project import`'s own Error codes table below) |
+| `VF_TILE_CONFIG_YAML_ERROR` | a tile's `tile_config.yaml` (Database Mode, per-tile) exists but contains invalid YAML -- raised by `db run`'s read of this file (`workflows/database.py`) |
 | `VF_DESIGN_TOP_REQUIRED` | `design.top_module` missing or empty |
 | `VF_DESIGN_RTL_REQUIRED` | `design.rtl_sources` missing or empty |
 | `VF_INTERFACE_CONFIG_INVALID` | malformed `interface` section / unsupported keys |

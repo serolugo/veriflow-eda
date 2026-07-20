@@ -390,6 +390,61 @@ def veriflow_list_pdks() -> list[dict]:
 
 
 @mcp.tool
+def veriflow_db_init(db_path: str, force: bool = False) -> dict:
+    """Initialize a new VeriFlow database at the given path.
+
+    Scaffolds `tiles/`, `config/`, `project_config.yaml`, `tile_index.csv`,
+    and `records.csv`. Use this before veriflow_create_tile -- there is no
+    database to add a tile to until this has run once. Counterpart to
+    veriflow_project_init for Database Mode.
+
+    Parameters
+    ----------
+    db_path : str
+        Path where the new VeriFlow database directory should be created.
+    force : bool
+        Overwrite an existing database directory at db_path.
+    """
+    from veriflow.api import db_init
+
+    try:
+        return db_init(db_path, force=force)
+    except VeriFlowError as exc:
+        return _error(exc)
+
+
+@mcp.tool
+def veriflow_create_tile(
+    db_path: str, top_module: str | None = None, tile_author: str | None = None
+) -> dict:
+    """Create a new tile entry in a VeriFlow database. Use this before
+    running verification on a new piece of RTL in Database Mode.
+
+    Scaffolds the tile's config/source/run directories and (when the
+    database's configured interface profile needs it) a testbench stub.
+    After this, copy RTL into the returned tile's src/rtl/ directory before
+    calling veriflow_run_tile.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the VeriFlow database directory.
+    top_module : str | None
+        RTL top module name. Required when the database's interface
+        profile needs testbench scaffolding (fails with the ERROR envelope,
+        VF_TILE_TOP_MODULE_REQUIRED, if omitted in that case).
+    tile_author : str | None
+        Tile author's full name, written into tile_config.yaml.
+    """
+    from veriflow.api import create_tile
+
+    try:
+        return create_tile(db_path, top_module=top_module, tile_author=tile_author)
+    except VeriFlowError as exc:
+        return _error(exc)
+
+
+@mcp.tool
 def veriflow_db_list_tiles(db_path: str) -> list[dict]:
     """List all tiles registered in a Database Mode database (tile
     number, id, name, author, version, revision, interface).

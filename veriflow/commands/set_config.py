@@ -31,7 +31,7 @@ _PROJECT_SET_KEYS = (
 )
 _DB_SET_KEYS = (
     "interface", "technology", "technology-strict", "require-pdk", "id-format", "prefix",
-    "shuttle", "pipeline", "stage-backend",
+    "shuttle", "pipeline", "stage-backend", "project-name", "repo", "description",
 )
 _DB_TILE_SET_KEYS = (
     "top-module", "tb-top", "name", "author", "description", "tags", "objective", "pipeline",
@@ -351,6 +351,12 @@ def db_set_config(db_path: str | Path, key: str, value: str) -> dict:
         set_yaml_pipeline(config_path, stages)
     elif key == "stage-backend":
         _apply_stage_backend(config_path, value)
+    elif key == "project-name":
+        set_yaml_key(config_path, ("project_name",), value, quoted=True)
+    elif key == "repo":
+        set_yaml_key(config_path, ("repo",), value, quoted=True)
+    elif key == "description":
+        set_yaml_key(config_path, ("description",), value, block_scalar=True)
     else:
         raise _unknown_key_error(key, _DB_SET_KEYS)
 

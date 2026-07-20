@@ -269,6 +269,127 @@ def test_list_pdks_shape():
         assert p["status"] in ("installed", "not_installed")
 
 
+# ── db_init / create_tile (dev-docs/MODE_CONSISTENCY_AUDIT.md, Finding 13) ───
+# Database Mode had no veriflow.api equivalent of project_init() before this --
+# only veriflow.commands.init_db.cmd_init / commands.create_tile.cmd_create_tile,
+# outside the "public API surface" an agent/caller would normally look in.
+
+def test_db_init_creates_database_and_returns_paths(tmp_path):
+    from veriflow.api import db_init
+
+    db = tmp_path / "database"
+    result = db_init(db)
+
+    assert result == {
+        "db_path": str(db),
+        "project_config": str(db / "project_config.yaml"),
+        "tile_index": str(db / "tile_index.csv"),
+        "records": str(db / "records.csv"),
+    }
+    assert (db / "project_config.yaml").is_file()
+    assert (db / "tile_index.csv").is_file()
+    assert (db / "records.csv").is_file()
+    assert (db / "tiles").is_dir()
+    assert (db / "config").is_dir()
+
+
+def test_db_init_existing_directory_without_force_raises(tmp_path):
+    from veriflow.api import db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    with pytest.raises(VeriFlowError):
+        db_init(db)
+
+
+def test_db_init_force_overwrites_existing_database(tmp_path):
+    from veriflow.api import db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    result = db_init(db, force=True)
+    assert result["db_path"] == str(db)
+
+
+def test_db_init_accepts_string_path(tmp_path):
+    from veriflow.api import db_init
+
+    db = tmp_path / "database"
+    result = db_init(str(db))
+    assert result["db_path"] == str(db)
+
+
+def test_create_tile_returns_tile_id_number_and_path(tmp_path):
+    from veriflow.api import create_tile, db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    _fill_project_config(db, interface_name=None)
+
+    result = create_tile(db, top_module="my_tile")
+
+    assert result["tile_number"] == "0001"
+    assert result["tile_id"]
+    assert result["path"] == str(db / "tiles" / result["tile_id"])
+    assert Path(result["path"]).is_dir()
+    assert (db / "config" / "tile_0001" / "tile_config.yaml").is_file()
+
+
+def test_create_tile_reuses_cmd_create_tile_not_reimplemented(tmp_path):
+    """create_tile() must delegate to the same cmd_create_tile() the CLI
+    uses (already a plain Python function -- reused directly, not
+    reimplemented), not a parallel implementation that could drift."""
+    from veriflow.api import create_tile, db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    _fill_project_config(db, interface_name=None)
+
+    with patch(
+        "veriflow.commands.create_tile.cmd_create_tile",
+        return_value={"tile_id": "FAKE-ID", "tile_number": "0001"},
+    ) as mock_create:
+        result = create_tile(db, top_module="my_tile", tile_author="Ada")
+
+    mock_create.assert_called_once_with(db, top_module="my_tile", tile_author="Ada")
+    assert result == {"tile_id": "FAKE-ID", "tile_number": "0001", "path": str(db / "tiles" / "FAKE-ID")}
+
+
+def test_create_tile_top_module_required_for_interface_needing_it(tmp_path):
+    from veriflow.api import create_tile, db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    _fill_project_config(db, interface_name="semicolab")
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        create_tile(db)
+    assert exc_info.value.code == "VF_TILE_TOP_MODULE_REQUIRED"
+
+
+def test_create_tile_accepts_string_path_and_none_defaults(tmp_path):
+    from veriflow.api import create_tile, db_init
+
+    db = tmp_path / "database"
+    db_init(db)
+    _fill_project_config(db, interface_name=None)
+
+    result = create_tile(str(db))
+    assert result["tile_number"] == "0001"
+
+
+def test_db_init_then_create_tile_end_to_end(tmp_path):
+    """The two new functions actually compose -- db_init()'s own return
+    path is a valid create_tile() input."""
+    from veriflow.api import create_tile, db_init
+
+    db_result = db_init(tmp_path / "database")
+    _fill_project_config(Path(db_result["db_path"]), interface_name=None)
+
+    tile_result = create_tile(db_result["db_path"], top_module="top")
+    assert tile_result["tile_number"] == "0001"
+
+
 # ── db_list_tiles ────────────────────────────────────────────────────────────
 
 def test_db_list_tiles_returns_registered_tile(tmp_path):
