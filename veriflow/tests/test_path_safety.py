@@ -69,7 +69,56 @@ def test_safe_join_absolute_path_that_happens_to_be_inside_is_allowed(tmp_path):
 def test_safe_join_windows_drive_absolute_override_rejected(tmp_path):
     """A Windows drive-letter absolute path (`C:/...`) is the platform's
     equivalent full override -- rejected the same way as a POSIX absolute
-    path, not silently nested under base_dir."""
+    path, not silently nested under base_dir.
+
+    This must reject identically on every host OS, not just Windows: a
+    malicious `wrapper_name`/`tile_id`/`readme_template` can encode this
+    pattern regardless of which OS is actually running VeriFlow when it's
+    processed (e.g. a shuttle organizer importing a contributor's repo on
+    Linux CI). On POSIX, `PurePosixPath("C:/...").is_absolute()` is False
+    (it doesn't start with "/"), so a naive `is_absolute()`-only check
+    would silently nest this under base_dir instead of rejecting it --
+    see the two tests below, which simulate that POSIX semantics directly
+    on whatever host this suite happens to run on."""
+    windows_style = "C:/definitely/not/inside/base_dir/pwned.txt"
+    with pytest.raises(VeriFlowError) as exc_info:
+        safe_join(tmp_path, windows_style)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+
+
+def test_windows_drive_pattern_detected_under_simulated_posix_is_absolute_semantics(monkeypatch):
+    """Unit-level proof that _is_absolute_override() doesn't rely on the
+    host OS's own PurePath.is_absolute() -- monkeypatch path_safety's
+    PurePath reference to PurePosixPath (instantiable on any host, unlike
+    concrete PosixPath) to reproduce exactly the semantics real Linux/
+    macOS hosts have for this string, and confirm the regex fallback still
+    flags it as an absolute-path override."""
+    from pathlib import PurePosixPath
+
+    from veriflow.core import path_safety
+
+    monkeypatch.setattr(path_safety, "PurePath", PurePosixPath)
+
+    windows_style = "C:/definitely/not/inside/base_dir/pwned.txt"
+    assert PurePosixPath(windows_style).is_absolute() is False  # the CI-observed gap
+    assert path_safety._is_absolute_override(windows_style) is True  # closed by the regex fallback
+
+
+def test_safe_join_windows_drive_pattern_rejected_with_simulated_posix_is_absolute_semantics(
+    tmp_path, monkeypatch
+):
+    """End-to-end version of the above: with PurePath forced to
+    PurePosixPath (simulating the exact is_absolute() semantics a real
+    Ubuntu/macOS CI runner has for a Windows-style drive-letter string),
+    safe_join() must still reject the attack via the regex fallback --
+    confirming the fix without needing to actually run on 3 different
+    machines."""
+    from pathlib import PurePosixPath
+
+    from veriflow.core import path_safety
+
+    monkeypatch.setattr(path_safety, "PurePath", PurePosixPath)
+
     windows_style = "C:/definitely/not/inside/base_dir/pwned.txt"
     with pytest.raises(VeriFlowError) as exc_info:
         safe_join(tmp_path, windows_style)
