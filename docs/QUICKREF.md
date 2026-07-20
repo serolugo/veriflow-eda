@@ -183,10 +183,10 @@ See [User Guide → Interface Profiles](user-guide/interface.md) for the full me
 
 ---
 
-## Waveform viewer priority
+## Waveform viewer
 
-1. Docker (`VERIFLOW_DOCKER`; `SEMICOLAB_DOCKER` deprecated) → Surfer WASM at `http://localhost:7681`
-2. `surfer` in PATH → Surfer native
+`surfer` in PATH → launches Surfer native with the VCD path; otherwise prints the Surfer
+install hint.
 
 ---
 

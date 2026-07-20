@@ -40,5 +40,4 @@ nav:
   - Agents & Automation:
     - MCP Server: MCP_SERVER.md
   - Custom Backends: CUSTOM_BACKENDS.md
-  - TileBench: TILEBENCH.md
   - Changelog: CHANGELOG.md

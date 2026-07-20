@@ -5,7 +5,7 @@ Project Mode runs a verification flow against a local project directory describe
 separate database workflow and `project_config.yaml`, which is **not** the file documented here.
 
 This document is the reference for the `veriflow.yaml` schema, intended for users writing configs
-by hand and for frontends (such as TileWizard) that generate them. Parsing is implemented in
+by hand and for any tooling that generates them programmatically. Parsing is implemented in
 `veriflow/workflows/project_config.py` (`ProjectWorkflowConfig`).
 
 ---

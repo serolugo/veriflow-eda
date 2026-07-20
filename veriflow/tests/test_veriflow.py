@@ -1131,44 +1131,12 @@ def test_cli_non_interactive_run_waves_rejected():
         shutil.rmtree(tmp)
 
 
-def test_launch_waves_docker_uses_surfer_wasm():
-    """VERIFLOW_DOCKER env var should delegate to Surfer WASM."""
-    import os
-    from veriflow.core import sim_runner
-
-    old_vd = os.environ.get("VERIFLOW_DOCKER")
-    old_sd = os.environ.get("SEMICOLAB_DOCKER")
-    old_open_surfer = sim_runner.open_surfer
-    calls = []
-
-    try:
-        os.environ["VERIFLOW_DOCKER"] = "1"
-        os.environ.pop("SEMICOLAB_DOCKER", None)
-        sim_runner.open_surfer = lambda wave_path: calls.append(wave_path)
-        wave_path = Path("waves.vcd")
-        sim_runner.launch_waves(wave_path)
-        assert calls == [wave_path]
-    finally:
-        if old_vd is None:
-            os.environ.pop("VERIFLOW_DOCKER", None)
-        else:
-            os.environ["VERIFLOW_DOCKER"] = old_vd
-        if old_sd is None:
-            os.environ.pop("SEMICOLAB_DOCKER", None)
-        else:
-            os.environ["SEMICOLAB_DOCKER"] = old_sd
-        sim_runner.open_surfer = old_open_surfer
-
-
-def test_launch_waves_local_uses_surfer_native():
-    """Local mode should launch native Surfer when it is available."""
-    import os
+def test_launch_waves_uses_surfer_native():
+    """launch_waves should launch native Surfer when it is available."""
     import platform as real_platform
     import shutil as real_shutil
     from veriflow.core import sim_runner
 
-    old_vd = os.environ.get("VERIFLOW_DOCKER")
-    old_sd = os.environ.get("SEMICOLAB_DOCKER")
     old_system = real_platform.system
     old_which = real_shutil.which
     old_popen = sim_runner.subprocess.Popen
@@ -1178,8 +1146,6 @@ def test_launch_waves_local_uses_surfer_native():
         calls.append((cmd, kwargs))
 
     try:
-        os.environ.pop("VERIFLOW_DOCKER", None)
-        os.environ.pop("SEMICOLAB_DOCKER", None)
         real_platform.system = lambda: "Linux"
         real_shutil.which = lambda tool: "C:/tools/surfer.exe" if tool == "surfer" else None
         sim_runner.subprocess.Popen = fake_popen
@@ -1190,34 +1156,21 @@ def test_launch_waves_local_uses_surfer_native():
         assert calls, "Expected Surfer process launch"
         assert calls[0][0] == ["C:/tools/surfer.exe", str(wave_path)]
     finally:
-        if old_vd is None:
-            os.environ.pop("VERIFLOW_DOCKER", None)
-        else:
-            os.environ["VERIFLOW_DOCKER"] = old_vd
-        if old_sd is None:
-            os.environ.pop("SEMICOLAB_DOCKER", None)
-        else:
-            os.environ["SEMICOLAB_DOCKER"] = old_sd
         real_platform.system = old_system
         real_shutil.which = old_which
         sim_runner.subprocess.Popen = old_popen
 
 
-def test_launch_waves_local_without_surfer_prints_hint():
-    """Local mode should require Surfer instead of using a legacy fallback."""
-    import os
+def test_launch_waves_without_surfer_prints_hint():
+    """launch_waves should print an install hint instead of using a legacy fallback."""
     import io
     import contextlib
     import shutil as real_shutil
     from veriflow.core import sim_runner
 
-    old_vd = os.environ.get("VERIFLOW_DOCKER")
-    old_sd = os.environ.get("SEMICOLAB_DOCKER")
     old_which = real_shutil.which
 
     try:
-        os.environ.pop("VERIFLOW_DOCKER", None)
-        os.environ.pop("SEMICOLAB_DOCKER", None)
         real_shutil.which = lambda tool: None
 
         buf = io.StringIO()
@@ -1229,14 +1182,6 @@ def test_launch_waves_local_without_surfer_prints_hint():
         assert ("GTK" + "Wave") not in output
         assert ("gtk" + "wave") not in output
     finally:
-        if old_vd is None:
-            os.environ.pop("VERIFLOW_DOCKER", None)
-        else:
-            os.environ["VERIFLOW_DOCKER"] = old_vd
-        if old_sd is None:
-            os.environ.pop("SEMICOLAB_DOCKER", None)
-        else:
-            os.environ["SEMICOLAB_DOCKER"] = old_sd
         real_shutil.which = old_which
 
 
@@ -3737,9 +3682,8 @@ ALL_TESTS = [
     ("null_profile_creates_empty_tb",        test_null_profile_creates_empty_tb),
     ("interface_name_column_in_tile_index", test_interface_name_column_in_tile_index),
     ("interface_column_in_records",      test_interface_column_in_records),
-    ("launch_waves_docker_uses_surfer_wasm", test_launch_waves_docker_uses_surfer_wasm),
-    ("launch_waves_local_uses_surfer_native", test_launch_waves_local_uses_surfer_native),
-    ("launch_waves_local_without_surfer_prints_hint", test_launch_waves_local_without_surfer_prints_hint),
+    ("launch_waves_uses_surfer_native", test_launch_waves_uses_surfer_native),
+    ("launch_waves_without_surfer_prints_hint", test_launch_waves_without_surfer_prints_hint),
     ("veriflow_error_str",                    test_veriflow_error_str),
     ("veriflow_error_default_code",           test_veriflow_error_default_code),
     ("veriflow_error_custom_code",            test_veriflow_error_custom_code),

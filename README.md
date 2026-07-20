@@ -411,13 +411,6 @@ If no `.v` testbench sources are present, simulation is skipped automatically.
 
 ---
 
-## Companion environments
-
-See [docs/TILEBENCH.md](https://github.com/serolugo/veriflow/blob/main/docs/TILEBENCH.md) for the optional TileBench Docker environment
-(VeriFlow pre-installed, browser-based waveform viewer, no local EDA tools required).
-
----
-
 ## Documentation
 
 | Document | Description |

@@ -68,5 +68,4 @@ check.
 | [All Commands](reference/commands.md) | Master table of all eight namespaces and their subcommands |
 | [System Specification](SPECS.md) | Formal schema and error-code reference |
 | [Architecture](ARCHITECTURE.md) | Internal module reference for contributors |
-| [TileBench](TILEBENCH.md) | Optional Docker companion environment |
 | [Changelog](CHANGELOG.md) | Release history and what changed |

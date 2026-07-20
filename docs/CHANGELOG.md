@@ -146,6 +146,15 @@ the current feature set; `docs/ARCHITECTURE.md` and `docs/DESIGN.md` (previously
 consolidated into one updated architecture reference. See dev-docs/DOCS_AUDIT_FINAL.md for the
 full record.
 
+### Removed
+
+- **TileBench** — the optional companion Docker environment (`docs/TILEBENCH.md`,
+  `serolugo/tilebench` image) is discontinued and has been removed from the repo and all
+  documentation. Its Docker-specific waveform path (`VERIFLOW_DOCKER`/`SEMICOLAB_DOCKER` env
+  vars, `open_surfer()`) is removed from `core/sim_runner.py` along with it — `launch_waves()`
+  now only ever launches native Surfer from PATH. TileWizard, TileBench's other companion tool,
+  was absorbed into `veriflow wrap` in an earlier session and is unaffected by this removal.
+
 ---
 
 ## [1.0.0] - 2026-06-15

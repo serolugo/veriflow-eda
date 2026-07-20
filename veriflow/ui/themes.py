@@ -13,7 +13,7 @@ text          : primary text
 text_dim      : secondary text, timestamps, separators
 accent        : focused border, primary selection highlight bg
 blue          : breadcrumb, IDs, info
-green         : PASS, TileWizard accent
+green         : PASS accent
 orange        : VeriFlow accent, warnings
 red           : FAIL, errors
 yellow        : progress, pending

@@ -505,7 +505,7 @@ The `*_tool` fields determine the `StageResult.tool` label written to `results.j
 3. If `--run` is given: opens that specific run directory; raises `VeriFlowError` if not found
 4. If `--run` is omitted: scans `runs/` for directories matching `run-NNN`, picks the highest
 5. Verifies `out/sim/waves/waves.vcd` exists
-6. Calls `launch_waves()`, which uses Surfer WASM in Docker and native Surfer locally
+6. Calls `launch_waves()`, which launches native Surfer if found in PATH
 
 ---
 
@@ -537,8 +537,7 @@ Testbenches are self-contained — there is no injection, marker extraction, or 
 
 **Waveform viewer:**
 
-- `open_surfer(wave_path)` — Docker mode only; constructs `http://localhost:7681/?load_url=<vcd>` URL and prints it; calls `webbrowser.open()` as best-effort
-- `launch_waves(wave_path)` — priority: (1) `VERIFLOW_DOCKER` (or deprecated `SEMICOLAB_DOCKER`) → `open_surfer`; (2) `surfer` in PATH → native Surfer; (3) prints Surfer install hint
+- `launch_waves(wave_path)` — `surfer` in PATH → launches native Surfer (non-blocking); otherwise prints the Surfer install hint
 
 ---
 

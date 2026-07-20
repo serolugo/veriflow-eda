@@ -128,52 +128,14 @@ def run_simulation(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def open_surfer(wave_path: Path) -> None:
-    """In TileBench (Docker) mode: open Surfer WASM with the VCD preloaded."""
-    import webbrowser
-    from urllib.parse import quote
-
-    try:
-        rel = wave_path.resolve().relative_to(Path("/workspace"))
-        vcd_url = f"http://localhost:7681/files/{rel.as_posix()}"
-        surfer_url = f"http://localhost:7681/?load_url={quote(vcd_url, safe='')}"
-    except ValueError:
-        # VCD not under /workspace — open Surfer without preloading
-        surfer_url = "http://localhost:7681"
-        vcd_url = None
-
-    print()
-    print("✓ Waveform ready.")
-    print(f"  Open in browser → {surfer_url}")
-    if vcd_url is None:
-        print("  (Could not resolve VCD path — load the file manually in Surfer)")
-
-    try:
-        webbrowser.open(surfer_url)
-    except Exception:
-        pass
-
-
 def launch_waves(wave_path: Path) -> None:
-    """Launch waveform viewer for the given VCD file (non-blocking).
-
-    Priority:
-      1. Docker → Surfer WASM (browser URL)
-      2. Local  → Surfer native binary if found in PATH
-    """
-    import os
+    """Launch the native Surfer waveform viewer for the given VCD file
+    (non-blocking) if it's found in PATH."""
     import platform
-
-    # Docker — always use Surfer WASM
-    # SEMICOLAB_DOCKER is deprecated; VERIFLOW_DOCKER is the current name
-    if os.environ.get("VERIFLOW_DOCKER") or os.environ.get("SEMICOLAB_DOCKER"):
-        open_surfer(wave_path)
-        return
 
     # Windows: no_window evita el flash de consola
     _no_window = {"creationflags": subprocess.CREATE_NO_WINDOW} if platform.system() == "Windows" else {}
 
-    # Local — try Surfer native first
     surfer_path = shutil.which("surfer")
     if surfer_path:
         subprocess.Popen(

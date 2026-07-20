@@ -10,7 +10,7 @@ from rich.theme import Theme
 
 # ── Pastel palette ─────────────────────────────────────────────────────────────
 BLUE    = "#7EB8D4"   # IDs, headers, database names
-GREEN   = "#87D4A0"   # PASS, success, TileWizard accent
+GREEN   = "#87D4A0"   # PASS, success
 ORANGE  = "#D4956A"   # VeriFlow accent, warnings
 RED     = "#D47E7E"   # FAIL, errors
 GREY    = "#888888"   # secondary text, dots, separators
@@ -25,9 +25,7 @@ STYLE_ID        = Style(color=BLUE)
 STYLE_SECONDARY = Style(color=GREY)
 STYLE_LABEL     = Style(color=WHITE,  bold=True)
 
-# VeriFlow orange vs TileWizard green subtitles
 STYLE_VERIFLOW   = Style(color=ORANGE, bold=True)
-STYLE_TILEWIZARD = Style(color=GREEN,  bold=True)
 
 # ── Rich Theme (used by Console) ───────────────────────────────────────────────
 VERIFLOW_THEME = Theme({
@@ -39,6 +37,5 @@ VERIFLOW_THEME = Theme({
     "secondary":  GREY,
     "label":      f"bold {WHITE}",
     "veriflow":   f"bold {ORANGE}",
-    "tilewizard": f"bold {GREEN}",
     "link":       f"underline {BLUE}",
 })

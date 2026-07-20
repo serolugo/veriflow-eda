@@ -87,11 +87,9 @@ veriflow/
 │   ├── tb_semicolab_template.v
 │   └── tb_universal_template.v
 ├── ui/                      # Terminal UI and styled output
-│   ├── banner.py            # SEMICOLAB banner (pyfiglet + TerminalTextEffects)
 │   ├── output.py            # Styled output helpers (Rich)
 │   ├── theme.py             # Central color palette and Rich theme
-│   ├── themes.py            # 16 Textual-compatible color palettes
-│   └── tui.py               # Redirect stub to tilebench TUI
+│   └── themes.py            # 16 Textual-compatible color palettes
 └── tests/
     ├── runner.py
     └── test_*.py
