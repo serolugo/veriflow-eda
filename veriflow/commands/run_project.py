@@ -95,8 +95,14 @@ def _maybe_launch_waves(pr: ProjectRunResult) -> None:
         launch_waves(wave_path)
 
 
+_STATUS_TAGS = {
+    "PASS": "[pass]PASS[/pass]",
+    "PARTIAL": "[warn]PARTIAL[/warn]",
+}
+
+
 def _print_result(pr: ProjectRunResult) -> None:
-    status_tag = "[pass]PASS[/pass]" if pr.result.status == "PASS" else "[fail]FAIL[/fail]"
+    status_tag = _STATUS_TAGS.get(pr.result.status, "[fail]FAIL[/fail]")
     console.print()
     console.print(f"  [secondary]Project run[/secondary]  [id]{pr.run_dir}[/id]")
     console.print(f"  [secondary]Status     [/secondary]  {status_tag}")

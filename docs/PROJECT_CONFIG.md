@@ -545,16 +545,19 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
 |---|---|---|
 | `--db PATH` | yes | Path to the destination VeriFlow database directory. |
 | `--config PATH` | no | Path to the Project Mode config to import from. Default: `veriflow.yaml`. |
-| `--run run-NNN` | no | Specific run to import. Default: the highest-numbered run under `runs_dir` whose `results.json` reports `"status": "PASS"`. |
-| `--force` | no | Import a generic (no-interface) project into an interface-requiring database anyway (see `VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE` below). Does **not** bypass an interface *mismatch* (`VF_IMPORT_INTERFACE_MISMATCH`), which is always rejected. |
+| `--run run-NNN` | no | Specific run to import. Default: the highest-numbered run under `runs_dir` whose `results.json` reports `"status": "PASS"` or `"PARTIAL"`. |
+| `--force` | no | Import a generic (no-interface) project into an interface-requiring database anyway (see `VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE` below). Does **not** bypass an interface *mismatch* (`VF_IMPORT_INTERFACE_MISMATCH`) or an `rtl_hash` mismatch between the run and the copied sources (`VF_IMPORT_RTL_HASH_MISMATCH`), which are always rejected. |
 
 ### What it validates before importing
 
 1. A run to import can be identified: either `--run` names one that exists and has a
    `results.json`, or (if `--run` is omitted) at least one run under `runs_dir` has
-   `"status": "PASS"`.
-2. The chosen run's `status` in `results.json` is `"PASS"` — a `FAIL` run is never importable,
-   whether picked automatically or named explicitly via `--run`.
+   `"status": "PASS"` or `"PARTIAL"`.
+2. The chosen run's `status` in `results.json` is `"PASS"` or `"PARTIAL"` — a `FAIL` run (something
+   that ran actually failed) is never importable, whether picked automatically or named explicitly
+   via `--run`. `"PARTIAL"` (every stage that ran passed, but not every stage type was configured --
+   e.g. a generic project with no interface/testbench) is importable like `"PASS"`; it only means
+   the run's scope was narrower, not that anything failed.
 3. The destination database is structurally valid (same check `db run` uses —
    `project_config.yaml`, `tile_index.csv`, `records.csv`, `tiles/` must all exist).
 4. **Interface compatibility**, in two parts:
@@ -569,6 +572,12 @@ veriflow project import --db ./database [--config veriflow.yaml] [--run run-NNN]
      without the RTL ever having been verified against that port contract, and its first
      `db run` would fail connectivity immediately. `--force` downgrades this to a warning and
      lets the import proceed anyway (not recommended — see below).
+5. **RTL integrity**: after copying the run's recorded RTL/TB sources into the tile, VeriFlow
+   recomputes the SHA256 of each copied file and compares it against the run's recorded `rtl_hash`.
+   If they don't match, the source file changed on disk between `project run` and `project import` --
+   the import is rejected with `VF_IMPORT_RTL_HASH_MISMATCH` (not overridable with `--force`), since
+   what would be imported is no longer what was actually verified. Re-run `veriflow project run`
+   against the current sources before importing again.
 
 ### What it only warns about (doesn't block the import)
 

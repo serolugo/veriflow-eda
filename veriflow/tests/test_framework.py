@@ -252,10 +252,22 @@ def test_run_result_to_dict():
 def test_run_result_from_stages_pass():
     stages = {
         "a": StageResult(name="a", status="PASS"),
-        "b": StageResult(name="b", status="SKIPPED"),
+        "b": StageResult(name="b", status="PASS"),
     }
     rr = RunResult.from_stages(stages)
     assert rr.status == "PASS"
+
+
+def test_run_result_from_stages_partial_when_any_stage_skipped():
+    """dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b: a SKIPPED stage
+    downgrades the overall status to PARTIAL, never a full PASS -- even
+    when nothing actually failed."""
+    stages = {
+        "a": StageResult(name="a", status="PASS"),
+        "b": StageResult(name="b", status="SKIPPED"),
+    }
+    rr = RunResult.from_stages(stages)
+    assert rr.status == "PARTIAL"
 
 
 def test_run_result_from_stages_fail():
@@ -366,14 +378,17 @@ def test_flow_work_dir_paths(tmp_path):
 
 
 def test_flow_empty_stages(tmp_path):
+    """dev-docs/TRACEABILITY_AUDIT.md Finding #4: the purest form of the
+    vacuous-truth bug -- zero stages ran, so nothing failed, but that must
+    not read as a full PASS either."""
     result = Flow([]).run(_design(), RunRequest(work_dir=tmp_path))
-    assert result.status == "PASS"
+    assert result.status == "PARTIAL"
     assert result.stages == {}
 
 
 def test_flow_skipped_stage_does_not_fail(tmp_path):
     result = Flow([SkippedStage()]).run(_design(), RunRequest(work_dir=tmp_path))
-    assert result.status == "PASS"
+    assert result.status == "PARTIAL"
 
 
 def test_flow_rejects_duplicate_stage_names():

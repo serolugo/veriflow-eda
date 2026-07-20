@@ -114,11 +114,13 @@ Two operating modes, two config files:
   (database-wide defaults) and one `tile_config.yaml` per tile (per-tile
   overrides). Commands: `veriflow db ...`.
 
-Every run (either mode) writes a `results.json` with `status`:
-`PASS` (fully verified), `FAIL` (did not pass), or `PARTIAL` (Database
-Mode only -- some stages passed, at least one failed or was skipped due
-to a failure upstream). A `FAIL`/`PARTIAL` result is normal, valid data
-describing a verification outcome, not an error condition.
+Every run (either mode) writes a `results.json` with `status`: `PASS`
+(every configured stage actually ran and passed), `PARTIAL` (every stage
+that ran passed, but at least one configured stage type didn't run at
+all -- e.g. a generic project with no interface/testbench, or an
+explicit `--skip-*` flag), or `FAIL` (something that ran did not pass).
+A `FAIL`/`PARTIAL` result is normal, valid data describing a
+verification outcome, not an error condition.
 """
 
 _CONFIG_SCHEMA = """\
@@ -248,15 +250,15 @@ Written to `<runs_dir>/run-NNN/results.json` after every `project run`.
 | Field | Description |
 |---|---|
 | `schema_version` | `"1.0"` |
-| `status` | `PASS` \\| `FAIL` |
+| `status` | `PASS` \\| `PARTIAL` \\| `FAIL` |
 | `command` | Always `"project run"` |
 | `run_dir` | Path to this run directory |
 | `interface_name` | Interface profile name, or `null` |
 | `top_module` | RTL top module name |
 | `rtl_sources` / `tb_sources` | Relative paths used |
 | `technology` | Technology target name |
-| `stages` | Per-stage results; a stage not in the pipeline reports `"status": "SKIPPED"` |
-| `rtl_hash` | `{filename: sha256}` snapshot |
+| `stages` | Per-stage results; a stage type never configured (or explicitly `--skip-*`'d) reports `"status": "SKIPPED"`; one that never got a turn because an earlier stage FAILed reports `"NOT_RUN"` |
+| `rtl_hash` | `{filename: sha256}` snapshot taken at the start of the run, before any stage executes |
 | `veriflow_version` | VeriFlow version that produced this run |
 | `timestamp` | ISO 8601 UTC timestamp |
 
@@ -342,7 +344,7 @@ veriflow project set technology sky130
 
 # 3. Run verification
 veriflow project run
-# -> runs/run-001/results.json, status: PASS or FAIL
+# -> runs/run-001/results.json, status: PASS, PARTIAL, or FAIL
 
 # 4. Promote a passing run into a shared database as a new tile
 veriflow db init --db ./database

@@ -2,16 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from veriflow.framework.status import derive_run_status
 from veriflow.models.stage_result import StageResult
-
-_PASS_STATUSES = {"PASS", "COMPLETED", "SKIPPED"}
 
 
 def _derive_status(stages: dict[str, StageResult]) -> str:
-    for sr in stages.values():
-        if sr.status not in _PASS_STATUSES:
-            return "FAIL"
-    return "PASS"
+    return derive_run_status(sr.status for sr in stages.values())
 
 
 @dataclass

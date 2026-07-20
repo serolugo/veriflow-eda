@@ -474,7 +474,10 @@ def test_cmd_run_project_only_check_skips_sim_and_synth(tmp_path):
         for p in patches:
             p.stop()
 
-    assert exit_code == 0
+    # simulation/synthesis were skipped, not run -- overall status PARTIAL,
+    # non-zero exit (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert exit_code == 1
+    assert result_data["status"] == "PARTIAL"
     assert result_data["stages"]["connectivity"]["status"] == "PASS"
     assert result_data["stages"]["simulation"]["status"] == "SKIPPED"
     assert result_data["stages"]["synthesis"]["status"] == "SKIPPED"
@@ -493,7 +496,10 @@ def test_cmd_run_project_skip_synth_only_skips_synthesis(tmp_path):
         for p in patches:
             p.stop()
 
-    assert exit_code == 0
+    # synthesis was skipped, not run -- overall status PARTIAL, non-zero
+    # exit (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert exit_code == 1
+    assert result_data["status"] == "PARTIAL"
     assert result_data["stages"]["connectivity"]["status"] == "PASS"
     assert result_data["stages"]["simulation"]["status"] == "PASS"
     assert result_data["stages"]["synthesis"]["status"] == "SKIPPED"
@@ -512,7 +518,10 @@ def test_cmd_run_project_only_synth_skips_check_and_sim(tmp_path):
         for p in patches:
             p.stop()
 
-    assert exit_code == 0
+    # connectivity/simulation were skipped, not run -- overall status
+    # PARTIAL, non-zero exit (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert exit_code == 1
+    assert result_data["status"] == "PARTIAL"
     assert result_data["stages"]["connectivity"]["status"] == "SKIPPED"
     assert result_data["stages"]["simulation"]["status"] == "SKIPPED"
     assert result_data["stages"]["synthesis"]["status"] == "PASS"

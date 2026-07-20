@@ -215,7 +215,9 @@ def test_run_with_custom_pipeline_skips_simulation_stage_result(tmp_path):
 
     assert "simulation" not in pr.result.stages
     assert not sim_getter.called
-    assert pr.result.status == "PASS"
+    # simulation was never part of this custom pipeline -- not a full PASS
+    # (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert pr.result.status == "PARTIAL"
 
 
 def test_results_json_shows_simulation_skipped_when_excluded_from_pipeline(tmp_path):

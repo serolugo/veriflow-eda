@@ -177,7 +177,9 @@ def test_project_mode() -> None:
 
     _log("project run (no interface -- connectivity/simulation SKIPPED, synthesis only)")
     run_result = api.project_run(CTX.project_cfg)
-    assert run_result["status"] == "PASS", f"expected PASS, got {run_result['status']!r}: {run_result}"
+    # Not every configured stage type ran (no interface/tb_sources here) --
+    # PARTIAL, not PASS (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert run_result["status"] == "PARTIAL", f"expected PARTIAL, got {run_result['status']!r}: {run_result}"
     assert run_result["stages"]["connectivity"]["status"] == "SKIPPED"
     assert run_result["stages"]["simulation"]["status"] == "SKIPPED"
     assert run_result["stages"]["synthesis"]["status"] == "PASS"
@@ -186,7 +188,7 @@ def test_project_mode() -> None:
     results_json = run_dir / "results.json"
     assert results_json.is_file(), f"results.json missing at {results_json}"
     on_disk = json.loads(results_json.read_text(encoding="utf-8"))
-    assert on_disk["status"] == "PASS"
+    assert on_disk["status"] == "PARTIAL"
 
     _log("project set interface null / technology generic / pipeline")
     api.project_set(CTX.project_cfg, "interface", "null")
@@ -388,7 +390,9 @@ def test_external_interfaces() -> None:
     result = api.project_run(cfg)
     assert result["interface_name"] == "smoke_ext_if", result
     assert result["stages"]["connectivity"]["status"] == "PASS", result["stages"]["connectivity"]
-    assert result["status"] == "PASS", result
+    # No tb_sources configured -- simulation never ran, so PARTIAL, not
+    # PASS (dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b).
+    assert result["status"] == "PARTIAL", result
 
 
 # ── 8. Set commands: stage-backend / technology-strict round-trip ──────────

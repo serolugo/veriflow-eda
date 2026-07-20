@@ -83,7 +83,11 @@ def test_project_run_no_python_warning_emitted(tmp_path, recwarn):
         patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend()),
     ):
         rc = main(["project", "run", "--config", str(config_path)])
-    assert rc == 0
+    # _make_project has no tb_sources -- simulation never ran, so the
+    # overall status is PARTIAL (non-zero exit), not PASS (dev-docs/
+    # TRACEABILITY_AUDIT.md Finding #4/#4b). Irrelevant to what this test
+    # actually checks (no stray Python UserWarning), which is unaffected.
+    assert rc == 1
     assert len(recwarn) == 0
 
 

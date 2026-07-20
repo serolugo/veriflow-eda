@@ -275,9 +275,28 @@ def get_project_run_result(run_dir: str | Path) -> dict:
         ) from exc
 
 
+# A run is importable if every stage that actually ran passed -- "PASS"
+# (everything configured ran and passed) or "PARTIAL" (some stage types were
+# never configured at all, e.g. a synthesis-only generic project with no
+# interface:/tb_sources -- a long-supported, legitimate scope, not a failure)
+# both qualify. Only "FAIL" (something that ran did not pass) is rejected.
+# See dev-docs/TRACEABILITY_AUDIT.md Findings #4/#4b: before the fix to
+# veriflow.framework.status.derive_run_status, a run where every stage was
+# skipped (whether via --skip-* flags or simply never configured) reported
+# "PASS" -- a vacuous pass that made this whole distinction moot. Now that
+# "PASS" strictly means "ran and passed", restricting import to "PASS" only
+# would have made every generic/partially-scoped project permanently
+# unimportable, breaking the existing "generic project -> interface-
+# requiring database" workflow (VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE,
+# --force) -- accepting "PARTIAL" here preserves that workflow while still
+# rejecting an outright FAIL.
+_IMPORTABLE_STATUSES = frozenset({"PASS", "PARTIAL"})
+
+
 def _find_latest_passing_run(runs_dir: Path) -> tuple[str | None, dict | None]:
     """Return (run_id, results_dict) for the highest-numbered run-NNN under
-    runs_dir whose results.json has status == "PASS", or (None, None)."""
+    runs_dir whose results.json has an importable status (see
+    _IMPORTABLE_STATUSES), or (None, None)."""
     import json
     import re
 
@@ -301,7 +320,7 @@ def _find_latest_passing_run(runs_dir: Path) -> tuple[str | None, dict | None]:
             data = json.loads(results_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if data.get("status") == "PASS":
+        if data.get("status") in _IMPORTABLE_STATUSES:
             return run_name, data
 
     return None, None
@@ -348,7 +367,7 @@ def project_import(
     run_id : str | None
         Specific run to import (e.g. "run-003"). If None, imports the
         highest-numbered run under runs_dir whose results.json reports
-        status "PASS".
+        status "PASS" or "PARTIAL" (see _IMPORTABLE_STATUSES).
 
     force, when True, downgrades VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE
     (below) from an error to a warning appended to the returned dict's
@@ -357,15 +376,19 @@ def project_import(
     is never something force can paper over.
 
     Raises:
-        VeriFlowError(VF_IMPORT_NO_PASSING_RUN)      -- run_id is None and no run has status PASS
+        VeriFlowError(VF_IMPORT_NO_PASSING_RUN)      -- run_id is None and no run has status PASS/PARTIAL
         VeriFlowError(VF_IMPORT_RUN_NOT_FOUND)        -- run_id given but missing / no results.json
-        VeriFlowError(VF_IMPORT_RUN_NOT_PASSING)      -- run_id given but its status != PASS
+        VeriFlowError(VF_IMPORT_RUN_NOT_PASSING)      -- run_id given but its status is FAIL
         VeriFlowError(VF_IMPORT_INTERFACE_MISMATCH)   -- project's interface_name != database's (both declared)
         VeriFlowError(VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE) -- project has no interface, database requires one, force=False
         VeriFlowError(VF_DATABASE_CONFIG_YAML_ERROR)  -- destination project_config.yaml is malformed
         VeriFlowError(VF_IMPORT_RTL_SOURCE_MISSING)   -- a recorded RTL/TB source no longer exists on disk
         VeriFlowError(VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES) -- no recorded RTL source declares `module <top_module>`
+        VeriFlowError(VF_IMPORT_RTL_HASH_MISMATCH)    -- a copied RTL source's sha256 doesn't match the
+            run's recorded rtl_hash (the file changed on disk between `project run` and this import) --
+            not overridable with force=True
     """
+    import hashlib
     import json
     import re
     import shutil
@@ -388,14 +411,15 @@ def project_import(
     project_config = ProjectWorkflowConfig.from_file(config_path, validate_rtl_sources=False)
     runs_dir = project_config.runs_dir
 
-    # b. Determine which run to import
+    # b. Determine which run to import (see _IMPORTABLE_STATUSES: PASS or
+    # PARTIAL both qualify, only FAIL is rejected)
     if run_id is None:
         found_run_id, results = _find_latest_passing_run(runs_dir)
         if found_run_id is None:
             raise VeriFlowError(
-                f"No passing run found under {runs_dir}. "
+                f"No importable run found under {runs_dir}. "
                 "Run 'veriflow project run' until a run reports status PASS "
-                "before importing.",
+                "or PARTIAL (not FAIL) before importing.",
                 code="VF_IMPORT_NO_PASSING_RUN",
                 details={"runs_dir": str(runs_dir)},
             )
@@ -409,10 +433,11 @@ def project_import(
                 details={"run_id": run_id, "runs_dir": str(runs_dir)},
             )
         results = get_project_run_result(runs_dir / run_id)
-        if results.get("status") != "PASS":
+        if results.get("status") not in _IMPORTABLE_STATUSES:
             raise VeriFlowError(
-                f"Run {run_id!r} has status {results.get('status')!r}, not PASS. "
-                "Only a passing run can be imported.",
+                f"Run {run_id!r} has status {results.get('status')!r}, not "
+                "PASS or PARTIAL. A run where something that ran actually "
+                "failed cannot be imported.",
                 code="VF_IMPORT_RUN_NOT_PASSING",
                 details={"run_id": run_id, "status": results.get("status")},
             )
@@ -557,6 +582,41 @@ def project_import(
                 code="VF_IMPORT_RTL_SOURCE_MISSING",
                 details={"path": str(src), "run_id": run_id},
             ) from exc
+
+    # e.3 Verify the bytes that actually landed in the tile match what
+    # `project run` verified (dev-docs/TRACEABILITY_AUDIT.md, Finding #2):
+    # results.json's rtl_hash was computed whenever that run executed --
+    # `project run` and `project import` are two separate CLI invocations,
+    # so the source file may have changed on disk in between. Recompute the
+    # hash from the copied destination bytes (not the origin file, and not
+    # just trusting the recorded value) -- the destination is the actual
+    # source of truth for what this tile now contains. No --force override:
+    # a mismatch means what's about to be imported is provably not what was
+    # verified.
+    recorded_hashes: dict = results.get("rtl_hash") or {}
+    for rel in rtl_sources:
+        recorded_hash = recorded_hashes.get(Path(rel).name)
+        if recorded_hash is None:
+            continue
+        dest_name = expected_rtl_filename if rel == rename_source_rel else Path(rel).name
+        actual_hash = hashlib.sha256((rtl_dir / dest_name).read_bytes()).hexdigest()
+        if actual_hash != recorded_hash:
+            raise VeriFlowError(
+                f"RTL source {Path(rel).name!r} has changed since the last "
+                f"passing 'project run' (recorded sha256 {recorded_hash}, "
+                f"current sha256 {actual_hash}). The RTL that would be "
+                "imported is not the RTL that was actually verified -- run "
+                "'veriflow project run' again against the current sources "
+                "before reimporting.",
+                code="VF_IMPORT_RTL_HASH_MISMATCH",
+                details={
+                    "filename": Path(rel).name,
+                    "path": str((project_root / rel).resolve()),
+                    "recorded_hash": recorded_hash,
+                    "actual_hash": actual_hash,
+                    "run_id": run_id,
+                },
+            )
 
     tb_sources = results.get("tb_sources") or []
     if tb_sources:
@@ -745,8 +805,9 @@ def import_repo(
 
     Flow: clone repo_url (given branch, --depth 1) into a fresh temp dir ->
     look for config_path at the clone's root -> run it for real (this IS the
-    precheck, not a dry run) -> on status PASS, `project_import()` the
-    result -> always remove the temp dir, success or failure.
+    precheck, not a dry run) -> on an importable status (PASS or PARTIAL,
+    see _IMPORTABLE_STATUSES), `project_import()` the result -> always
+    remove the temp dir, success or failure.
 
     Duplicate-import guard: before doing any of that, checks whether
     repo_url+branch was already imported into this database (by scanning
@@ -759,7 +820,11 @@ def import_repo(
     a new tile is created (the existing one is left untouched, never
     overwritten). This check is independent of the precheck below: force
     never lets a failing `project run` through -- that gate is
-    `project_import()`'s own PASS-only requirement, unchanged.
+    `project_import()`'s own PASS-or-PARTIAL requirement, unchanged.
+    Likewise, `project_import()`'s rtl_hash verification (see its own
+    docstring, VF_IMPORT_RTL_HASH_MISMATCH) applies automatically here too,
+    since this function calls it directly on the same freshly-cloned
+    checkout -- no separate verification point is needed.
 
     Parameters
     ----------
@@ -802,7 +867,7 @@ def import_repo(
         VeriFlowError(VF_IMPORT_REPO_NO_CONFIG)         -- config_path missing at the repo's root
         VeriFlowError(VF_IMPORT_REPO_EXTERNAL_INTERFACE_URL) -- interface.definition is an uncached
             URL and allow_external_interface is False
-        VeriFlowError(VF_IMPORT_REPO_PRECHECK_FAILED)   -- project run status != PASS
+        VeriFlowError(VF_IMPORT_REPO_PRECHECK_FAILED)   -- project run status is FAIL
         ... plus anything project_import() itself can raise (VF_IMPORT_INTERFACE_MISMATCH,
         VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE, etc.)
     """
@@ -860,11 +925,11 @@ def import_repo(
             _reject_uncached_external_interface(cloned_config_path)
 
         run_result = project_run(cloned_config_path)
-        if run_result.get("status") != "PASS":
+        if run_result.get("status") not in _IMPORTABLE_STATUSES:
             raise VeriFlowError(
                 f"Precheck failed for {repo_url!r} (branch {branch!r}): "
-                f"status={run_result.get('status')!r}. Only a passing "
-                "'project run' can be imported.",
+                f"status={run_result.get('status')!r}. A run where "
+                "something that ran actually failed cannot be imported.",
                 code="VF_IMPORT_REPO_PRECHECK_FAILED",
                 details={"repo_url": repo_url, "branch": branch, "run_result": run_result},
             )
@@ -1002,7 +1067,8 @@ def generate_readme(
 
     Raises:
         VeriFlowError(VF_README_NO_PASSING_RUN) -- no run under runs_dir
-            has status PASS.
+            has an importable status (PASS or PARTIAL, see
+            _IMPORTABLE_STATUSES).
 
     Returns the rendered README content as a string.
     """
@@ -1021,9 +1087,9 @@ def generate_readme(
     run_id, results = _find_latest_passing_run(config.runs_dir)
     if run_id is None:
         raise VeriFlowError(
-            f"No passing run found under {config.runs_dir}. "
+            f"No importable run found under {config.runs_dir}. "
             "Run 'veriflow project run' until a run reports status PASS "
-            "before generating a README.",
+            "or PARTIAL (not FAIL) before generating a README.",
             code="VF_README_NO_PASSING_RUN",
             details={"runs_dir": str(config.runs_dir)},
         )

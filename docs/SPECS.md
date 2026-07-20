@@ -303,12 +303,26 @@ The connectivity check runs only when an interface profile is configured; generi
 
 ### Status derivation
 
+Shared between both modes via `veriflow.framework.status.derive_run_status()` (see
+dev-docs/TRACEABILITY_AUDIT.md, Findings #4/#4b -- Project Mode and Database Mode used to
+implement this independently, and had silently diverged: Project Mode treated an all-SKIPPED
+run as `PASS`, a vacuous pass since nothing that ran had actually failed because nothing ran at
+all. One shared function now backs both.
+
 | Condition | Status |
 |---|---|
-| Connectivity FAIL | FAIL |
-| Any stage SKIPPED | PARTIAL |
-| All executed stages PASS / COMPLETED | PASS |
-| Simulation FAILED or Synthesis FAIL | FAIL |
+| Any stage FAIL | FAIL |
+| No FAIL, but any stage SKIPPED (or zero stages ran at all) | PARTIAL |
+| All executed stages PASS / COMPLETED, none SKIPPED | PASS |
+
+In Project Mode's `results.json`, a stage can also report `NOT_RUN` instead of `SKIPPED`: that
+value is reserved specifically for a stage that *was* part of the configured pipeline but never
+got a turn because an earlier stage FAILed first (the run stopped before reaching it) -- as
+opposed to `SKIPPED`, which means the stage was never configured to begin with (no
+`interface:`/`tb_sources`) or was explicitly bypassed via `--skip-check`/`--skip-sim`/
+`--skip-synth`. Both `SKIPPED` and `NOT_RUN` count identically toward the `PARTIAL` status
+derivation above -- the distinction is for a human/tool reading `results.json` to understand
+*why* a stage didn't run, not a third status-derivation tier.
 
 ---
 

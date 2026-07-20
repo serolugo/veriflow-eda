@@ -4,6 +4,7 @@ verified Project Mode run into a Database Mode database as a new tile.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -556,6 +557,87 @@ def test_import_top_module_not_in_any_source_raises(tmp_path):
         project_import(config_path, db_path)
     assert exc_info.value.code == "VF_IMPORT_TOP_MODULE_NOT_IN_SOURCES"
     assert "top" in str(exc_info.value)
+
+
+# ── 2d. rtl_hash integrity (dev-docs/TRACEABILITY_AUDIT.md Finding #2) ───────
+
+
+def test_import_rtl_hash_match_succeeds_normally(tmp_path):
+    """Baseline: the source file is unchanged since `project run` -- the
+    recomputed hash of the copied bytes matches results.json's recorded
+    rtl_hash, and the import proceeds exactly as before this check
+    existed."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    result = project_import(config_path, db_path)
+
+    assert result["tile_number"] == "0001"
+    imported_run_path = db_path / "config" / f"tile_{result['tile_number']}" / "imported_run.json"
+    assert imported_run_path.exists()
+    imported = json.loads(imported_run_path.read_text(encoding="utf-8"))
+    copied = (db_path / "config" / f"tile_{result['tile_number']}" / "src" / "rtl" / "top.v").read_bytes()
+    assert imported["rtl_hash"]["top.v"] == hashlib.sha256(copied).hexdigest()
+
+
+def test_import_rtl_hash_mismatch_rejected_when_source_changed_after_run(tmp_path):
+    """The exact scenario from dev-docs/TRACEABILITY_AUDIT.md Finding #2:
+    the RTL source is edited *after* `project run` recorded its hash but
+    *before* `project import` copies it -- the copied bytes would silently
+    diverge from what was actually verified. Must be rejected, not
+    silently imported with a stale hash."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    (config_path.parent / "rtl" / "top.v").write_text(
+        "module top; /* modified after verification, before import */ endmodule\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_IMPORT_RTL_HASH_MISMATCH"
+    assert "top.v" in str(exc_info.value)
+
+
+def test_import_rtl_hash_mismatch_does_not_write_imported_run_json(tmp_path):
+    """The import must not complete on a hash mismatch: imported_run.json
+    -- the record that marks a tile as a successfully imported, traceable
+    run -- must never be written."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    (config_path.parent / "rtl" / "top.v").write_text(
+        "module top; /* modified */ endmodule\n", encoding="utf-8"
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path)
+    assert exc_info.value.code == "VF_IMPORT_RTL_HASH_MISMATCH"
+
+    config_dir = db_path / "config"
+    imported_run_files = list(config_dir.glob("tile_*/imported_run.json")) if config_dir.exists() else []
+    assert imported_run_files == []
+
+
+def test_import_rtl_hash_mismatch_not_overridable_with_force(tmp_path):
+    """Unlike VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE, force=True must NOT
+    bypass a hash mismatch -- what would be imported is provably not what
+    was verified, and no flag should be able to paper over that."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+    db_path = _make_db(tmp_path)
+
+    (config_path.parent / "rtl" / "top.v").write_text(
+        "module top; /* modified */ endmodule\n", encoding="utf-8"
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        project_import(config_path, db_path, force=True)
+    assert exc_info.value.code == "VF_IMPORT_RTL_HASH_MISMATCH"
 
 
 # ── 3. Explicit --run selection ────────────────────────────────────────────────

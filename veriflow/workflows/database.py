@@ -25,6 +25,7 @@ from veriflow.core.validator import (
     validate_run_inputs,
     validate_tools,
 )
+from veriflow.framework.status import derive_run_status
 from veriflow.generators.manifest import generate_manifest
 from veriflow.generators.notes import generate_notes
 from veriflow.generators.readme import generate_readme
@@ -581,22 +582,11 @@ def _gitkeep(d: Path) -> None:
     (d / ".gitkeep").touch()
 
 
-def _derive_status(
-    conn: str,
-    sim: str,
-    synth: str,
-    skip_check: bool = False,
-    skip_sim: bool = False,
-    skip_synth: bool = False,
-) -> str:
-    if conn == "FAIL":
-        return "FAIL"
-    stages_skipped = any(s == "SKIPPED" for s in [conn, sim, synth])
-    if stages_skipped:
-        return "PARTIAL"
-    if conn == "PASS" and sim in ("COMPLETED", "SKIPPED") and synth in ("PASS", "SKIPPED"):
-        return "PASS"
-    return "FAIL"
+def _derive_status(conn: str, sim: str, synth: str) -> str:
+    """Thin wrapper kept for call-site readability -- the actual aggregation
+    logic lives in veriflow.framework.status.derive_run_status, shared with
+    Project Mode (dev-docs/TRACEABILITY_AUDIT.md, Findings #4/#4b)."""
+    return derive_run_status([conn, sim, synth])
 
 
 def _load_run_info(tile_id: str, run_dir: Path) -> DatabaseRunInfo:

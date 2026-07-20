@@ -17,6 +17,7 @@ from veriflow.core.stages.simulation import SimulationStage
 from veriflow.core.stages.synthesis import SynthesisStage
 from veriflow.core.validator import validate_tools
 from veriflow.framework import Design, Flow, RunRequest, RunResult
+from veriflow.framework.status import derive_run_status
 from veriflow.generators.results import generate_results_json
 from veriflow.models.execution_profile import ExecutionProfile
 from veriflow.models.interface_profile import get_interface_profile
@@ -39,22 +40,46 @@ def _rel_to_root(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+_CANONICAL_STAGE_NAMES = ("connectivity", "simulation", "synthesis")
+
+
+def _effective_stage_status(result: RunResult, name: str, configured_stage_names: frozenset[str]) -> str:
+    """The status *name* (one of _CANONICAL_STAGE_NAMES) effectively has in
+    this run, whether or not it produced a StageResult at all.
+
+    A stage absent from result.stages means one of two different things,
+    now distinguished (dev-docs/TRACEABILITY_AUDIT.md, Finding #5b):
+
+    - It was never part of this run's Flow at all -- no `interface:`
+      section (connectivity) or no tb_sources (simulation) -- "SKIPPED",
+      same as an explicit `--skip-*` flag (which *does* produce a
+      StageResult, just with status "SKIPPED" -- returned as-is below,
+      this only covers stages that were never even instantiated).
+    - It *was* part of this run's Flow (present in configured_stage_names)
+      but Flow.run() broke out early on an earlier stage's FAIL before
+      ever reaching it -- "NOT_RUN": it wasn't skipped by anyone's choice,
+      it simply never got a turn.
+    """
+    sr = result.stages.get(name)
+    if sr is None:
+        return "NOT_RUN" if name in configured_stage_names else "SKIPPED"
+    return "PASS" if sr.status == "COMPLETED" else sr.status
+
+
 def _stage_entry(
     result: RunResult,
     name: str,
     run_dir: Path,
     root: Path,
     *,
+    configured_stage_names: frozenset[str],
     with_waves: bool = False,
 ) -> dict:
-    """Build the results.json entry for one stage.
-
-    A stage absent from result.stages means it wasn't configured (e.g. no
-    `interface:` section, no tb_sources) -- treated the same as SKIPPED.
-    """
+    """Build the results.json entry for one stage."""
     sr = result.stages.get(name)
     if sr is None:
-        entry: dict = {"status": "SKIPPED", "log": None}
+        status = _effective_stage_status(result, name, configured_stage_names)
+        entry: dict = {"status": status, "log": None}
         if with_waves:
             entry["waves"] = None
         return entry
@@ -114,6 +139,8 @@ def _write_results_json(
     run_dir: Path,
     design: Design,
     result: RunResult,
+    rtl_hash: dict[str, str],
+    configured_stage_names: frozenset[str],
 ) -> None:
     root = config.root
 
@@ -128,11 +155,18 @@ def _write_results_json(
         "tb_sources": [_rel_to_root(p, root) for p in design.tb_sources],
         "technology": config.technology.name,
         "stages": {
-            "connectivity": _stage_entry(result, "connectivity", run_dir, root),
-            "simulation": _stage_entry(result, "simulation", run_dir, root, with_waves=True),
-            "synthesis": _stage_entry(result, "synthesis", run_dir, root),
+            "connectivity": _stage_entry(
+                result, "connectivity", run_dir, root, configured_stage_names=configured_stage_names
+            ),
+            "simulation": _stage_entry(
+                result, "simulation", run_dir, root,
+                configured_stage_names=configured_stage_names, with_waves=True,
+            ),
+            "synthesis": _stage_entry(
+                result, "synthesis", run_dir, root, configured_stage_names=configured_stage_names
+            ),
         },
-        "rtl_hash": _compute_rtl_hash(design.rtl_sources),
+        "rtl_hash": rtl_hash,
         "warnings": [*config.config_warnings, *_collect_warnings(result)],
         "veriflow_version": __version__,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -261,6 +295,7 @@ class ProjectWorkflow:
             validate_tools(need_iverilog=need_iverilog, need_yosys=need_yosys)
 
         design, flow = build_project_flow(self.config)
+        configured_stage_names = frozenset(s.name for s in flow.stages)
 
         if request is None:
             run_dir = self.config.runs_dir / get_next_run_id(self.config.runs_dir)
@@ -270,8 +305,38 @@ class ProjectWorkflow:
             run_dir = request.work_dir
             run_dir.mkdir(parents=True, exist_ok=True)
 
+        # rtl_hash is captured *before* any stage runs (dev-docs/
+        # TRACEABILITY_AUDIT.md, Finding #1, Option A): computing it after
+        # flow.run() meant the recorded hash reflected whatever the RTL
+        # looked like once every tool had already finished, not what
+        # verification actually started from. Snapshotting here narrows the
+        # window from "the entire run's duration" to "the moment the run
+        # began" -- it does not eliminate it (each stage still reads the
+        # live file from disk independently, see Option B, documented as
+        # pending in TRACEABILITY_AUDIT.md), but it's a real reduction in
+        # risk for the common case (a run takes seconds to minutes; a
+        # mid-run edit is much less likely than a stale hash computed after
+        # the fact silently describing a state no tool ever saw).
+        rtl_hash = _compute_rtl_hash(design.rtl_sources)
+
         result = flow.run(design, request)
 
-        _write_results_json(self.config, run_dir, design, result)
+        # Recompute the overall status over all three canonical stage
+        # types, not just whichever ones Flow actually instantiated:
+        # RunResult.from_stages() (inside flow.run()) only ever sees the
+        # stages that were built into this Flow, so a type that was never
+        # configured at all (no interface:, no tb_sources) is invisible to
+        # it -- for a synthesis-only generic project that meant "status"
+        # came out "PASS" even though connectivity/simulation never ran,
+        # the same vacuous-truth gap as Finding #4, just reached from
+        # "never configured" instead of "explicitly skipped". Using
+        # _effective_stage_status for all three names (the same resolution
+        # _stage_entry uses for the JSON display) closes that gap too.
+        result.status = derive_run_status(
+            _effective_stage_status(result, name, configured_stage_names)
+            for name in _CANONICAL_STAGE_NAMES
+        )
+
+        _write_results_json(self.config, run_dir, design, result, rtl_hash, configured_stage_names)
 
         return ProjectRunResult(run_dir=run_dir, result=result, config_warnings=self.config.config_warnings)

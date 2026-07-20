@@ -761,6 +761,11 @@ def test_workflow_run_returns_project_run_result(tmp_path):
 
 
 def test_workflow_result_contains_underlying_run_result(tmp_path):
+    """cfg is a synthesis-only generic project (no interface:, no
+    tb_sources) -- connectivity/simulation never ran, so the overall
+    status is "PARTIAL", not "PASS" (dev-docs/TRACEABILITY_AUDIT.md,
+    Finding #4/#4b: "PASS" is reserved for a run where every configured
+    stage type actually ran and passed)."""
     cfg = _rtl_only_config(tmp_path)
 
     with (
@@ -772,7 +777,7 @@ def test_workflow_result_contains_underlying_run_result(tmp_path):
     ):
         pr = ProjectWorkflow(cfg).run()
 
-    assert pr.result.status == "PASS"
+    assert pr.result.status == "PARTIAL"
     assert "synthesis" in pr.result.stages
 
 

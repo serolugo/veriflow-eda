@@ -890,24 +890,24 @@ Every `project run` writes `results.json` to the run directory. Unlike Database 
 | Field | Description |
 |---|---|
 | `schema_version` | Document schema version (`"1.0"`) |
-| `status` | Overall status: `PASS` or `FAIL` |
+| `status` | Overall status: `PASS`, `PARTIAL`, or `FAIL` -- `PARTIAL` means every stage that ran passed, but at least one configured stage type didn't run at all (generic project with no `interface:`/`tb_sources`, or an explicit `--skip-check`/`--skip-sim`/`--skip-synth`); only a run where *every* stage type in the pipeline actually ran and passed reports `PASS` |
 | `command` | Always `"project run"` |
 | `run_dir` | Path to this run directory, relative to the config file |
 | `interface_name` | Selected interface profile name, or `null` for a generic project |
 | `top_module` | RTL top module name |
 | `rtl_sources` / `tb_sources` | Relative paths to the RTL/TB files used |
 | `technology` | Technology target name (`"generic"` by default) |
-| `stages` | Per-stage results (`connectivity`, `simulation`, `synthesis`); a stage absent from the pipeline reports `"status": "SKIPPED"`. The `synthesis` entry additionally carries `technology`/`technology_version` (installed PDK version, untruncated) when synthesis was actually PDK-mapped -- see 13.4 for the same field on Database Mode's schema |
-| `rtl_hash` | `{filename: sha256}` for each RTL source, snapshotted at run time |
+| `stages` | Per-stage results (`connectivity`, `simulation`, `synthesis`). A stage type never part of the pipeline (no `interface:` section, no `tb_sources`) or explicitly skipped via `--skip-*` reports `"status": "SKIPPED"`. A stage that *was* part of the pipeline but never got a turn because an earlier stage FAILed reports `"status": "NOT_RUN"` instead -- distinct from `SKIPPED` so a reader can tell "nobody asked for this" apart from "an earlier failure cut the run short before reaching it". The `synthesis` entry additionally carries `technology`/`technology_version` (installed PDK version, untruncated) when synthesis was actually PDK-mapped -- see 13.4 for the same field on Database Mode's schema |
+| `rtl_hash` | `{filename: sha256}` for each RTL source, snapshotted at the *start* of the run, before any stage executes -- so it reflects the RTL verification began with, not whatever state the file happened to be in once every stage had already finished |
 | `veriflow_version` | VeriFlow version that produced this run |
 | `timestamp` | ISO 8601 UTC timestamp |
 
-**Example:**
+**Example** (generic project, no `interface:`/`tb_sources` configured -- synthesis is the only stage that runs, so the overall status is `PARTIAL`, not `PASS`):
 
 ```json
 {
   "schema_version": "1.0",
-  "status": "PASS",
+  "status": "PARTIAL",
   "command": "project run",
   "run_dir": "runs/run-002",
   "interface_name": null,
@@ -926,8 +926,8 @@ Every `project run` writes `results.json` to the run directory. Unlike Database 
 }
 ```
 
-`project import` (14.3) reads this file to decide which run is importable (`status: "PASS"`)
-and which sources to copy.
+`project import` (14.3) reads this file to decide which run is importable (`status: "PASS"` or
+`"PARTIAL"` -- only `"FAIL"` is rejected) and which sources to copy.
 
 ### 14.5 Configurable pipeline (`pipeline`)
 

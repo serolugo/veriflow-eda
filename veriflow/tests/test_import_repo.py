@@ -137,7 +137,10 @@ def test_import_repo_pass_creates_tile_and_cleans_up_temp_dir(tmp_path):
     imported_run = json.loads((tile_dir / "imported_run.json").read_text(encoding="utf-8"))
     assert imported_run["source_repo"] == str(repo_dir)
     assert imported_run["source_branch"] == "main"
-    assert imported_run["status"] == "PASS"
+    # _make_git_repo's project is generic (no interface/tb_sources) -- only
+    # synthesis ran, so PARTIAL, not PASS (dev-docs/TRACEABILITY_AUDIT.md
+    # Finding #4/#4b) -- still importable, see _IMPORTABLE_STATUSES.
+    assert imported_run["status"] == "PARTIAL"
 
     # No leftover temp clone directory (git marks .git/objects read-only on
     # Windows; a plain `shutil.rmtree(ignore_errors=True)` silently leaves

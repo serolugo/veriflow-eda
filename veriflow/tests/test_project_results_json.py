@@ -89,6 +89,18 @@ def _run_full(cfg, *, conn_status="PASS", sim_status="COMPLETED", synth_status="
         return ProjectWorkflow(cfg).run()
 
 
+def _run_full_with_request(cfg, request, *, conn_status="PASS", sim_status="COMPLETED", synth_status="PASS"):
+    """Like _run_full, but with an explicit RunRequest (e.g. skip_* flags)
+    instead of letting ProjectWorkflow.run() build its own default one."""
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch("veriflow.workflows.project.get_connectivity_backend", return_value=_mock_conn_backend(conn_status)),
+        patch("veriflow.workflows.project.get_simulation_backend", return_value=_mock_sim_backend(sim_status)),
+        patch("veriflow.workflows.project.get_synthesis_backend", return_value=_mock_synth_backend(synth_status)),
+    ):
+        return ProjectWorkflow(cfg).run(request)
+
+
 def _load_results(pr) -> dict:
     return json.loads((pr.run_dir / "results.json").read_text(encoding="utf-8"))
 
@@ -129,6 +141,46 @@ def test_results_json_status_fail_when_a_stage_fails(tmp_path):
     data = _load_results(pr)
     assert data["status"] == "FAIL"
     assert data["stages"]["synthesis"]["status"] == "FAIL"
+
+
+def test_results_json_status_partial_for_generic_synthesis_only_project(tmp_path):
+    """dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b: a generic project
+    (no interface:, no tb_sources) only ever runs synthesis --
+    connectivity/simulation are SKIPPED because they were never
+    configured. That's a legitimate, narrower scope, not a failure, but
+    it's also not a full PASS -- must be PARTIAL."""
+    cfg = _rtl_only_config(tmp_path)
+    pr = _run_full(cfg, synth_status="PASS")
+    data = _load_results(pr)
+    assert data["status"] == "PARTIAL"
+    assert data["stages"]["synthesis"]["status"] == "PASS"
+
+
+def test_results_json_status_partial_reproduces_original_audit_attack(tmp_path):
+    """The exact scenario from dev-docs/TRACEABILITY_AUDIT.md Finding #4,
+    reproduced against the fix: a project with connectivity, simulation,
+    AND synthesis all configured (unlike the generic-project case above),
+    run with --skip-check --skip-sim --skip-synth. Before the fix this
+    produced status "PASS" with a status:0 exit code despite zero actual
+    verification -- now it must be something other than "PASS"."""
+    from veriflow.framework import RunRequest
+
+    cfg = _full_config(tmp_path)
+    request = RunRequest(
+        work_dir=cfg.runs_dir / "run-001",
+        skip_connectivity=True, skip_sim=True, skip_synth=True,
+    )
+    request.work_dir.mkdir(parents=True, exist_ok=True)
+    pr = _run_full_with_request(cfg, request)
+    data = _load_results(pr)
+
+    assert data["status"] != "PASS"
+    assert data["status"] == "PARTIAL"
+    assert data["stages"] == {
+        "connectivity": {"status": "SKIPPED", "log": None},
+        "simulation": {"status": "SKIPPED", "log": None, "waves": None},
+        "synthesis": {"status": "SKIPPED", "log": None},
+    }
 
 
 # ── 2. Paths are relative to the config root, not absolute ───────────────────
@@ -177,6 +229,43 @@ def test_results_json_unconfigured_stages_marked_skipped(tmp_path):
     assert data["stages"]["connectivity"] == {"status": "SKIPPED", "log": None}
     assert data["stages"]["simulation"] == {"status": "SKIPPED", "log": None, "waves": None}
     assert data["interface_name"] is None
+
+
+def test_results_json_explicit_skip_flag_still_reports_skipped(tmp_path):
+    """A stage bypassed via an explicit --skip-* flag (present in the
+    pipeline, but the caller opted out for this run) reports "SKIPPED",
+    the same as one that was never configured at all -- both are a
+    deliberate, known omission. Contrast with NOT_RUN below, reserved for
+    a stage that never got a *chance* to run."""
+    from veriflow.framework import RunRequest
+
+    cfg = _full_config(tmp_path)
+    request = RunRequest(work_dir=cfg.runs_dir / "run-001", skip_synth=True)
+    request.work_dir.mkdir(parents=True, exist_ok=True)
+    pr = _run_full_with_request(cfg, request)
+    data = _load_results(pr)
+    assert data["stages"]["synthesis"] == {"status": "SKIPPED", "log": None}
+    assert data["stages"]["connectivity"]["status"] == "PASS"
+    assert data["stages"]["simulation"]["status"] == "PASS"
+
+
+# ── 3b. NOT_RUN: a configured stage that never got a turn ────────────────────
+
+
+def test_results_json_stage_not_run_when_earlier_stage_fails(tmp_path):
+    """dev-docs/TRACEABILITY_AUDIT.md Finding #5b: simulation/synthesis
+    ARE part of this project's pipeline (interface + tb_sources both
+    configured, unlike the generic-project case above) -- they just never
+    got a turn because Flow.run() stops at the first FAIL (connectivity,
+    here). That's a different situation from "never configured" or
+    "explicitly skipped" and must report "NOT_RUN", not "SKIPPED"."""
+    cfg = _full_config(tmp_path)
+    pr = _run_full(cfg, conn_status="FAIL")
+    data = _load_results(pr)
+    assert data["stages"]["connectivity"]["status"] == "FAIL"
+    assert data["stages"]["simulation"]["status"] == "NOT_RUN"
+    assert data["stages"]["synthesis"]["status"] == "NOT_RUN"
+    assert data["status"] == "FAIL"
 
 
 # ── 4. COMPLETED -> PASS normalization for simulation ─────────────────────────
@@ -229,6 +318,43 @@ def test_results_json_rtl_hash_skips_missing_files(tmp_path):
     pr = _run_full(cfg)
     data = _load_results(pr)
     assert data["rtl_hash"] == {}
+
+
+def test_results_json_rtl_hash_computed_before_any_stage_runs(tmp_path):
+    """dev-docs/TRACEABILITY_AUDIT.md Finding #1, Option A: rtl_hash must
+    be captured at the *start* of ProjectWorkflow.run(), before flow.run()
+    invokes any stage -- not after every stage has already finished.
+    Confirmed via a call-order spy, not just that the final hash value
+    happens to be correct (which wouldn't catch a re-ordering, since
+    nothing mutates the file mid-test either way)."""
+    import veriflow.workflows.project as project_module
+    from veriflow.core.backends.base import SynthesisBackend
+
+    cfg = _rtl_only_config(tmp_path)
+    call_order: list[str] = []
+
+    real_compute_rtl_hash = project_module._compute_rtl_hash
+
+    def _spy_compute_rtl_hash(rtl_sources):
+        call_order.append("compute_rtl_hash")
+        return real_compute_rtl_hash(rtl_sources)
+
+    class _RecordingSynthBackend(SynthesisBackend):
+        def run_synthesis(self, *, rtl_files, top_module, synth_log_path, technology=None):
+            call_order.append("synthesis_stage_ran")
+            return "PASS", {"cells": "1", "warnings": "0", "errors": "0", "has_latches": False}
+
+        def check_availability(self):
+            return [{"tool": "yosys", "available": True, "version": "0.0", "path": "/bin/yosys", "error": None}]
+
+    with (
+        patch("veriflow.workflows.project.validate_tools"),
+        patch("veriflow.workflows.project._compute_rtl_hash", side_effect=_spy_compute_rtl_hash),
+        patch("veriflow.workflows.project.get_synthesis_backend", return_value=_RecordingSynthBackend()),
+    ):
+        ProjectWorkflow(cfg).run()
+
+    assert call_order == ["compute_rtl_hash", "synthesis_stage_ran"]
 
 
 # ── 6. veriflow_version / timestamp ───────────────────────────────────────────

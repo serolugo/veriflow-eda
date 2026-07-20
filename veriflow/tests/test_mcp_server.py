@@ -243,10 +243,13 @@ def test_list_pdks_success():
 # ── success paths (mocked EDA backends, mirroring test_api_additions.py) ──────
 
 def test_project_run_success(tmp_path):
+    # _make_project is generic (no interface/tb_sources) -- only synthesis
+    # runs, so PARTIAL, not PASS (dev-docs/TRACEABILITY_AUDIT.md
+    # Finding #4/#4b).
     config_path = _make_project(tmp_path)
     with patch("veriflow.workflows.project.validate_tools"), _patched_synth_pass():
         result = mcp_server.veriflow_project_run(str(config_path))
-    assert result["status"] == "PASS"
+    assert result["status"] == "PARTIAL"
     assert result["schema_version"] == "1.0"
 
 
@@ -257,7 +260,7 @@ def test_get_project_run_result_success(tmp_path):
     # run_dir is relative to the config file's directory, not the CWD.
     run_dir = config_path.parent / run_result["run_dir"]
     result = mcp_server.veriflow_get_project_run_result(str(run_dir))
-    assert result["status"] == "PASS"
+    assert result["status"] == "PARTIAL"
 
 
 def test_run_tile_success(tmp_path):

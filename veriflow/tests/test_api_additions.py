@@ -124,7 +124,10 @@ def test_project_run_returns_results_json_dict(tmp_path):
         data = project_run(config_path)
 
     assert data["schema_version"] == "1.0"
-    assert data["status"] == "PASS"
+    # Generic project (no interface/tb_sources) -- only synthesis ran, so
+    # the overall status is PARTIAL, not PASS (dev-docs/TRACEABILITY_AUDIT.md
+    # Finding #4/#4b).
+    assert data["status"] == "PARTIAL"
     assert data["stages"]["synthesis"]["status"] == "PASS"
 
 
