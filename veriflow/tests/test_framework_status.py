@@ -65,13 +65,14 @@ def test_matches_database_mode_three_stage_semantics_for_reachable_combinations(
     3-argument _derive_status(conn, sim, synth) computed, for every
     combination of per-stage values each one can actually report in
     practice (conn/synth: "PASS"/"FAIL"/"SKIPPED"; simulation has no
-    pass/fail concept of its own and reports "COMPLETED" instead of
-    "PASS" -- see core/stages/simulation.py) *except* the one class of
-    input the original literal code got wrong -- see
-    test_fail_forces_fail_even_when_another_stage_is_also_skipped below,
-    which is the intentional behavior change."""
+    pass/fail concept of its own and reports "COMPLETED"/"FAILED" instead
+    of "PASS"/"FAIL" -- see core/stages/simulation.py and
+    core/backends/xsim.py, both of which use "FAILED", never "FAIL", for a
+    genuine simulation failure) *except* the classes of input the original
+    literal code got wrong -- see the two dedicated "masking" tests below,
+    which document the intentional behavior changes."""
     conn_values = ("PASS", "FAIL", "SKIPPED")
-    sim_values = ("COMPLETED", "FAIL", "SKIPPED")
+    sim_values = ("COMPLETED", "FAILED", "SKIPPED")
     synth_values = ("PASS", "FAIL", "SKIPPED")
 
     def original_db_derive_status(conn, sim, synth):
@@ -88,9 +89,10 @@ def test_matches_database_mode_three_stage_semantics_for_reachable_combinations(
             for synth in synth_values:
                 expected = original_db_derive_status(conn, sim, synth)
                 actual = derive_run_status([conn, sim, synth])
-                if expected == "PARTIAL" and "FAIL" in (conn, sim, synth):
-                    # The one known divergence, fixed on purpose -- see the
-                    # dedicated test below.
+                has_a_failure = "FAIL" in (conn, sim, synth) or "FAILED" in (conn, sim, synth)
+                if expected == "PARTIAL" and has_a_failure:
+                    # Known, intentional divergences -- see the two
+                    # dedicated tests below (one per failure spelling).
                     continue
                 assert actual == expected, (conn, sim, synth, expected, actual)
 
@@ -110,3 +112,23 @@ def test_fail_forces_fail_even_when_another_stage_is_also_skipped():
     assert derive_run_status(["SKIPPED", "FAIL", "SKIPPED"]) == "FAIL"
     assert derive_run_status(["PASS", "FAIL", "SKIPPED"]) == "FAIL"
     assert derive_run_status(["SKIPPED", "SKIPPED", "FAIL"]) == "FAIL"
+
+
+def test_failed_simulation_is_recognized_as_a_failure():
+    """Regression test for a real bug found via genuine end-to-end testing
+    of a packaged wheel install in a clean venv (2026-07-20, PyPI
+    packaging audit) -- not a synthetic unit test case. Simulation
+    backends (icarus, xsim) report "FAILED" for a genuine failure, never
+    "FAIL" -- `derive_run_status` used to check for the single literal
+    string "FAIL" only, so a real run (connectivity PASS, a testbench
+    that genuinely failed to compile, synthesis PASS) came back with
+    overall status "PASS" despite the simulation stage itself correctly
+    showing "FAILED" -- exactly the kind of status falsification
+    dev-docs/TRACEABILITY_AUDIT.md Findings #4/#4b were meant to close for
+    good, reintroduced by a one-string-vs-another oversight in that same
+    fix. "FAILED" must be recognized as a failure exactly like "FAIL",
+    including when another stage is also SKIPPED (the same masking
+    pattern as the test above, this time via the simulation spelling)."""
+    assert derive_run_status(["PASS", "FAILED", "PASS"]) == "FAIL"
+    assert derive_run_status(["PASS", "FAILED", "SKIPPED"]) == "FAIL"
+    assert derive_run_status(["SKIPPED", "FAILED", "SKIPPED"]) == "FAIL"

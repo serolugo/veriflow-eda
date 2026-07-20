@@ -143,6 +143,28 @@ def test_results_json_status_fail_when_a_stage_fails(tmp_path):
     assert data["stages"]["synthesis"]["status"] == "FAIL"
 
 
+def test_results_json_status_fail_when_simulation_fails(tmp_path):
+    """Regression test for a real bug found via end-to-end testing of a
+    packaged wheel install (2026-07-20, PyPI packaging audit): simulation
+    backends report "FAILED" (not "FAIL") for a genuine failure --
+    connectivity/synthesis PASS with simulation FAILED used to come back
+    as overall status "PASS" (see
+    veriflow.framework.status.derive_run_status and
+    test_framework_status.py's dedicated unit tests for the root cause).
+    This test exercises the same bug at the integration level (through
+    ProjectWorkflow.run() end to end), since nothing previously did --
+    the unit-level exhaustive test also had the wrong placeholder string
+    for a simulation failure, so neither layer caught it until a real run
+    surfaced it."""
+    cfg = _full_config(tmp_path)
+    pr = _run_full(cfg, sim_status="FAILED")
+    data = _load_results(pr)
+    assert data["status"] == "FAIL"
+    assert data["stages"]["simulation"]["status"] == "FAILED"
+    assert data["stages"]["connectivity"]["status"] == "PASS"
+    assert data["stages"]["synthesis"]["status"] == "PASS"
+
+
 def test_results_json_status_partial_for_generic_synthesis_only_project(tmp_path):
     """dev-docs/TRACEABILITY_AUDIT.md Finding #4/#4b: a generic project
     (no interface:, no tb_sources) only ever runs synthesis --

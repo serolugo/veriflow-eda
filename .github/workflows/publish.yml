@@ -1,0 +1,94 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  # ── a) Test — same matrix as test.yml (3 OS x Python 3.10-3.13), reused
+  # via workflow_call rather than duplicated, so the two can't drift apart.
+  # `needs: test` below waits for every matrix leg to succeed; if any leg
+  # fails, `build` (and therefore `publish`) never runs.
+  test:
+    name: Test suite (release gate)
+    uses: ./.github/workflows/test.yml
+
+  # ── b) Build — only after the full test matrix passes.
+  build:
+    name: Build distribution
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # d) The tag that triggered this run must name the exact version
+      # veriflow/__init__.py declares -- otherwise we'd publish a release
+      # whose version number doesn't match what the installed package
+      # reports (`veriflow --version` / `importlib.metadata.version(...)`),
+      # or silently republish an old tag against new code. Fails the whole
+      # workflow before anything is built if they disagree.
+      - name: Verify tag matches veriflow/__init__.py's __version__
+        run: |
+          set -eu
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(python -c "
+          import re, pathlib
+          text = pathlib.Path('veriflow/__init__.py').read_text()
+          m = re.search(r'^__version__\s*=\s*[\'\"]([^\'\"]+)[\'\"]', text, re.M)
+          print(m.group(1))
+          ")"
+          echo "Tag:              ${GITHUB_REF_NAME} (version ${TAG_VERSION})"
+          echo "__init__.py:      __version__ = \"${PKG_VERSION}\""
+          if [ "${TAG_VERSION}" != "${PKG_VERSION}" ]; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' does not match veriflow/__init__.py's __version__ ('${PKG_VERSION}'). Bump __version__, commit it to main, and push a tag that matches -- or delete/retag if this tag was a mistake."
+            exit 1
+          fi
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check distribution metadata
+        run: twine check dist/*
+
+      - name: Upload dist/ artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # ── c) Publish — Trusted Publishing via OIDC, no API token/secret stored
+  # anywhere. `environment: pypi` lets this be gated on required reviewers
+  # (Settings -> Environments -> pypi -> Required reviewers) for manual
+  # approval before each release goes out; with no protection rules
+  # configured on the environment, this job runs straight through.
+  publish:
+    name: Publish to PyPI (Trusted Publishing)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/veriflow-eda
+    permissions:
+      id-token: write   # required for OIDC Trusted Publishing -- do not remove
+    steps:
+      - name: Download dist/ artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets other workflows (e.g. publish.yml's release gate) run this exact
+  # matrix via `uses: ./.github/workflows/test.yml` instead of duplicating
+  # it -- one job definition, no risk of the two silently drifting apart.
+  workflow_call:
 
 jobs:
   test:
