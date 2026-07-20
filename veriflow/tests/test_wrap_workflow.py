@@ -368,6 +368,73 @@ def test_top_module_not_found_no_output(dut_dir, tmp_path):
     assert not (out_dir / "ghost_module_wrapper.json").exists()
 
 
+# ── wrapper_name path safety (2026-07-19, dev-docs/SECURITY_AUDIT.md #1) ─────
+# wrapper_name is free-form text straight out of wrapper_config.yaml, never
+# sanitized by WrapperConfig.from_dict (only .strip()'d) -- these confirm
+# the fix (safe_join(), validated before ANY write, including the FAIL
+# branch) actually blocks escaping out_dir/out_dir/rtl, not just that it
+# looks right by inspection.
+
+def test_wrapper_name_absolute_path_traversal_rejected(dut_dir, tmp_path):
+    escape_target = tmp_path / "OUTSIDE_wrap_out"
+    escape_target.mkdir()
+    config_path = _write_config(dut_dir, wrapper_name=str(escape_target / "pwned"))
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    assert list(escape_target.iterdir()) == []
+
+
+def test_wrapper_name_relative_dotdot_traversal_rejected(dut_dir, tmp_path):
+    config_path = _write_config(dut_dir, wrapper_name="../../../../pwned")
+    out_dir = tmp_path / "nested" / "out"
+    out_dir.mkdir(parents=True)
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    # nothing named "pwned*" anywhere under tmp_path
+    assert list(tmp_path.rglob("pwned*")) == []
+
+
+def test_wrapper_name_traversal_rejected_before_fail_branch_writes_anything(dut_dir, tmp_path):
+    """The FAIL branch (validation FAIL, e.g. a bit conflict) used to write
+    its JSON report *before* any path-safety check existed at all -- this
+    confirms the malicious wrapper_name is rejected even when validation
+    itself would otherwise fail, i.e. the safety check truly runs first,
+    not just "on the PASS path"."""
+    escape_target = tmp_path / "OUTSIDE_wrap_out"
+    escape_target.mkdir()
+    conflict_ports = {"clk_i": "csr_in[7:0]", "rst_ni": "csr_in[7:0]"}  # bit conflict -> FAIL
+    config_path = _write_config(
+        dut_dir, ports=conflict_ports, wrapper_name=str(escape_target / "pwned")
+    )
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    assert list(escape_target.iterdir()) == []
+    # out_dir itself may exist (created before the wrapper_name check runs),
+    # but nothing inside it -- the FAIL branch's own json_path.write_text()
+    # (out_dir / f"{wrapper_name}.json") never got a chance to run.
+    assert list(out_dir.rglob("*.json")) == []
+
+
+def test_wrapper_name_legitimate_value_still_generates_normally(dut_dir, tmp_path):
+    """Sanity check the fix doesn't collaterally break the ordinary case --
+    a plain wrapper_name (no slashes, no traversal) works exactly as
+    before."""
+    config_path = _write_config(dut_dir, wrapper_name="my_custom_wrapper")
+    out_dir = tmp_path / "out"
+    result = WrapWorkflow(_FakeBackend("PASS")).generate(config_path, out_dir)
+    assert result["status"] == "PASS"
+    assert (out_dir / "rtl" / "my_custom_wrapper.v").is_file()
+    assert (out_dir / "my_custom_wrapper.json").is_file()
+
+
 # ── out_dir defaults ──────────────────────────────────────────────────────────
 
 def test_out_dir_defaults_to_out_subdir(dut_dir):

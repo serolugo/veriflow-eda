@@ -6,6 +6,7 @@ import yaml
 
 from veriflow.core import VeriFlowError
 from veriflow.core.csv_store import append_tile_index, get_next_tile_number
+from veriflow.core.path_safety import safe_join
 from veriflow.core.tile_id import compute_initials, format_tile_id
 from veriflow.core.validator import validate_database, validate_project_config
 from veriflow.generators.readme import generate_readme
@@ -171,6 +172,15 @@ def cmd_create_tile(
     }
     tile_id = format_tile_id(project_config.id_format, placeholders)
 
+    # tile_id is built from id_format + user-controlled placeholder values
+    # (shuttle_name, id_prefix, tile_author-derived initials, ...) via a raw
+    # str.format() with no output sanitization -- validate it resolves to a
+    # real subdirectory of tiles/ before creating anything at all, not just
+    # at the point tiles/<tile_id>/ itself gets created (dev-docs/SECURITY_AUDIT.md,
+    # Finding #2: an id_format referencing {shuttle_name} combined with a
+    # shuttle_name containing "../" could otherwise escape tiles/ entirely).
+    tile_dir = safe_join(db / "tiles", tile_id)
+
     step("create-tile", f"Generating tile {tile_number_str} -> {tile_id}")
 
     # 6. Create config/tile_XXXX/
@@ -209,7 +219,6 @@ def cmd_create_tile(
     step("create-tile", f"Created src/rtl/ and src/tb/ ({profile_label}: tb_tile.v)")
 
     # 9. Create tiles/<tile_id>/
-    tile_dir = db / "tiles" / tile_id
     tile_dir.mkdir(parents=True, exist_ok=True)
     step("create-tile", f"Created tiles/{tile_id}/")
 

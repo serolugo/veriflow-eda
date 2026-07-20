@@ -25,6 +25,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from veriflow.core import VeriFlowError
+from veriflow.core.git_safety import validate_git_clone_url
 from veriflow.models.pdk_manager import (
     VERIFLOW_PDK_ROOT,
     _create_pdk_link,
@@ -585,6 +586,12 @@ def cmd_pdk_install(args: argparse.Namespace) -> int:
         if not _git_available():
             print_error("git required -- install git and ensure it is in PATH")
             return 1
+        # technology.git_url is trusted today (only technologies/ihp130.yaml
+        # defines it, shipped by us) -- validated anyway so a future
+        # technology.definition: allowing a custom git_url doesn't silently
+        # reopen the same git remote-helper risk import_repo() guards
+        # against (dev-docs/SECURITY_AUDIT.md, Finding #3).
+        validate_git_clone_url(technology.git_url)
         print_step("pdk install", f"Cloning {technology.git_url} ...")
         non_interactive = getattr(args, "non_interactive", False)
         result = _run_subprocess_with_spinner(

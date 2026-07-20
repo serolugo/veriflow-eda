@@ -333,6 +333,64 @@ def _cache_dir_for_url(url: str) -> Path:
     return VERIFLOW_INTERFACES_CACHE_ROOT / hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
+# An interface.v port-contract stub is a handful of `input`/`output` port
+# declarations -- realistically a few hundred bytes to a few KB. 1 MB is
+# generous headroom for a legitimate file while still making a
+# multi-GB/unbounded-stream download impossible.
+_MAX_INTERFACE_DEFINITION_BYTES = 1024 * 1024
+
+
+def _reject_if_declared_too_large(response, url: str) -> None:
+    """Raise VeriFlowError(VF_INTERFACE_URL_TOO_LARGE) before reading a
+    single byte of the body if the server's own Content-Length header
+    already declares more than _MAX_INTERFACE_DEFINITION_BYTES. A missing
+    or non-numeric header is not an error here -- `_read_capped` enforces
+    the same limit against the actual bytes regardless, since a server can
+    omit Content-Length entirely (or lie about it) and this header is only
+    ever an early-exit optimization, never the sole guard."""
+    declared = response.headers.get("Content-Length")
+    if declared is None:
+        return
+    try:
+        declared_size = int(declared)
+    except ValueError:
+        return
+    if declared_size > _MAX_INTERFACE_DEFINITION_BYTES:
+        raise VeriFlowError(
+            f"Interface definition at {url!r} declares Content-Length="
+            f"{declared_size} bytes, exceeding the "
+            f"{_MAX_INTERFACE_DEFINITION_BYTES}-byte limit for an interface.v "
+            "port-contract file.",
+            code="VF_INTERFACE_URL_TOO_LARGE",
+            details={"url": url, "declared_size": declared_size, "limit": _MAX_INTERFACE_DEFINITION_BYTES},
+        )
+
+
+def _read_capped(response, url: str) -> bytes:
+    """Read *response* in chunks, aborting the instant the total exceeds
+    _MAX_INTERFACE_DEFINITION_BYTES -- enforced against the real byte count,
+    not just the (possibly absent or dishonest) Content-Length header a
+    hostile or misconfigured server could send."""
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 65536
+    while True:
+        chunk = response.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_INTERFACE_DEFINITION_BYTES:
+            raise VeriFlowError(
+                f"Interface definition at {url!r} exceeded the "
+                f"{_MAX_INTERFACE_DEFINITION_BYTES}-byte limit for an interface.v "
+                "port-contract file while downloading.",
+                code="VF_INTERFACE_URL_TOO_LARGE",
+                details={"url": url, "limit": _MAX_INTERFACE_DEFINITION_BYTES},
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _download_interface_url(url: str) -> Path:
     """Fetch *url* and (over)write its cache entry unconditionally --
     always hits the network. Returns the resulting interface.v path.
@@ -341,17 +399,27 @@ def _download_interface_url(url: str) -> Path:
     explicit `veriflow interface update <name>` (force re-fetch, ignoring
     whatever's already cached).
 
-    Raises VeriFlowError(VF_INTERFACE_URL_FETCH_FAILED) for any network/HTTP
-    error (connection failure, timeout, 404, etc.) -- urllib raises
-    HTTPError (a URLError subclass) for non-2xx responses, so this single
-    except clause covers both categories.
+    Raises:
+        VeriFlowError(VF_INTERFACE_URL_FETCH_FAILED) -- any network/HTTP
+            error (connection failure, timeout, 404, etc.) -- urllib raises
+            HTTPError (a URLError subclass) for non-2xx responses, so this
+            single except clause covers both categories.
+        VeriFlowError(VF_INTERFACE_URL_TOO_LARGE) -- the response is (or
+            claims to be) larger than _MAX_INTERFACE_DEFINITION_BYTES -- an
+            interface.v port-contract stub is never anywhere close to this
+            size; a legitimate one is a few hundred bytes to a few KB
+            (dev-docs/SECURITY_AUDIT.md, Finding #5: an unbounded download
+            here could fill the disk from a single `interface.definition:
+            https://...` -- possibly one the *user never wrote themselves*,
+            see `import_repo()`'s own external-interface guard).
     """
     import urllib.error
     import urllib.request
 
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
-            content = response.read()
+            _reject_if_declared_too_large(response, url)
+            content = _read_capped(response, url)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise VeriFlowError(
             f"Failed to fetch interface definition from {url!r}: {exc}",

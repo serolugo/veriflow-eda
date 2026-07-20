@@ -677,6 +677,58 @@ def _find_prior_import(db_path: Path, repo_url: str, branch: str) -> str | None:
     return None
 
 
+def _reject_uncached_external_interface(cloned_config_path: Path) -> None:
+    """Peek at the cloned repo's veriflow.yaml for `interface.definition:`
+    WITHOUT running the real config parser -- `ProjectWorkflowConfig.from_dict()`
+    would resolve (and, on a cache miss, download) it as a side effect of
+    just being parsed, which is exactly the silent-fetch-from-a-third-origin
+    this guard exists to prevent (dev-docs/SECURITY_AUDIT.md, Finding #4).
+    A YAML parse error here is deliberately swallowed -- `project_run()`
+    right after this call does the real parse and will raise the proper,
+    detailed VF_PROJECT_CONFIG_YAML_ERROR itself; this function only ever
+    needs to answer "is there an uncached external interface URL", nothing
+    else.
+
+    No-op (returns normally) when: the file doesn't parse, there's no
+    `interface.definition:` at all, it's not a URL (a local path within the
+    repo -- no third origin involved), or it's a URL already present in the
+    interface cache (nothing new gets fetched either way).
+    """
+    import yaml as _yaml
+
+    from veriflow.models.interface_profile import _cache_dir_for_url, _url_scheme
+
+    try:
+        raw = _yaml.safe_load(cloned_config_path.read_text(encoding="utf-8")) or {}
+    except _yaml.YAMLError:
+        return
+
+    interface_section = raw.get("interface")
+    if not isinstance(interface_section, dict):
+        return
+    raw_definition = interface_section.get("definition")
+    if not isinstance(raw_definition, str) or not raw_definition.strip():
+        return
+    definition = raw_definition.strip()
+
+    if _url_scheme(definition) is None:
+        return  # a local path inside the repo -- no third-party origin involved
+
+    if (_cache_dir_for_url(definition) / "interface.v").is_file():
+        return  # already cached -- nothing new would be fetched
+
+    raise VeriFlowError(
+        f"The imported repo's veriflow.yaml references an external interface "
+        f"definition ({definition!r}) that isn't cached locally yet. Running "
+        "the precheck would silently download it from that URL during "
+        "`import_repo()`, on your behalf, without you having named or seen "
+        "that URL yourself. Pass allow_external_interface=True "
+        "(--allow-external-interface) to permit this explicitly.",
+        code="VF_IMPORT_REPO_EXTERNAL_INTERFACE_URL",
+        details={"definition": definition},
+    )
+
+
 def import_repo(
     repo_url: str,
     db_path: str | Path,
@@ -684,6 +736,7 @@ def import_repo(
     branch: str = "main",
     config_path: str = "veriflow.yaml",
     force: bool = False,
+    allow_external_interface: bool = False,
 ) -> dict:
     """Clone a git repo, run its own `project run` as a real precheck, and
     import the result into a Database Mode database as a new tile -- for
@@ -730,11 +783,25 @@ def import_repo(
         Does not affect the precheck -- a failing `project run` is always
         rejected regardless, and never affects VF_IMPORT_INTERFACE_MISMATCH
         (two declared-but-different interfaces is never forceable).
+    allow_external_interface : bool
+        The cloned repo's own veriflow.yaml is trusted enough to run for
+        real (that IS the precheck) -- but if its `interface.definition:`
+        points at a URL that isn't already cached locally, running the
+        precheck would silently fetch from a *third* origin (not the repo
+        being imported) that the caller never named or consented to. False
+        (the default) blocks that with VF_IMPORT_REPO_EXTERNAL_INTERFACE_URL
+        before `project run` ever starts; True allows the fetch to proceed
+        as it always did before this guard existed. A URL already present
+        in the interface cache is never blocked regardless of this flag --
+        nothing new gets fetched either way.
 
     Raises:
         VeriFlowError(VF_IMPORT_REPO_ALREADY_IMPORTED)  -- repo_url+branch already imported, force=False
+        VeriFlowError(VF_IMPORT_REPO_URL_SCHEME_NOT_ALLOWED) -- repo_url uses a disallowed git URL scheme
         VeriFlowError(VF_IMPORT_REPO_CLONE_FAILED)      -- git clone failed (bad URL/branch/network)
         VeriFlowError(VF_IMPORT_REPO_NO_CONFIG)         -- config_path missing at the repo's root
+        VeriFlowError(VF_IMPORT_REPO_EXTERNAL_INTERFACE_URL) -- interface.definition is an uncached
+            URL and allow_external_interface is False
         VeriFlowError(VF_IMPORT_REPO_PRECHECK_FAILED)   -- project run status != PASS
         ... plus anything project_import() itself can raise (VF_IMPORT_INTERFACE_MISMATCH,
         VF_IMPORT_GENERIC_TO_INTERFACE_DATABASE, etc.)
@@ -744,7 +811,14 @@ def import_repo(
     import tempfile
 
     from veriflow.commands.pdk import _force_remove_readonly
+    from veriflow.core.git_safety import validate_git_clone_url
     from veriflow.core.validator import validate_database
+
+    # Reject git's own `ext::`/`fd::` remote-helper syntax (arbitrary local
+    # command execution) and any URL scheme outside the explicit allowlist,
+    # before touching the filesystem or network at all -- see
+    # dev-docs/SECURITY_AUDIT.md, Finding #3.
+    validate_git_clone_url(repo_url)
 
     db_path = Path(db_path).resolve()
     validate_database(db_path)
@@ -781,6 +855,9 @@ def import_repo(
                 code="VF_IMPORT_REPO_NO_CONFIG",
                 details={"repo_url": repo_url, "branch": branch, "config_path": config_path},
             )
+
+        if not allow_external_interface:
+            _reject_uncached_external_interface(cloned_config_path)
 
         run_result = project_run(cloned_config_path)
         if run_result.get("status") != "PASS":
@@ -931,6 +1008,7 @@ def generate_readme(
     """
     from jinja2 import Template
 
+    from veriflow.core.path_safety import safe_join
     from veriflow.workflows.project_config import ProjectWorkflowConfig
 
     config_path = Path(config_path).resolve()
@@ -951,7 +1029,12 @@ def generate_readme(
         )
 
     if template_path is not None:
-        resolved_template = Path(template_path)
+        # Same containment check as readme_template: in veriflow.yaml
+        # (workflows/project_config.py's _parse_readme_template) -- an
+        # explicit --template/template_path is just as capable of reading
+        # an arbitrary file into README.md verbatim if left unconstrained
+        # (dev-docs/SECURITY_AUDIT.md, Finding #6).
+        resolved_template = safe_join(config.root, str(template_path))
     elif config.readme_template is not None:
         resolved_template = config.readme_template
     else:

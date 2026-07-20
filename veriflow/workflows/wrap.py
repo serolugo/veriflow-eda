@@ -13,6 +13,7 @@ import yaml
 from veriflow.core import VeriFlowError
 from veriflow.core.backends.base import ConnectivityBackend
 from veriflow.core.backends.icarus import IcarusConnectivityBackend
+from veriflow.core.path_safety import safe_join
 from veriflow.core.wrapper.generator import generate_wrapper
 from veriflow.core.wrapper.port_parser import extract_ports
 from veriflow.core.wrapper.validator import validate_mapping
@@ -114,6 +115,19 @@ class WrapWorkflow:
         out_dir = Path(out_dir).resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # wrapper_name is free-form text straight out of wrapper_config.yaml
+        # -- never sanitized upstream (WrapperConfig.from_dict only
+        # .strip()s it). Validate BOTH destinations it's interpolated into
+        # (the JSON report under out_dir, the wrapper .v under out_dir/rtl)
+        # resolve strictly inside their expected directory before writing
+        # anything at all -- including the FAIL branch below, which used to
+        # write its JSON report before any such check existed
+        # (dev-docs/SECURITY_AUDIT.md, Finding #1: a wrapper_name like an
+        # absolute path, or one laced with `../`, wrote real file content
+        # anywhere on disk the process could reach).
+        json_path = safe_join(out_dir, f"{config.wrapper_name}.json")
+        wrapper_path = safe_join(out_dir / "rtl", f"{config.wrapper_name}.v")
+
         # P4 — serialize hi/lo integers to slice/bits strings
         serialized_mapped = [
             {
@@ -155,7 +169,6 @@ class WrapWorkflow:
                 "validation": {"status": "FAIL"},
                 "connectivity_check": None,
             }
-            json_path = out_dir / f"{config.wrapper_name}.json"
             json_path.write_text(json.dumps(out_doc, indent=2), encoding="utf-8")
             return out_doc
 
@@ -165,7 +178,6 @@ class WrapWorkflow:
         rtl_out_dir = out_dir / "rtl"
         rtl_out_dir.mkdir(parents=True, exist_ok=True)
 
-        wrapper_path = rtl_out_dir / f"{config.wrapper_name}.v"
         wrapper_path.write_text(wrapper_src, encoding="utf-8")
 
         for rp in rtl_paths:
@@ -207,6 +219,5 @@ class WrapWorkflow:
                 "log": "logs/connectivity.log",
             },
         }
-        json_path = out_dir / f"{config.wrapper_name}.json"
         json_path.write_text(json.dumps(out_doc, indent=2), encoding="utf-8")
         return out_doc

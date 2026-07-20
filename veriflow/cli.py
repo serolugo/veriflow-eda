@@ -280,6 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true",
         help="Re-import this repo+branch even if already imported (creates a new, separate tile)",
     )
+    p_db_ir.add_argument(
+        "--allow-external-interface", action="store_true",
+        help=(
+            "Allow the precheck to fetch interface.definition: from a URL not yet cached "
+            "locally (default: rejected, since the repo can silently point VeriFlow at a "
+            "third-party origin the caller never named)"
+        ),
+    )
 
     # db tile (per-tile config namespace)
     p_db_tile = db_sub.add_parser("tile", help="Per-tile config commands")

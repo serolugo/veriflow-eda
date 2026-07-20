@@ -257,6 +257,65 @@ def test_create_tile_shuttle_name_id_format(tmp_path):
     assert row["tile_id"] == "TST-01-shuttle42-0001"
 
 
+# ── tile_id path safety (2026-07-19, dev-docs/SECURITY_AUDIT.md #2) ──────────
+# format_tile_id() is a raw str.format() with no output sanitization -- the
+# resulting tile_id is used directly as tiles/<tile_id>/'s directory name
+# (commands/create_tile.py). shuttle_name/id_prefix are both plain
+# user-controlled strings (`db set shuttle`/`db set prefix`), so a value
+# containing "../" reaching tile_id via a placeholder is the attack surface,
+# not a hypothetical -- this is the same shuttle_name value and id_format
+# shape as test_create_tile_shuttle_name_id_format above, just with a
+# malicious shuttle_name instead of a normal one.
+
+def test_create_tile_shuttle_name_traversal_rejected(tmp_path):
+    from veriflow.commands.create_tile import cmd_create_tile
+    from veriflow.core import VeriFlowError
+
+    db = _make_db(tmp_path)
+    _write_project_config(
+        db, id_prefix="TST-01",
+        id_format="{prefix}-{shuttle_name}-{tile_number}",
+        shuttle_name="../../../ESCAPED",
+    )
+    with pytest.raises(VeriFlowError) as exc_info:
+        cmd_create_tile(db)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    assert not (tmp_path / "ESCAPED").exists()
+    # no tile directory left behind under the database either (tiles/
+    # itself always has a scaffold .gitkeep from db init -- only real tile
+    # subdirectories matter here)
+    assert [p for p in (db / "tiles").iterdir() if p.is_dir()] == []
+
+
+def test_create_tile_prefix_traversal_rejected(tmp_path):
+    from veriflow.commands.create_tile import cmd_create_tile
+    from veriflow.core import VeriFlowError
+
+    db = _make_db(tmp_path)
+    _write_project_config(db, id_prefix="../../../ESCAPED")
+    with pytest.raises(VeriFlowError) as exc_info:
+        cmd_create_tile(db)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    assert not (tmp_path / "ESCAPED").exists()
+
+
+def test_create_tile_shuttle_name_absolute_path_traversal_rejected(tmp_path):
+    from veriflow.commands.create_tile import cmd_create_tile
+    from veriflow.core import VeriFlowError
+
+    escape_target = tmp_path / "ESCAPED"
+    db = _make_db(tmp_path)
+    _write_project_config(
+        db, id_prefix="TST-01",
+        id_format="{shuttle_name}",
+        shuttle_name=str(escape_target).replace("\\", "/"),
+    )
+    with pytest.raises(VeriFlowError) as exc_info:
+        cmd_create_tile(db)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+    assert not escape_target.exists()
+
+
 def test_create_tile_interface_id_format(tmp_path):
     from veriflow.commands.create_tile import cmd_create_tile
     from veriflow.core.csv_store import get_tile_row

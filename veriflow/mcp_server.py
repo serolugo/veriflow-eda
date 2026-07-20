@@ -250,7 +250,13 @@ def veriflow_project_import(config_path: str, db_path: str, force: bool = False)
 
 
 @mcp.tool
-def veriflow_import_repo(repo_url: str, db_path: str, branch: str = "main", force: bool = False) -> dict:
+def veriflow_import_repo(
+    repo_url: str,
+    db_path: str,
+    branch: str = "main",
+    force: bool = False,
+    allow_external_interface: bool = False,
+) -> dict:
     """Clone a git repo, run its own project verification as a real
     precheck, and import the result into a database as a new tile.
 
@@ -258,12 +264,15 @@ def veriflow_import_repo(repo_url: str, db_path: str, branch: str = "main", forc
     local checkout that's already been cloned and verified. The clone is
     always removed afterward, whether the import succeeds or fails. Only
     a repo whose own veriflow.yaml passes verification is imported --
-    this IS the precheck, not a dry run.
+    this IS the precheck, not a dry run. repo_url must be http(s) or a
+    local filesystem path -- other schemes (including git's own `ext::`/
+    `fd::` remote-helper syntax) are rejected before cloning.
 
     Parameters
     ----------
     repo_url : str
-        Anything `git clone` accepts (https URL, ssh URL, or local path).
+        An http(s) URL or a local filesystem path (other git URL schemes,
+        e.g. ssh://, and any `scheme::` remote-helper syntax, are rejected).
     db_path : str
         Path to the destination VeriFlow database directory.
     branch : str
@@ -273,11 +282,20 @@ def veriflow_import_repo(repo_url: str, db_path: str, branch: str = "main", forc
         database (creates a new, separate tile), and downgrade a
         generic-into-interface-requiring-database mismatch to a warning.
         Never lets a failing precheck through regardless of this flag.
+    allow_external_interface : bool
+        The cloned repo's veriflow.yaml may declare `interface.definition:`
+        as a URL to a *third* origin (not repo_url itself). By default
+        (False) that's rejected if the URL isn't already cached locally --
+        the precheck would otherwise silently fetch from a URL you never
+        named. Set True to allow that fetch.
     """
     from veriflow.api import import_repo
 
     try:
-        return import_repo(repo_url, db_path, branch=branch, force=force)
+        return import_repo(
+            repo_url, db_path, branch=branch, force=force,
+            allow_external_interface=allow_external_interface,
+        )
     except VeriFlowError as exc:
         return _error(exc)
 

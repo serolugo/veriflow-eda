@@ -407,12 +407,30 @@ def test_generate_readme_custom_template_path_argument(tmp_path):
     config_path = _make_project(tmp_path)
     _run_project(config_path)
 
-    custom_template = tmp_path / "custom.j2"
+    # Inside config_path.parent (the project root), not tmp_path directly --
+    # template_path is now constrained via safe_join() relative to the
+    # project root (dev-docs/SECURITY_AUDIT.md, Finding #6).
+    custom_template = config_path.parent / "custom.j2"
     custom_template.write_text("Custom README for {{ top_module }}\n", encoding="utf-8")
 
     content = generate_readme(config_path, template_path=custom_template)
 
     assert content == "Custom README for top\n"
+
+
+def test_generate_readme_template_path_outside_project_root_rejected(tmp_path):
+    """The security-hardening counterpart of the test above: a template
+    outside the project root (e.g. tmp_path itself, one level above
+    config_path.parent) must be rejected, not silently read."""
+    config_path = _make_project(tmp_path)
+    _run_project(config_path)
+
+    outside_template = tmp_path / "outside.j2"
+    outside_template.write_text("Should never be read\n", encoding="utf-8")
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        generate_readme(config_path, template_path=outside_template)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
 
 
 def test_generate_readme_out_path_argument(tmp_path):
@@ -449,6 +467,42 @@ def test_generate_readme_config_readme_template_resolves_relative_to_config(tmp_
     assert content == "From config: top\n"
 
 
+def test_generate_readme_config_readme_template_relative_traversal_rejected(tmp_path):
+    """The exact attack from dev-docs/SECURITY_AUDIT.md Finding #6: a
+    malicious/imported veriflow.yaml with `readme_template: ../../../<secret>`
+    must not be able to dump an arbitrary file's content into README.md.
+    Confirms the fix at the config-parsing layer (ProjectWorkflowConfig's
+    _parse_readme_template), not just the explicit --template CLI arg."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET CONTENT\n", encoding="utf-8")
+
+    config_path = _make_project(
+        tmp_path,
+        dirname="deeply/nested/project",
+        extra_yaml="readme_template: ../../../secret.txt\n",
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        generate_readme(config_path)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+
+
+def test_generate_readme_config_readme_template_absolute_path_rejected(tmp_path):
+    """Same attack, absolute-path variant (no `../` needed at all -- a bare
+    `Path(root) / "/etc/passwd"`-style join discards `root` entirely)."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET CONTENT\n", encoding="utf-8")
+
+    config_path = _make_project(
+        tmp_path,
+        extra_yaml=f"readme_template: {str(secret).replace(chr(92), '/')!r}\n",
+    )
+
+    with pytest.raises(VeriFlowError) as exc_info:
+        generate_readme(config_path)
+    assert exc_info.value.code == "VF_UNSAFE_PATH"
+
+
 def test_generate_readme_explicit_template_path_overrides_config_readme_template(tmp_path):
     config_path = _make_project(
         tmp_path,
@@ -460,7 +514,7 @@ def test_generate_readme_explicit_template_path_overrides_config_readme_template
     template_dir.mkdir()
     (template_dir / "from_config.j2").write_text("From config\n", encoding="utf-8")
 
-    explicit_template = tmp_path / "explicit.j2"
+    explicit_template = config_path.parent / "explicit.j2"
     explicit_template.write_text("From explicit arg: {{ top_module }}\n", encoding="utf-8")
 
     content = generate_readme(config_path, template_path=explicit_template)

@@ -39,11 +39,38 @@ def _cleanup_registered_profiles():
         del ip._PROFILE_FACTORIES[name]
 
 
-def _fake_response(content: bytes):
+def _fake_response(content: bytes, *, content_length: int | None = None):
+    """A urllib response mock that actually emulates chunked reads --
+    `.read(n)` returns at most *n* bytes and advances an internal cursor,
+    returning `b""` once exhausted, the same contract a real
+    `http.client.HTTPResponse.read(n)` has. `_download_interface_url`'s
+    size-cap logic (`_read_capped`) reads in a loop expecting exactly this;
+    a mock that returned the full `content` on every call regardless of *n*
+    (the old version of this helper) would make every read past the first
+    look like it exceeded the size limit.
+
+    content_length: sets the `Content-Length` header `_reject_if_declared_too_large`
+    checks before reading anything; omitted (the default) means "server
+    didn't send one" (an empty dict, not a MagicMock -- `.headers.get(...)`
+    on an unconfigured MagicMock returns a truthy MagicMock, not None,
+    which would misfire that check)."""
     resp = MagicMock()
     resp.__enter__ = MagicMock(return_value=resp)
     resp.__exit__ = MagicMock(return_value=False)
-    resp.read.return_value = content
+    resp.headers = {} if content_length is None else {"Content-Length": str(content_length)}
+    remaining = bytearray(content)
+
+    def _read(n: int = -1) -> bytes:
+        nonlocal remaining
+        if n is None or n < 0:
+            chunk = bytes(remaining)
+            remaining = bytearray()
+            return chunk
+        chunk = bytes(remaining[:n])
+        del remaining[:n]
+        return chunk
+
+    resp.read.side_effect = _read
     return resp
 
 
@@ -142,6 +169,74 @@ def test_resolve_download_failure_leaves_no_partial_cache_entry(tmp_path):
 
         cache_dir = ip._cache_dir_for_url("https://example.com/if.v")
         assert not (cache_dir / "interface.v").exists()
+
+
+# ── download size limit (2026-07-19, dev-docs/SECURITY_AUDIT.md Finding #5) ──
+
+
+def test_resolve_download_content_length_too_large_rejected_before_reading_body(tmp_path):
+    """A declared Content-Length over the limit must be rejected without
+    ever reading the body -- confirmed via .read never being called."""
+    with _patch_cache_root(tmp_path):
+        resp = _fake_response(b"x" * 10, content_length=ip._MAX_INTERFACE_DEFINITION_BYTES + 1)
+        with patch("urllib.request.urlopen", return_value=resp):
+            with pytest.raises(VeriFlowError) as exc_info:
+                ip.resolve_interface_definition("https://evil.example/huge.v", Path("."))
+        assert exc_info.value.code == "VF_INTERFACE_URL_TOO_LARGE"
+        resp.read.assert_not_called()
+
+        cache_dir = ip._cache_dir_for_url("https://evil.example/huge.v")
+        assert not (cache_dir / "interface.v").exists()
+
+
+def test_resolve_download_exceeds_limit_without_content_length_header(tmp_path):
+    """A server that omits Content-Length entirely (or uses chunked
+    transfer-encoding) must still be capped -- enforced against the real
+    byte count as it streams in, not just the (possibly absent) header."""
+    oversized = b"x" * (ip._MAX_INTERFACE_DEFINITION_BYTES + 1)
+    with _patch_cache_root(tmp_path):
+        resp = _fake_response(oversized)  # no content_length -- header absent
+        with patch("urllib.request.urlopen", return_value=resp):
+            with pytest.raises(VeriFlowError) as exc_info:
+                ip.resolve_interface_definition("https://evil.example/nolength.v", Path("."))
+        assert exc_info.value.code == "VF_INTERFACE_URL_TOO_LARGE"
+
+        cache_dir = ip._cache_dir_for_url("https://evil.example/nolength.v")
+        assert not (cache_dir / "interface.v").exists()
+
+
+def test_resolve_download_content_length_lies_smaller_than_actual_body(tmp_path):
+    """A dishonest Content-Length that understates the real size must not
+    bypass the cap -- the streaming check (not just the header) is what
+    actually protects here."""
+    oversized = b"x" * (ip._MAX_INTERFACE_DEFINITION_BYTES + 1)
+    with _patch_cache_root(tmp_path):
+        resp = _fake_response(oversized, content_length=10)  # lies: claims 10 bytes
+        with patch("urllib.request.urlopen", return_value=resp):
+            with pytest.raises(VeriFlowError) as exc_info:
+                ip.resolve_interface_definition("https://evil.example/lies.v", Path("."))
+        assert exc_info.value.code == "VF_INTERFACE_URL_TOO_LARGE"
+
+
+def test_resolve_download_just_under_limit_succeeds(tmp_path):
+    """Sanity check the cap isn't off-by-one in the wrong direction -- a
+    real, small interface.v (nowhere near the limit) still downloads fine."""
+    with _patch_cache_root(tmp_path):
+        resp = _fake_response(_STUB_V, content_length=len(_STUB_V))
+        with patch("urllib.request.urlopen", return_value=resp):
+            result = ip.resolve_interface_definition("https://good.example/if.v", Path("."))
+        assert result.read_bytes() == _STUB_V
+
+
+def test_resolve_download_has_timeout(tmp_path):
+    """urlopen must be called with an explicit timeout -- a hung connection
+    must not block forever."""
+    with _patch_cache_root(tmp_path):
+        with patch("urllib.request.urlopen", return_value=_fake_response(_STUB_V)) as mock_open:
+            ip.resolve_interface_definition("https://good.example/if.v", Path("."))
+        _, kwargs = mock_open.call_args
+        assert kwargs.get("timeout") is not None
+        assert kwargs["timeout"] > 0
 
 
 # ── find_cached_interface_by_name / update_cached_interface_url ──────────────

@@ -79,6 +79,7 @@ def cmd_import_repo(args: argparse.Namespace) -> int:
             branch=args.branch,
             config_path=args.config,
             force=getattr(args, "force", False),
+            allow_external_interface=getattr(args, "allow_external_interface", False),
         ),
         f"Cloning {args.repo} ({args.branch}) and verifying ...",
         non_interactive=non_interactive,

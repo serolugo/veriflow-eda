@@ -43,6 +43,7 @@ from veriflow.core.backends.registry import (
     get_simulation_backend,
     get_synthesis_backend,
 )
+from veriflow.core.path_safety import safe_join
 from veriflow.models.execution_profile import default_execution_profile
 from veriflow.models.interface_profile import (
     get_interface_profile,
@@ -397,7 +398,15 @@ def _parse_readme_template(data: dict, *, root: Path) -> Path | None:
     `veriflow project generate-readme`, resolved relative to *root* (the
     veriflow.yaml directory). Omitted or null means "no project-level
     override" -- `generate_readme()` then falls back to VeriFlow's
-    built-in default template."""
+    built-in default template.
+
+    Resolved via `safe_join()`, not a bare `root / raw` join: a Jinja2
+    template with no `{{ }}`/`{% %}` markers renders back out byte-for-byte
+    identical to its input, so an unconstrained `readme_template:` was a
+    clean arbitrary-file-read primitive -- point it at any file (an
+    absolute path outright overrides `root` in a plain `/` join; a `../`
+    relative path escapes it just as easily) and its content ends up in
+    README.md verbatim (dev-docs/SECURITY_AUDIT.md, Finding #6)."""
     raw = data.get("readme_template")
     if raw is None:
         return None
@@ -407,7 +416,7 @@ def _parse_readme_template(data: dict, *, root: Path) -> Path | None:
             code="VF_README_TEMPLATE_INVALID",
             details={"readme_template": raw},
         )
-    return (root / raw.strip()).resolve()
+    return safe_join(root, raw.strip())
 
 
 @dataclass
