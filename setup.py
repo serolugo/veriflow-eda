@@ -76,10 +76,10 @@ setup(
         "Topic :: Software Development :: Embedded Systems",
     ],
     project_urls={
-        "Homepage": "https://github.com/serolugo/veriflow",
-        "Repository": "https://github.com/serolugo/veriflow",
-        "Issues": "https://github.com/serolugo/veriflow/issues",
-        "Changelog": "https://github.com/serolugo/veriflow/blob/main/docs/CHANGELOG.md",
-        "Documentation": "https://serolugo.github.io/veriflow/",
+        "Homepage": "https://github.com/serolugo/veriflow-eda",
+        "Repository": "https://github.com/serolugo/veriflow-eda",
+        "Issues": "https://github.com/serolugo/veriflow-eda/issues",
+        "Changelog": "https://github.com/serolugo/veriflow-eda/blob/main/docs/CHANGELOG.md",
+        "Documentation": "https://serolugo.github.io/veriflow-eda/",
     },
 )
