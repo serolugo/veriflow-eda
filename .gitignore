@@ -12,6 +12,17 @@ site/
 .DS_Store
 *.swp
 
+# Vivado xsim CLI tools (xvlog/xelab/xsim) write these into the invoking
+# process's cwd by default. veriflow/core/backends/xsim.py always runs them
+# inside a tempfile.mkdtemp() dir that gets shutil.rmtree'd afterward, so
+# these should never legitimately appear in the repo -- this is a defensive
+# backstop for manual/ad hoc CLI testing (see dev-docs/XSIM_BACKEND_FEATURE.md,
+# "stray xsim artifacts" note) accidentally leaving them in the repo root.
+*.pb
+xelab.log
+xvlog.log
+xsim.dir/
+
 /database/
 /runs/
 /wrap_out/
