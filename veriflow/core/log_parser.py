@@ -53,8 +53,11 @@ def parse_synth_log(log_text: str) -> dict:
     # Errors
     errors = len(re.findall(r"^\s*Error:", log_text, re.MULTILINE | re.IGNORECASE))
 
-    # Inferred latches
-    if re.search(r"Latch inferred", log_text, re.IGNORECASE):
+    # Inferred latches. Anchored to line start (past optional whitespace) so
+    # this doesn't false-positive on Yosys's normal, non-buggy
+    # "No latch inferred for signal ..." message (an unanchored substring
+    # search matches "latch inferred" inside "No latch inferred" too).
+    if re.search(r"^\s*Latch inferred", log_text, re.IGNORECASE | re.MULTILINE):
         has_latches = True
 
     return {

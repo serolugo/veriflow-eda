@@ -28,7 +28,7 @@ def run_synthesis(
     synth_log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Build Yosys script
-    read_cmds = "\n".join(f"read_verilog {f.as_posix()}" for f in rtl_files)
+    read_cmds = "\n".join(f'read_verilog "{f.as_posix()}"' for f in rtl_files)
     script_lines = [
         read_cmds,
         f"hierarchy -check -top {top_module}",
