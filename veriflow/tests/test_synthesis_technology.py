@@ -34,7 +34,11 @@ def test_run_synthesis_no_technology_script_unchanged(tmp_path):
         )
     script = mock_run.call_args.args[0][2]
     assert "abc -liberty" not in script
-    assert script == "\nread_verilog " + (tmp_path / "top.v").as_posix() + "\nhierarchy -check -top top\nsynth\ncheck\nstat\n"
+    # read_verilog's path is double-quoted (2026-07-20 fix) so paths
+    # containing spaces (a real path.py's `.as_posix()` gives back, e.g. a
+    # Windows user directory with a space in it) are parsed by yosys as a
+    # single argument instead of being split on whitespace.
+    assert script == '\nread_verilog "' + (tmp_path / "top.v").as_posix() + '"' + "\nhierarchy -check -top top\nsynth\ncheck\nstat\n"
 
 
 def test_run_synthesis_with_liberty_adds_abc_liberty_line(tmp_path):
@@ -48,9 +52,13 @@ def test_run_synthesis_with_liberty_adds_abc_liberty_line(tmp_path):
         )
     script = mock_run.call_args.args[0][2]
     lines = script.strip().splitlines()
-    assert "abc -liberty /pdk/sky130.lib" in lines
+    # abc -liberty's path is double-quoted too (2026-07-20 fix), same
+    # rationale and same as_posix() normalization as read_verilog -- a
+    # liberty file under a PDK cache path with a space in it (e.g. a
+    # Windows user directory) must be parsed as one argument.
+    assert 'abc -liberty "/pdk/sky130.lib"' in lines
     # Must come after `synth`, before `check`/`stat`
-    assert lines.index("synth") < lines.index("abc -liberty /pdk/sky130.lib") < lines.index("check")
+    assert lines.index("synth") < lines.index('abc -liberty "/pdk/sky130.lib"') < lines.index("check")
 
 
 def test_run_synthesis_with_synth_extra_adds_lines(tmp_path):
@@ -80,7 +88,7 @@ def test_run_synthesis_with_liberty_and_synth_extra_both_applied(tmp_path):
         )
     script = mock_run.call_args.args[0][2]
     lines = script.strip().splitlines()
-    assert lines.index("synth") < lines.index("abc -liberty /pdk/sky130.lib") < lines.index("-flatten") < lines.index("check")
+    assert lines.index("synth") < lines.index('abc -liberty "/pdk/sky130.lib"') < lines.index("-flatten") < lines.index("check")
 
 
 def test_run_synthesis_technology_with_liberty_none_is_noop(tmp_path):

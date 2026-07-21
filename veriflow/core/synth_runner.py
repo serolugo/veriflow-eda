@@ -35,7 +35,8 @@ def run_synthesis(
         "synth",
     ]
     if technology and technology.liberty:
-        script_lines.append(f"abc -liberty {technology.liberty}")
+        liberty_path = Path(technology.liberty).as_posix()
+        script_lines.append(f'abc -liberty "{liberty_path}"')
     if technology and technology.synth_extra:
         script_lines.extend(technology.synth_extra)
     script_lines += ["check", "stat"]
